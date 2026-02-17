@@ -1,0 +1,43 @@
+{
+  "name": "pymthouse",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio",
+    "proto:compile": "pbjs -t static-module -w es6 -o src/lib/proto-generated.js proto/lp_rpc.proto && pbts -o src/lib/proto-generated.d.ts src/lib/proto-generated.js",
+    "bootstrap": "npx tsx scripts/bootstrap-admin.ts"
+  },
+  "dependencies": {
+    "@privy-io/node": "^0.9.0",
+    "@privy-io/react-auth": "^3.13.1",
+    "@tailwindcss/postcss": "^4.1.18",
+    "better-sqlite3": "^11.7.0",
+    "drizzle-orm": "^0.38.0",
+    "next": "^15.1.0",
+    "next-auth": "^4.24.0",
+    "protobufjs": "^7.4.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "uuid": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/uuid": "^10.0.0",
+    "drizzle-kit": "^0.30.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^15.1.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^4.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0"
+  }
+}

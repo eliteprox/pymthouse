@@ -1,0 +1,44 @@
+services:
+  go-livepeer:
+    image: livepeer/go-livepeer:latest
+    command:
+      - -remoteSigner
+      - -network=${SIGNER_NETWORK:-arbitrum-one-mainnet}
+      - -httpAddr=0.0.0.0:8935
+      - -cliAddr=0.0.0.0:4935
+      - -ethUrl=${ETH_RPC_URL:-http://nyc-router.eliteencoder.net:3517}
+      - -ethPassword=/data/.eth-password
+      - -ethAcctAddr=${SIGNER_ETH_ADDR:-}
+      - -datadir=/data
+      - -v=99
+    volumes:
+      - livepeer-data:/data
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ ! -f /data/.eth-password ]; then
+          echo "" > /data/.eth-password
+        fi
+        # Strip empty -ethAcctAddr if not set
+        ARGS=""
+        for arg in "$$@"; do
+          case "$$arg" in
+            -ethAcctAddr=) ;; # skip empty
+            *) ARGS="$$ARGS $$arg" ;;
+          esac
+        done
+        exec /usr/local/bin/livepeer $$ARGS
+      - --
+    expose:
+      - "8935"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8935/status"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  livepeer-data:
