@@ -8,6 +8,7 @@ interface SignerConfigFormProps {
     name: string;
     network: string;
     ethRpcUrl: string;
+    ethAcctAddr: string | null;
     defaultCutPercent: number;
     billingMode: string;
     naapApiKey: string | null;
@@ -23,6 +24,7 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
     name: config.name,
     network: config.network,
     ethRpcUrl: config.ethRpcUrl,
+    ethAcctAddr: config.ethAcctAddr || "",
     defaultCutPercent: config.defaultCutPercent,
     billingMode: config.billingMode,
     naapApiKey: config.naapApiKey || "",
@@ -40,6 +42,8 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
+          network: "arbitrum-one-mainnet",
+          ethAcctAddr: formData.ethAcctAddr || null,
           naapApiKey: formData.naapApiKey || null,
         }),
       });
@@ -82,16 +86,9 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
           <label className="block text-xs text-zinc-500 mb-1.5">
             Network
           </label>
-          <select
-            value={formData.network}
-            onChange={(e) =>
-              setFormData({ ...formData, network: e.target.value })
-            }
-            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50"
-          >
-            <option value="arbitrum-one-mainnet">Arbitrum One (Mainnet)</option>
-            <option value="mainnet">Ethereum Mainnet</option>
-          </select>
+          <div className="w-full px-3 py-2 bg-zinc-900/50 border border-zinc-800 rounded-lg text-sm text-zinc-300">
+            arbitrum-one-mainnet
+          </div>
         </div>
         <div className="sm:col-span-2">
           <label className="block text-xs text-zinc-500 mb-1.5">
@@ -104,8 +101,22 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
             onChange={(e) =>
               setFormData({ ...formData, ethRpcUrl: e.target.value })
             }
-            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50 font-mono text-xs"
+            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-none focus:border-emerald-500/50 font-mono text-xs"
             placeholder="https://arb1.arbitrum.io/rpc"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="block text-xs text-zinc-500 mb-1.5">
+            Eth Account Address
+          </label>
+          <input
+            type="text"
+            value={formData.ethAcctAddr}
+            onChange={(e) =>
+              setFormData({ ...formData, ethAcctAddr: e.target.value })
+            }
+            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-none focus:border-emerald-500/50 font-mono text-xs"
+            placeholder="0x..."
           />
         </div>
         <div>
@@ -152,7 +163,7 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
             onChange={(e) =>
               setFormData({ ...formData, naapApiKey: e.target.value })
             }
-            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50 font-mono text-xs"
+            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-none focus:border-emerald-500/50 font-mono text-xs"
             placeholder="Leave empty to disable metrics reporting"
           />
         </div>

@@ -3,16 +3,7 @@ export const dynamic = "force-dynamic";
 import { db } from "@/db/index";
 import { signerConfig, streamSessions, transactions, users, endUsers } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { runMigrations } from "@/db/migrate";
 import DashboardLayout from "@/components/DashboardLayout";
-
-let migrated = false;
-function ensureMigrated() {
-  if (!migrated) {
-    runMigrations();
-    migrated = true;
-  }
-}
 
 function formatWei(wei: string): string {
   if (wei === "0") return "0 ETH";
@@ -23,8 +14,6 @@ function formatWei(wei: string): string {
 }
 
 export default function DashboardPage() {
-  ensureMigrated();
-
   const signer = db
     .select()
     .from(signerConfig)

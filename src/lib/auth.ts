@@ -35,11 +35,52 @@ export function createSession(opts: {
     expiresInDays = 90,
   } = opts;
 
+  return createSessionWithExpiryMs({
+    userId,
+    endUserId,
+    label,
+    scopes,
+    expiresInMs: expiresInDays * 24 * 60 * 60 * 1000,
+  });
+}
+
+export function createShortLivedSession(opts: {
+  userId?: string;
+  endUserId?: string;
+  label?: string;
+  scopes?: string;
+  expiresInMinutes: number;
+}): { sessionId: string; token: string } {
+  const {
+    userId,
+    endUserId,
+    label,
+    scopes = "gateway",
+    expiresInMinutes,
+  } = opts;
+
+  return createSessionWithExpiryMs({
+    userId,
+    endUserId,
+    label,
+    scopes,
+    expiresInMs: expiresInMinutes * 60 * 1000,
+  });
+}
+
+function createSessionWithExpiryMs(opts: {
+  userId?: string;
+  endUserId?: string;
+  label?: string;
+  scopes: string;
+  expiresInMs: number;
+}): { sessionId: string; token: string } {
+  const { userId, endUserId, label, scopes, expiresInMs } = opts;
+  const safeExpiresInMs = Math.max(1, Math.floor(expiresInMs));
+
   const { token, hash } = generateBearerToken();
   const sessionId = uuidv4();
-  const expiresAt = new Date(
-    Date.now() + expiresInDays * 24 * 60 * 60 * 1000
-  ).toISOString();
+  const expiresAt = new Date(Date.now() + safeExpiresInMs).toISOString();
 
   db.insert(sessions)
     .values({

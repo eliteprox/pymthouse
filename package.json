@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "predev": "npm run db:prepare",
+    "dev": "next dev --turbopack -p 3001",
+    "prebuild": "npm run db:prepare",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -11,7 +13,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "proto:compile": "pbjs -t static-module -w es6 -o src/lib/proto-generated.js proto/lp_rpc.proto && pbts -o src/lib/proto-generated.d.ts src/lib/proto-generated.js",
-    "bootstrap": "npx tsx scripts/bootstrap-admin.ts"
+    "bootstrap": "npx tsx scripts/bootstrap-admin.ts",
+    "db:prepare": "npx tsx scripts/db-migrate.ts"
   },
   "dependencies": {
     "@privy-io/node": "^0.9.0",

@@ -1,21 +1,23 @@
 "use client";
 
 import { signIn, useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export default function LoginPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const callbackUrl = searchParams.get("callbackUrl") || "/";
 
   useEffect(() => {
     if (status === "authenticated" && session) {
-      router.push("/");
+      router.push(callbackUrl);
     }
-  }, [session, status, router]);
+  }, [session, status, router, callbackUrl]);
 
   async function handleTokenLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -33,7 +35,7 @@ export default function LoginPage() {
       setError("Invalid token or insufficient permissions. Need an admin-scoped pmth_ token.");
       setLoading(false);
     } else if (result?.ok) {
-      router.push("/");
+      router.push(callbackUrl);
     }
   }
 
@@ -107,7 +109,7 @@ export default function LoginPage() {
           </p>
           <div className="space-y-3">
             <button
-              onClick={() => signIn("google", { callbackUrl: "/" })}
+              onClick={() => signIn("google", { callbackUrl })}
               className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-zinc-700 rounded-lg hover:bg-zinc-800/50 transition-colors text-sm font-medium text-zinc-200"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -132,7 +134,7 @@ export default function LoginPage() {
             </button>
 
             <button
-              onClick={() => signIn("github", { callbackUrl: "/" })}
+              onClick={() => signIn("github", { callbackUrl })}
               className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-zinc-700 rounded-lg hover:bg-zinc-800/50 transition-colors text-sm font-medium text-zinc-200"
             >
               <svg

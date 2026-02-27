@@ -1,9 +1,9 @@
-import { sqlite } from "./index";
+import type { Database } from "better-sqlite3";
 
 /**
  * Run migrations -- create tables + seed singleton signer config.
  */
-export function runMigrations() {
+export function runMigrations(sqlite: Database) {
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -93,6 +93,11 @@ export function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_transactions_end_user_id ON transactions(end_user_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_stream_session_id ON transactions(stream_session_id);
   `);
+
+  // Backfill newer signer_config fields for existing databases.
+  try {
+    sqlite.exec("ALTER TABLE signer_config ADD COLUMN eth_acct_addr TEXT;");
+  } catch {}
 
   // Seed singleton signer config if it doesn't exist
   const existing = sqlite

@@ -45,10 +45,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Docker Compose control actions
+    const signer = db
+      .select()
+      .from(signerConfig)
+      .where(eq(signerConfig.id, "default"))
+      .get();
     const composeCmd = getComposeCommand(action);
+    const composeEnv = buildSignerComposeEnv(signer);
     const { stdout, stderr } = await execAsync(composeCmd, {
       cwd: process.cwd(),
       timeout: 30000,
+      env: composeEnv,
     });
 
     // Update status based on action
@@ -103,6 +110,23 @@ function getComposeCommand(action: string): string {
     default:
       throw new Error(`Unknown action: ${action}`);
   }
+}
+
+function buildSignerComposeEnv(
+  signer:
+    | {
+        ethRpcUrl: string;
+        ethAcctAddr: string | null;
+        ethAddress: string | null;
+      }
+    | undefined
+): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    SIGNER_NETWORK: "arbitrum-one-mainnet",
+    ETH_RPC_URL: signer?.ethRpcUrl ?? "",
+    SIGNER_ETH_ADDR: signer?.ethAcctAddr || "",
+  };
 }
 
 async function getAdminUser(request: NextRequest) {

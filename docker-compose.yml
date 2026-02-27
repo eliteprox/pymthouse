@@ -8,11 +8,11 @@ services:
       - -cliAddr=0.0.0.0:4935
       - -ethUrl=${ETH_RPC_URL:-http://nyc-router.eliteencoder.net:3517}
       - -ethPassword=/data/.eth-password
-      - -ethAcctAddr=${SIGNER_ETH_ADDR:-}
+      - -ethAcctAddr=${SIGNER_ETH_ADDR:-0x0074780feff1fd0277fad6ccdb5a29908df6051f}
       - -datadir=/data
       - -v=99
     volumes:
-      - livepeer-data:/data
+      - ./data:/data
     entrypoint:
       - /bin/sh
       - -c
@@ -40,5 +40,3 @@ services:
       retries: 3
       start_period: 30s
 
-volumes:
-  livepeer-data:

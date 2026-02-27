@@ -32,6 +32,7 @@ export const signerConfig = sqliteTable("signer_config", {
   id: text("id").primaryKey().default("default"),
   name: text("name").notNull().default("pymthouse signer"),
   ethAddress: text("eth_address"), // read from go-livepeer /status
+  ethAcctAddr: text("eth_acct_addr"), // configured eth account to pass at start
   network: text("network").notNull().default("arbitrum-one-mainnet"),
   ethRpcUrl: text("eth_rpc_url").notNull().default("https://arb1.arbitrum.io/rpc"),
   signerPort: integer("signer_port").notNull().default(8935),

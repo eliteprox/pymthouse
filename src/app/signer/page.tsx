@@ -53,12 +53,6 @@ export default function SignerPage() {
     error: "bg-red-500/20 text-red-400 border-red-500/30",
   };
 
-  // Read env vars for display (these drive docker-compose)
-  const envEthRpc =
-    process.env.ETH_RPC_URL || "http://nyc-router.eliteencoder.net:3517";
-  const envNetwork = process.env.SIGNER_NETWORK || "arbitrum-one-mainnet";
-  const envEthAddr = process.env.SIGNER_ETH_ADDR || "";
-
   return (
     <DashboardLayout>
       <div className="mb-8">
@@ -94,13 +88,13 @@ export default function SignerPage() {
           </p>
         </div>
         <div className="font-mono text-sm">
-          <ConfigRow label="Network" value={envNetwork} />
+          <ConfigRow label="Network" value={signer.network} />
           <ConfigRow label="HttpAddr" value="0.0.0.0:8935" />
           <ConfigRow label="CliAddr" value="0.0.0.0:4935" />
-          <ConfigRow label="EthUrl" value={envEthRpc} />
+          <ConfigRow label="EthUrl" value={signer.ethRpcUrl} />
           <ConfigRow
             label="EthAcctAddr"
-            value={signer.ethAddress || envEthAddr || "(auto-generated)"}
+            value={signer.ethAcctAddr || signer.ethAddress || "(auto-generated)"}
             mono
           />
           <ConfigRow label="EthPassword" value="***" />
@@ -146,6 +140,7 @@ export default function SignerPage() {
             name: signer.name,
             network: signer.network,
             ethRpcUrl: signer.ethRpcUrl,
+            ethAcctAddr: signer.ethAcctAddr,
             defaultCutPercent: signer.defaultCutPercent,
             billingMode: signer.billingMode,
             naapApiKey: signer.naapApiKey,

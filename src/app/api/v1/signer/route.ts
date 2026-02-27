@@ -7,6 +7,8 @@ import { eq } from "drizzle-orm";
 import { authenticateRequest, hasScope } from "@/lib/auth";
 import { syncSignerStatus } from "@/lib/signer-proxy";
 
+const SUPPORTED_NETWORK = "arbitrum-one-mainnet";
+
 /**
  * GET /api/v1/signer -- Get singleton signer status + config
  */
@@ -49,16 +51,16 @@ export async function PATCH(request: NextRequest) {
 
   if (body.name !== undefined) updates.name = body.name;
   if (body.network !== undefined) {
-    const valid = ["arbitrum-one-mainnet", "mainnet"];
-    if (!valid.includes(body.network)) {
+    if (body.network !== SUPPORTED_NETWORK) {
       return NextResponse.json(
-        { error: `Invalid network. Must be one of: ${valid.join(", ")}` },
+        { error: `Invalid network. Must be: ${SUPPORTED_NETWORK}` },
         { status: 400 }
       );
     }
-    updates.network = body.network;
+    updates.network = SUPPORTED_NETWORK;
   }
   if (body.ethRpcUrl !== undefined) updates.ethRpcUrl = body.ethRpcUrl;
+  if (body.ethAcctAddr !== undefined) updates.ethAcctAddr = body.ethAcctAddr;
   if (body.defaultCutPercent !== undefined)
     updates.defaultCutPercent = body.defaultCutPercent;
   if (body.billingMode !== undefined) updates.billingMode = body.billingMode;

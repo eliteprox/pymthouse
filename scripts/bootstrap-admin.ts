@@ -60,7 +60,7 @@ sqlite.exec(`
     id TEXT PRIMARY KEY DEFAULT 'default',
     name TEXT NOT NULL DEFAULT 'pymthouse signer',
     eth_address TEXT,
-    network TEXT NOT NULL DEFAULT 'arbitrum-mainnet',
+    network TEXT NOT NULL DEFAULT 'arbitrum-one-mainnet',
     eth_rpc_url TEXT NOT NULL DEFAULT 'https://arb1.arbitrum.io/rpc',
     signer_port INTEGER NOT NULL DEFAULT 8935,
     status TEXT NOT NULL DEFAULT 'stopped',
@@ -83,7 +83,7 @@ const existingSigner = sqlite
 if (!existingSigner) {
   sqlite
     .prepare(
-      "INSERT INTO signer_config (id, name, network, eth_rpc_url, status, default_cut_percent, billing_mode, created_at) VALUES ('default', 'pymthouse signer', 'arbitrum-mainnet', 'https://arb1.arbitrum.io/rpc', 'stopped', 15.0, 'delegated', ?)"
+      "INSERT INTO signer_config (id, name, network, eth_rpc_url, status, default_cut_percent, billing_mode, created_at) VALUES ('default', 'pymthouse signer', 'arbitrum-one-mainnet', 'https://arb1.arbitrum.io/rpc', 'stopped', 15.0, 'delegated', ?)"
     )
     .run(new Date().toISOString());
 }
