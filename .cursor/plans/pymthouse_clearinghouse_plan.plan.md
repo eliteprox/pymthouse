@@ -412,7 +412,7 @@ erDiagram
 
 
 
-**New table: `StreamSession**` -- tracks every active stream through the proxy. Created on first `/generate-live-payment` call for a new ManifestID, updated on each subsequent call. This is the bridge between OAuth identity and go-livepeer payment value.
+**New table: `StreamSession`** -- tracks every active stream through the proxy. Created on first `/generate-live-payment` call for a new ManifestID, updated on each subsequent call. This is the bridge between OAuth identity and go-livepeer payment value.
 
 ## Key Flows
 

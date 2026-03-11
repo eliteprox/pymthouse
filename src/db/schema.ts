@@ -96,6 +96,71 @@ export const transactions = sqliteTable("transactions", {
     .$defaultFn(() => new Date().toISOString()),
 });
 
+// ============================================
+// OIDC Provider Tables
+// ============================================
+
+// RS256 signing keys for OIDC id_tokens and access_tokens
+export const oidcSigningKeys = sqliteTable("oidc_signing_keys", {
+  id: text("id").primaryKey(),
+  kid: text("kid").notNull().unique(), // Key ID for JWKS
+  algorithm: text("algorithm").notNull().default("RS256"),
+  publicKeyPem: text("public_key_pem").notNull(),
+  privateKeyPem: text("private_key_pem").notNull(),
+  active: integer("active").notNull().default(1), // 1 = active, 0 = rotated
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  rotatedAt: text("rotated_at"),
+});
+
+// OIDC client registrations (naap, future services)
+export const oidcClients = sqliteTable("oidc_clients", {
+  id: text("id").primaryKey(),
+  clientId: text("client_id").notNull().unique(),
+  clientSecretHash: text("client_secret_hash"), // null for public clients
+  displayName: text("display_name").notNull(),
+  redirectUris: text("redirect_uris").notNull(), // JSON array of allowed URIs
+  allowedScopes: text("allowed_scopes").notNull().default("openid profile email"),
+  grantTypes: text("grant_types").notNull().default("authorization_code,refresh_token"), // comma-separated
+  tokenEndpointAuthMethod: text("token_endpoint_auth_method").notNull().default("none"), // none | client_secret_post | client_secret_basic
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+// Authorization codes (short-lived, one-time use)
+export const oidcAuthCodes = sqliteTable("oidc_auth_codes", {
+  id: text("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  clientId: text("client_id").notNull(),
+  userId: text("user_id").notNull().references(() => users.id),
+  scopes: text("scopes").notNull(),
+  nonce: text("nonce"),
+  codeChallenge: text("code_challenge"),
+  codeChallengeMethod: text("code_challenge_method"), // S256 | plain
+  redirectUri: text("redirect_uri").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  consumedAt: text("consumed_at"),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+// Refresh tokens for token renewal
+export const oidcRefreshTokens = sqliteTable("oidc_refresh_tokens", {
+  id: text("id").primaryKey(),
+  tokenHash: text("token_hash").notNull().unique(),
+  clientId: text("client_id").notNull(),
+  userId: text("user_id").notNull().references(() => users.id),
+  scopes: text("scopes").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  revokedAt: text("revoked_at"),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
 // Type exports
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -106,3 +171,7 @@ export type EndUser = typeof endUsers.$inferSelect;
 export type NewEndUser = typeof endUsers.$inferInsert;
 export type StreamSession = typeof streamSessions.$inferSelect;
 export type Transaction = typeof transactions.$inferSelect;
+export type OidcSigningKey = typeof oidcSigningKeys.$inferSelect;
+export type OidcClient = typeof oidcClients.$inferSelect;
+export type OidcAuthCode = typeof oidcAuthCodes.$inferSelect;
+export type OidcRefreshToken = typeof oidcRefreshTokens.$inferSelect;

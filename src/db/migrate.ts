@@ -92,6 +92,61 @@ export function runMigrations(sqlite: Database) {
     CREATE INDEX IF NOT EXISTS idx_stream_sessions_end_user_id ON stream_sessions(end_user_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_end_user_id ON transactions(end_user_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_stream_session_id ON transactions(stream_session_id);
+
+    -- OIDC Provider tables
+    CREATE TABLE IF NOT EXISTS oidc_signing_keys (
+      id TEXT PRIMARY KEY,
+      kid TEXT NOT NULL UNIQUE,
+      algorithm TEXT NOT NULL DEFAULT 'RS256',
+      public_key_pem TEXT NOT NULL,
+      private_key_pem TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      rotated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS oidc_clients (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL UNIQUE,
+      client_secret_hash TEXT,
+      display_name TEXT NOT NULL,
+      redirect_uris TEXT NOT NULL,
+      allowed_scopes TEXT NOT NULL DEFAULT 'openid profile email',
+      grant_types TEXT NOT NULL DEFAULT 'authorization_code,refresh_token',
+      token_endpoint_auth_method TEXT NOT NULL DEFAULT 'none',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS oidc_auth_codes (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      client_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      scopes TEXT NOT NULL,
+      nonce TEXT,
+      code_challenge TEXT,
+      code_challenge_method TEXT,
+      redirect_uri TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      consumed_at TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS oidc_refresh_tokens (
+      id TEXT PRIMARY KEY,
+      token_hash TEXT NOT NULL UNIQUE,
+      client_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      scopes TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_oidc_signing_keys_kid ON oidc_signing_keys(kid);
+    CREATE INDEX IF NOT EXISTS idx_oidc_clients_client_id ON oidc_clients(client_id);
+    CREATE INDEX IF NOT EXISTS idx_oidc_auth_codes_code ON oidc_auth_codes(code);
+    CREATE INDEX IF NOT EXISTS idx_oidc_refresh_tokens_token_hash ON oidc_refresh_tokens(token_hash);
   `);
 
   // Backfill newer signer_config fields for existing databases.
