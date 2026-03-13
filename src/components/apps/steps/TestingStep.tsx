@@ -33,11 +33,30 @@ export default function TestingStep({
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
-  const addRedirectUri = () => {
+  const addRedirectUri = async () => {
     const uri = newUri.trim();
-    if (uri && !redirectUris.includes(uri)) {
-      onRedirectUrisChange([...redirectUris, uri]);
-      setNewUri("");
+    if (!uri || redirectUris.includes(uri)) return;
+    onRedirectUrisChange([...redirectUris, uri]);
+    setNewUri("");
+
+    // Auto-add the domain to the whitelist if not already present
+    if (appId) {
+      try {
+        const origin = new URL(uri).origin;
+        if (origin !== "null" && !domains.some((d) => d.domain === origin)) {
+          const res = await fetch(`/api/v1/apps/${appId}/domains`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ domain: origin }),
+          });
+          if (res.ok) {
+            const resData = await res.json();
+            onDomainsChange([...domains, { id: resData.id, domain: resData.domain }]);
+          }
+        }
+      } catch {
+        // Invalid URL or wildcard URI — skip auto-whitelisting
+      }
     }
   };
 
