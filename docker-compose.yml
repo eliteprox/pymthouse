@@ -1,6 +1,6 @@
 services:
   go-livepeer:
-    image: livepeer/go-livepeer:latest
+    image: livepeer/go-livepeer:0.8.10
     command:
       - -remoteSigner
       - -network=${SIGNER_NETWORK:-arbitrum-one-mainnet}
