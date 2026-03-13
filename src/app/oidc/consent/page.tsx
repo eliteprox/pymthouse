@@ -1,7 +1,11 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/next-auth-options";
+import { db } from "@/db/index";
+import { developerApps } from "@/db/schema";
 import { getClient } from "@/lib/oidc/clients";
+import { getScopeDefinition } from "@/lib/oidc/scopes";
+import { eq } from "drizzle-orm";
 import ConsentForm from "./consent-form";
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -11,13 +15,25 @@ function asSingleValue(value: string | string[] | undefined): string | null {
   return value || null;
 }
 
-const SCOPE_DESCRIPTIONS: Record<string, string> = {
-  openid: "Verify your identity",
-  profile: "Access your name and profile info",
-  email: "Access your email address",
-  plan: "Access your subscription plan",
-  entitlements: "Access your entitled features and capabilities",
-};
+function getHostLabel(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+function getExternalHref(value: string): string {
+  if (value.startsWith("http://") || value.startsWith("https://")) {
+    return value;
+  }
+
+  if (value.includes("@") && !value.startsWith("mailto:")) {
+    return `mailto:${value}`;
+  }
+
+  return value;
+}
 
 export default async function ConsentPage({
   searchParams,
@@ -79,19 +95,43 @@ export default async function ConsentPage({
     );
   }
 
-  const scopes = scope.split(/\s+/).filter(Boolean);
+  const developerApp = db
+    .select({
+      name: developerApps.name,
+      developerName: developerApps.developerName,
+      websiteUrl: developerApps.websiteUrl,
+      privacyPolicyUrl: developerApps.privacyPolicyUrl,
+      supportUrl: developerApps.supportUrl,
+    })
+    .from(developerApps)
+    .where(eq(developerApps.oidcClientId, client.id))
+    .get();
+
+  // Intersect requested scopes with what this client actually allows,
+  // so stale or unknown scopes in the request URL never appear on screen.
+  const scopes = scope.split(/\s+/).filter((s) => client.allowedScopes.includes(s));
   const scopeItems = scopes.map((s) => ({
     name: s,
-    description: SCOPE_DESCRIPTIONS[s] || `Access ${s} data`,
+    label: getScopeDefinition(s)?.label || s,
+    description:
+      getScopeDefinition(s)?.description ||
+      "Access information associated with this permission",
+    required: getScopeDefinition(s)?.required || false,
   }));
+  const approvedScopeString = scopes.join(" ");
+  const signedInAs = session.user.name || session.user.email || "Your PymtHouse account";
+  const redirectHost = getHostLabel(redirectUri);
+  const websiteHost = developerApp?.websiteUrl
+    ? getHostLabel(developerApp.websiteUrl)
+    : null;
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-6">
-      <div className="max-w-md w-full border border-zinc-800 bg-zinc-900/40 rounded-xl p-6">
-        <div className="text-center mb-6">
-          <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center mx-auto mb-4">
+      <div className="max-w-2xl w-full border border-zinc-800 bg-zinc-900/60 rounded-2xl p-6 sm:p-8 shadow-2xl shadow-black/30">
+        <div className="flex items-start gap-4 mb-6">
+          <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shrink-0">
             <svg
-              className="w-8 h-8 text-white"
+              className="w-7 h-7 text-white"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -104,44 +144,161 @@ export default async function ConsentPage({
               />
             </svg>
           </div>
-          <h1 className="text-xl font-semibold text-zinc-100">
-            Authorize {client.displayName}
-          </h1>
-          <p className="text-sm text-zinc-400 mt-1">
-            {client.displayName} wants to access your account
-          </p>
+          <div className="min-w-0">
+            <div className="inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-emerald-300">
+              Permission Request
+            </div>
+            <h1 className="text-2xl font-semibold text-zinc-100 mt-3">
+              Review access for {client.displayName}
+            </h1>
+            <p className="text-sm text-zinc-400 mt-2 max-w-xl">
+              Approve this only if you trust this application and expect to return
+              to <span className="text-zinc-200">{redirectHost}</span>.
+            </p>
+          </div>
         </div>
 
-        <div className="bg-zinc-800/50 rounded-lg p-4 mb-6">
-          <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">
-            This will allow the application to:
-          </p>
-          <ul className="space-y-2">
+        <div className="grid gap-3 sm:grid-cols-2 mb-6">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">
+              Application
+            </p>
+            <p className="text-sm font-medium text-zinc-100 mt-2">
+              {developerApp?.name || client.displayName}
+            </p>
+            <p className="text-sm text-zinc-400 mt-1">
+              {developerApp?.developerName
+                ? `Built by ${developerApp.developerName}`
+                : "Registered PymtHouse application"}
+            </p>
+            {websiteHost && (
+              <p className="text-xs text-zinc-500 mt-2">
+                Website: <span className="text-zinc-300">{websiteHost}</span>
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4">
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">
+              Signed In As
+            </p>
+            <p className="text-sm font-medium text-zinc-100 mt-2">{signedInAs}</p>
+            {session.user.email && (
+              <p className="text-sm text-zinc-400 mt-1">{session.user.email}</p>
+            )}
+            <p className="text-xs text-zinc-500 mt-2">
+              You can deny this request if this is not the account you want to use.
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 mb-6">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-100">
+                Requested Access
+              </h2>
+              <p className="text-xs text-zinc-500 mt-1">
+                Only the permissions listed below will be shared with this app.
+              </p>
+            </div>
+            <div className="rounded-full border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-400">
+              {scopeItems.length} permission{scopeItems.length === 1 ? "" : "s"}
+            </div>
+          </div>
+          <ul className="space-y-3">
             {scopeItems.map((item) => (
-              <li key={item.name} className="flex items-start gap-3">
-                <svg
-                  className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-                <span className="text-sm text-zinc-300">{item.description}</span>
+              <li
+                key={item.name}
+                className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
+                    <svg
+                      className="w-4 h-4 text-emerald-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-zinc-100">
+                      {item.label}
+                      {item.required && (
+                        <span className="ml-2 text-xs font-normal text-zinc-500">
+                          Required
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-sm text-zinc-400 mt-1">
+                      {item.description}
+                    </p>
+                  </div>
+                </div>
               </li>
             ))}
           </ul>
         </div>
 
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 mb-6">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-zinc-500">
+            After You Continue
+          </p>
+          <p className="text-sm text-zinc-300 mt-2">
+            PymtHouse will send you back to{" "}
+            <span className="text-zinc-100">{redirectHost}</span> to finish sign-in.
+          </p>
+          <p className="text-xs text-zinc-500 mt-2 break-all">{redirectUri}</p>
+        </div>
+
+        {(developerApp?.websiteUrl ||
+          developerApp?.privacyPolicyUrl ||
+          developerApp?.supportUrl) && (
+          <div className="flex flex-wrap gap-4 text-xs text-zinc-400 mb-6">
+            {developerApp?.websiteUrl && (
+              <a
+                href={getExternalHref(developerApp.websiteUrl)}
+                target="_blank"
+                rel="noreferrer"
+                className="hover:text-zinc-200 transition-colors"
+              >
+                Website
+              </a>
+            )}
+            {developerApp?.privacyPolicyUrl && (
+              <a
+                href={getExternalHref(developerApp.privacyPolicyUrl)}
+                target="_blank"
+                rel="noreferrer"
+                className="hover:text-zinc-200 transition-colors"
+              >
+                Privacy Policy
+              </a>
+            )}
+            {developerApp?.supportUrl && (
+              <a
+                href={getExternalHref(developerApp.supportUrl)}
+                target="_blank"
+                rel="noreferrer"
+                className="hover:text-zinc-200 transition-colors"
+              >
+                Support
+              </a>
+            )}
+          </div>
+        )}
+
         <ConsentForm
           clientId={clientId}
           redirectUri={redirectUri}
-          scope={scope}
+          scope={approvedScopeString}
           state={state}
           nonce={nonce}
           codeChallenge={codeChallenge}
@@ -149,7 +306,8 @@ export default async function ConsentPage({
         />
 
         <p className="text-xs text-zinc-500 text-center mt-4">
-          By authorizing, you agree to share the above information with {client.displayName}.
+          By authorizing, you let {client.displayName} access only the permissions
+          listed above.
         </p>
       </div>
     </main>

@@ -5,6 +5,7 @@ import { db } from "@/db/index";
 import { developerApps, oidcClients, appAllowedDomains } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { updateClientConfig } from "@/lib/oidc/clients";
+import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
 
 async function getAuthenticatedOwner(appId: string) {
   const session = await getServerSession(authOptions);
@@ -69,7 +70,7 @@ export async function GET(
   const effectiveScopes =
     app.status === "approved" && app.pendingScopes != null
       ? app.pendingScopes
-      : clientInfo?.allowedScopes ?? "openid profile email";
+      : clientInfo?.allowedScopes ?? DEFAULT_OIDC_SCOPES;
   const effectiveGrantTypes =
     app.status === "approved" && app.pendingGrantTypes != null
       ? app.pendingGrantTypes

@@ -7,6 +7,7 @@ import AppWizard, {
   type AppFormData,
   type AppState,
 } from "@/components/apps/AppWizard";
+import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   draft: { label: "Draft", color: "bg-zinc-700 text-zinc-300" },
@@ -44,7 +45,7 @@ export default function AppDetailPage() {
             demoRecordingUrl: data.demoRecordingUrl || "",
             linksToPurchases: !!data.linksToPurchases,
             redirectUris: data.oidcClient?.redirectUris || [],
-            allowedScopes: data.oidcClient?.allowedScopes || "openid profile email",
+            allowedScopes: data.oidcClient?.allowedScopes || DEFAULT_OIDC_SCOPES,
             grantTypes: data.oidcClient?.grantTypes?.split(",").filter(Boolean) || [
               "authorization_code",
               "refresh_token",

@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import type { AppFormData, AppState } from "../AppWizard";
+import { getScopeDefinition } from "@/lib/oidc/scopes";
 
 interface Props {
   data: AppFormData;
@@ -22,6 +23,11 @@ export default function ReviewSubmitStep({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const scopeSummary = data.allowedScopes
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((scope) => getScopeDefinition(scope)?.label || scope)
+    .join(", ");
 
   const saveFields = useCallback(async () => {
     if (!appState.id) return;
@@ -258,7 +264,7 @@ export default function ReviewSubmitStep({
             },
             {
               label: "Scopes",
-              value: data.allowedScopes,
+              value: scopeSummary,
             },
             {
               label: "Redirect URIs",

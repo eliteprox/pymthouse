@@ -3,6 +3,7 @@ import { oidcClients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { createHash, randomBytes } from "crypto";
+import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
 
 export interface OidcClientConfig {
   clientId: string;
@@ -30,7 +31,7 @@ export function registerClient(config: OidcClientConfig): void {
       .set({
         displayName: config.displayName,
         redirectUris: JSON.stringify(config.redirectUris),
-        allowedScopes: config.allowedScopes || "openid profile email",
+        allowedScopes: config.allowedScopes || DEFAULT_OIDC_SCOPES,
         grantTypes: (config.grantTypes || ["authorization_code", "refresh_token"]).join(","),
         tokenEndpointAuthMethod: config.tokenEndpointAuthMethod || "none",
         clientSecretHash: config.clientSecret
@@ -51,7 +52,7 @@ export function registerClient(config: OidcClientConfig): void {
         : null,
       displayName: config.displayName,
       redirectUris: JSON.stringify(config.redirectUris),
-      allowedScopes: config.allowedScopes || "openid profile email",
+      allowedScopes: config.allowedScopes || DEFAULT_OIDC_SCOPES,
       grantTypes: (config.grantTypes || ["authorization_code", "refresh_token"]).join(","),
       tokenEndpointAuthMethod: config.tokenEndpointAuthMethod || "none",
     })
@@ -147,7 +148,7 @@ export function createAppClient(displayName: string): {
       clientSecretHash: null,
       displayName,
       redirectUris: JSON.stringify([]),
-      allowedScopes: "openid profile email",
+      allowedScopes: DEFAULT_OIDC_SCOPES,
       grantTypes: "authorization_code,refresh_token",
       tokenEndpointAuthMethod: "none",
     })
@@ -227,7 +228,7 @@ export function seedNaapClient(): void {
       "https://*.naap.dev/api/v1/auth/providers/*/callback",
       "https://*.vercel.app/api/v1/auth/providers/*/callback",
     ],
-    allowedScopes: "openid profile email plan entitlements",
+    allowedScopes: "openid profile plan entitlements",
     grantTypes: ["authorization_code", "refresh_token"],
     tokenEndpointAuthMethod: "none", // Public client (SPA/redirect flow)
   });

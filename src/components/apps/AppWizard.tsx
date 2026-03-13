@@ -5,11 +5,12 @@ import AppInfoStep from "./steps/AppInfoStep";
 import AuthAndDomainsStep from "./steps/AuthAndDomainsStep";
 import TestingStep from "./steps/TestingStep";
 import ReviewSubmitStep from "./steps/ReviewSubmitStep";
+import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
 
 const STEPS = [
   { label: "App Info", key: "info" },
-  { label: "Auth & Domains", key: "auth" },
-  { label: "Testing", key: "testing" },
+  { label: "Auth & Scopes", key: "auth" },
+  { label: "Domains & Testing", key: "testing" },
   { label: "Submit", key: "submit" },
 ] as const;
 
@@ -53,7 +54,7 @@ const defaultFormData: AppFormData = {
   websiteUrl: "",
   tokenEndpointAuthMethod: "none",
   redirectUris: [],
-  allowedScopes: "openid profile email",
+  allowedScopes: DEFAULT_OIDC_SCOPES,
   grantTypes: ["authorization_code", "refresh_token"],
   supportUrl: "",
   privacyPolicyUrl: "",
@@ -205,9 +206,6 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
           <AuthAndDomainsStep
             data={formData}
             onChange={updateFormData}
-            appId={appState.id}
-            domains={domains}
-            onDomainsChange={setDomains}
           />
         )}
         {step === 2 && (
@@ -215,6 +213,10 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
             appId={appState.id}
             clientId={appState.clientId}
             redirectUris={formData.redirectUris}
+            onRedirectUrisChange={(uris) => updateFormData({ redirectUris: uris })}
+            allowedScopes={formData.allowedScopes}
+            domains={domains}
+            onDomainsChange={setDomains}
             hasSecret={appState.hasSecret}
             onSecretGenerated={() =>
               setAppState((s) => ({ ...s, hasSecret: true }))
