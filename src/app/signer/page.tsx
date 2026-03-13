@@ -10,6 +10,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import SignerControlPanel from "@/components/SignerControlPanel";
 import SignerConfigForm from "@/components/SignerConfigForm";
 import SignerLogs from "@/components/SignerLogs";
+import SignerLiveStats from "@/components/SignerLiveStats";
 
 function formatWei(wei: string | null): string {
   if (!wei || wei === "0") return "0 WEI";
@@ -132,10 +133,13 @@ export default async function SignerPage() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Live signer state from CLI port 4935 */}
+      <div className="border border-zinc-800 rounded-xl p-6 bg-zinc-900/30 mb-8">
+        <SignerLiveStats />
+      </div>
+
+      {/* Activity stats from DB */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Deposit" value={formatWei(signer.depositWei)} />
-        <StatCard label="Reserve" value={formatWei(signer.reserveWei)} />
         <StatCard
           label="Active Streams"
           value={activeSessions.length.toString()}

@@ -43,6 +43,7 @@ services:
       - --
     ports:
       - "${SIGNER_PORT:-8081}:${SIGNER_PORT:-8081}"  # httpAddr - signer HTTP API
+      - "127.0.0.1:4935:4935"  # cliAddr - admin CLI API (localhost only, not exposed externally)
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:${SIGNER_PORT:-8081}/status"]

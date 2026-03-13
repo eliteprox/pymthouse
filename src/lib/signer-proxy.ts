@@ -9,6 +9,7 @@ import {
   calculateLv2vPixels,
 } from "./proto";
 import type { AuthResult } from "./auth";
+import { getSenderInfo } from "./signer-cli";
 
 export interface ProxyResult {
   status: number;
@@ -279,12 +280,21 @@ export async function syncSignerStatus(): Promise<{
     status = "stopped";
   }
 
+  // Fetch deposit/reserve from CLI port (same data livepeer_cli reads).
+  // Best-effort: only updates if the CLI is reachable.
+  const dbSet: Record<string, unknown> = {
+    status,
+    ethAddress: ethAddress || null,
+    lastError,
+  };
+  const senderInfo = await getSenderInfo();
+  if (senderInfo) {
+    dbSet.depositWei = senderInfo.deposit;
+    dbSet.reserveWei = senderInfo.reserve.fundsRemaining;
+  }
+
   db.update(signerConfig)
-    .set({
-      status,
-      ethAddress: ethAddress || null,
-      lastError,
-    })
+    .set(dbSet)
     .where(eq(signerConfig.id, "default"))
     .run();
 
