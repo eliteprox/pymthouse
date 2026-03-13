@@ -41,14 +41,7 @@ export function normalizeDomainWhitelist(input: string): NormalizeResult {
     return { success: false, error: "Domain cannot be empty" };
   }
 
-  // Strip path, query, fragment - keep only scheme://host:port
-  // First, find where the authority ends (after host:port)
-  const pathIndex = trimmed.search(/[/?#]/);
-  if (pathIndex !== -1) {
-    trimmed = trimmed.slice(0, pathIndex);
-  }
-
-  // Remove trailing slashes just in case
+  // Remove trailing slashes for bare host input like "example.com///"
   trimmed = trimmed.replace(/\/+$/, "");
 
   // Parse scheme and host:port
@@ -59,9 +52,19 @@ export function normalizeDomainWhitelist(input: string): NormalizeResult {
   if (schemeMatch) {
     scheme = schemeMatch[1].toLowerCase();
     hostPort = trimmed.slice(schemeMatch[0].length);
+    // For full URLs, ignore path/query/fragment and keep only authority.
+    const authorityEnd = hostPort.search(/[/?#]/);
+    if (authorityEnd !== -1) {
+      hostPort = hostPort.slice(0, authorityEnd);
+    }
   } else {
     // No scheme provided - determine based on host
     hostPort = trimmed;
+    // For host input without scheme, allow accidental path/query suffixes.
+    const hostEnd = hostPort.search(/[/?#]/);
+    if (hostEnd !== -1) {
+      hostPort = hostPort.slice(0, hostEnd);
+    }
   }
 
   // Parse host and port
