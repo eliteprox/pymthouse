@@ -147,12 +147,63 @@ export function runMigrations(sqlite: Database) {
     CREATE INDEX IF NOT EXISTS idx_oidc_clients_client_id ON oidc_clients(client_id);
     CREATE INDEX IF NOT EXISTS idx_oidc_auth_codes_code ON oidc_auth_codes(code);
     CREATE INDEX IF NOT EXISTS idx_oidc_refresh_tokens_token_hash ON oidc_refresh_tokens(token_hash);
+
+    -- Developer App tables
+    CREATE TABLE IF NOT EXISTS developer_apps (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES users(id),
+      oidc_client_id TEXT REFERENCES oidc_clients(id),
+      name TEXT NOT NULL,
+      subtitle TEXT,
+      description TEXT,
+      category TEXT,
+      logo_light_url TEXT,
+      logo_dark_url TEXT,
+      developer_name TEXT,
+      website_url TEXT,
+      support_url TEXT,
+      privacy_policy_url TEXT,
+      tos_url TEXT,
+      demo_recording_url TEXT,
+      links_to_purchases INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'draft',
+      reviewer_notes TEXT,
+      reviewed_by TEXT REFERENCES users(id),
+      reviewed_at TEXT,
+      submitted_at TEXT,
+      pending_scopes TEXT,
+      pending_grant_types TEXT,
+      pending_revision_submitted_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS app_allowed_domains (
+      id TEXT PRIMARY KEY,
+      app_id TEXT NOT NULL REFERENCES developer_apps(id),
+      domain TEXT NOT NULL,
+      verified INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_developer_apps_owner_id ON developer_apps(owner_id);
+    CREATE INDEX IF NOT EXISTS idx_developer_apps_status ON developer_apps(status);
+    CREATE INDEX IF NOT EXISTS idx_app_allowed_domains_app_id ON app_allowed_domains(app_id);
   `);
 
-  // Backfill newer signer_config fields for existing databases.
-  try {
-    sqlite.exec("ALTER TABLE signer_config ADD COLUMN eth_acct_addr TEXT;");
-  } catch {}
+  // Backfill newer columns for existing databases (ALTER TABLE is idempotent via try/catch).
+  const backfills = [
+    "ALTER TABLE signer_config ADD COLUMN eth_acct_addr TEXT;",
+    "ALTER TABLE sessions ADD COLUMN app_id TEXT;",
+    "ALTER TABLE end_users ADD COLUMN app_id TEXT;",
+    "ALTER TABLE stream_sessions ADD COLUMN app_id TEXT;",
+    "ALTER TABLE developer_apps ADD COLUMN pending_scopes TEXT;",
+    "ALTER TABLE developer_apps ADD COLUMN pending_grant_types TEXT;",
+    "ALTER TABLE developer_apps ADD COLUMN pending_revision_submitted_at TEXT;",
+  ];
+  for (const sql of backfills) {
+    try { sqlite.exec(sql); } catch {}
+  }
 
   // Seed singleton signer config if it doesn't exist
   const existing = sqlite

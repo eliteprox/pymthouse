@@ -23,6 +23,7 @@ export function generateBearerToken(): { token: string; hash: string } {
 export function createSession(opts: {
   userId?: string;
   endUserId?: string;
+  appId?: string;
   label?: string;
   scopes?: string;
   expiresInDays?: number;
@@ -30,6 +31,7 @@ export function createSession(opts: {
   const {
     userId,
     endUserId,
+    appId,
     label,
     scopes = "gateway",
     expiresInDays = 90,
@@ -38,6 +40,7 @@ export function createSession(opts: {
   return createSessionWithExpiryMs({
     userId,
     endUserId,
+    appId,
     label,
     scopes,
     expiresInMs: expiresInDays * 24 * 60 * 60 * 1000,
@@ -47,6 +50,7 @@ export function createSession(opts: {
 export function createShortLivedSession(opts: {
   userId?: string;
   endUserId?: string;
+  appId?: string;
   label?: string;
   scopes?: string;
   expiresInMinutes: number;
@@ -54,6 +58,7 @@ export function createShortLivedSession(opts: {
   const {
     userId,
     endUserId,
+    appId,
     label,
     scopes = "gateway",
     expiresInMinutes,
@@ -62,6 +67,7 @@ export function createShortLivedSession(opts: {
   return createSessionWithExpiryMs({
     userId,
     endUserId,
+    appId,
     label,
     scopes,
     expiresInMs: expiresInMinutes * 60 * 1000,
@@ -71,11 +77,12 @@ export function createShortLivedSession(opts: {
 function createSessionWithExpiryMs(opts: {
   userId?: string;
   endUserId?: string;
+  appId?: string;
   label?: string;
   scopes: string;
   expiresInMs: number;
 }): { sessionId: string; token: string } {
-  const { userId, endUserId, label, scopes, expiresInMs } = opts;
+  const { userId, endUserId, appId, label, scopes, expiresInMs } = opts;
   const safeExpiresInMs = Math.max(1, Math.floor(expiresInMs));
 
   const { token, hash } = generateBearerToken();
@@ -87,6 +94,7 @@ function createSessionWithExpiryMs(opts: {
       id: sessionId,
       userId: userId || null,
       endUserId: endUserId || null,
+      appId: appId || null,
       label: label || null,
       tokenHash: hash,
       scopes,
@@ -105,6 +113,7 @@ export function revokeSession(sessionId: string): boolean {
 export interface AuthResult {
   userId: string | null;
   endUserId: string | null;
+  appId: string | null;
   sessionId: string;
   scopes: string;
   tokenHash: string;
@@ -131,6 +140,7 @@ export function validateBearerToken(token: string): AuthResult | null {
   return {
     userId: session.userId,
     endUserId: session.endUserId,
+    appId: session.appId || null,
     sessionId: session.id,
     scopes: session.scopes,
     tokenHash: hash,

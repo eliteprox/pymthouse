@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 interface ConsentFormProps {
   clientId: string;
@@ -22,7 +21,6 @@ export default function ConsentForm({
   codeChallenge,
   codeChallengeMethod,
 }: ConsentFormProps) {
-  const router = useRouter();
   const [loading, setLoading] = useState(false);
 
   const handleAuthorize = () => {
@@ -38,7 +36,7 @@ export default function ConsentForm({
     if (codeChallenge) params.set("code_challenge", codeChallenge);
     if (codeChallengeMethod) params.set("code_challenge_method", codeChallengeMethod);
 
-    router.push(`/api/v1/oidc/authorize?${params.toString()}`);
+    window.location.href = `/api/v1/oidc/consent/approve?${params.toString()}`;
   };
 
   const handleDeny = () => {

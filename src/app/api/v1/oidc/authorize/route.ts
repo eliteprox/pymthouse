@@ -3,10 +3,11 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
 import { oidcAuthCodes, users } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { getClient, validateRedirectUri, validateScopes } from "@/lib/oidc/clients";
 import { generateAuthorizationCode } from "@/lib/oidc/tokens";
+import { createConsentToken, getConsentCookieOptions, CONSENT_COOKIE_NAME } from "@/lib/oidc/consent-token";
 
 const AUTH_CODE_EXPIRY_SECONDS = 600; // 10 minutes
 
@@ -167,7 +168,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const skipConsent = prompt === "none" || client.clientId === "naap";
 
   if (!skipConsent) {
-    // Redirect to consent page
+    // Redirect to consent page with a signed cookie so approve can verify the user came from consent
     const consentUrl = new URL("/oidc/consent", request.nextUrl.origin);
     consentUrl.searchParams.set("client_id", clientId);
     consentUrl.searchParams.set("redirect_uri", redirectUri);
@@ -178,7 +179,19 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       consentUrl.searchParams.set("code_challenge", codeChallenge);
       consentUrl.searchParams.set("code_challenge_method", codeChallengeMethod);
     }
-    return NextResponse.redirect(consentUrl.toString(), { status: 302 });
+    const consentToken = createConsentToken({
+      clientId,
+      redirectUri,
+      scope: allowedScopes.join(" "),
+      state,
+      nonce: nonce || null,
+      codeChallenge: codeChallenge || null,
+      codeChallengeMethod: codeChallenge ? codeChallengeMethod : null,
+    });
+    const res = NextResponse.redirect(consentUrl.toString(), { status: 302 });
+    const { options } = getConsentCookieOptions();
+    res.cookies.set(CONSENT_COOKIE_NAME, consentToken, options as Record<string, string | number | boolean>);
+    return res;
   }
 
   // Generate authorization code

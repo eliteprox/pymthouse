@@ -1,5 +1,8 @@
 export const dynamic = "force-dynamic";
 
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
 import { signerConfig, streamSessions, transactions } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -16,7 +19,15 @@ function formatWei(wei: string | null): string {
   return `${eth.toFixed(6)} ETH`;
 }
 
-export default function SignerPage() {
+export default async function SignerPage() {
+  const session = await getServerSession(authOptions);
+  const role = (session?.user as Record<string, unknown> | undefined)?.role as
+    | string
+    | undefined;
+  if (!session?.user || role !== "admin") {
+    redirect("/");
+  }
+
   const signer = db
     .select()
     .from(signerConfig)

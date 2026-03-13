@@ -1,13 +1,13 @@
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 
-// Admin/operator accounts (OAuth login)
+// Admin/operator/developer accounts (OAuth login)
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull(),
   name: text("name"),
   oauthProvider: text("oauth_provider").notNull(), // google | github | bootstrap
   oauthSubject: text("oauth_subject").notNull(),
-  role: text("role").notNull().default("operator"), // admin | operator
+  role: text("role").notNull().default("developer"), // admin | operator | developer
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -16,11 +16,12 @@ export const users = sqliteTable("users", {
 // Bearer tokens -- can be scoped to an admin user or an end user
 export const sessions = sqliteTable("sessions", {
   id: text("id").primaryKey(),
-  userId: text("user_id").references(() => users.id), // admin who created this token
-  endUserId: text("end_user_id").references(() => endUsers.id), // end user this token is scoped to (nullable)
-  label: text("label"), // human-readable label for the token
-  tokenHash: text("token_hash").notNull().unique(), // SHA-256 of bearer token
-  scopes: text("scopes").notNull().default("gateway"), // admin | gateway | read
+  userId: text("user_id").references(() => users.id),
+  endUserId: text("end_user_id").references(() => endUsers.id),
+  appId: text("app_id"), // developer app this token belongs to (nullable)
+  label: text("label"),
+  tokenHash: text("token_hash").notNull().unique(),
+  scopes: text("scopes").notNull().default("gateway"),
   expiresAt: text("expires_at").notNull(),
   createdAt: text("created_at")
     .notNull()
@@ -52,12 +53,13 @@ export const signerConfig = sqliteTable("signer_config", {
 // End users -- the actual multi-user entities (Privy wallets, credits, usage)
 export const endUsers = sqliteTable("end_users", {
   id: text("id").primaryKey(),
+  appId: text("app_id"), // developer app this end user belongs to (nullable)
   name: text("name"),
   email: text("email"),
   privyDid: text("privy_did").unique(),
   walletAddress: text("wallet_address"),
   creditBalanceWei: text("credit_balance_wei").notNull().default("0"),
-  isActive: integer("is_active").notNull().default(1), // 0 = suspended
+  isActive: integer("is_active").notNull().default(1),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -66,6 +68,7 @@ export const endUsers = sqliteTable("end_users", {
 export const streamSessions = sqliteTable("stream_sessions", {
   id: text("id").primaryKey(),
   endUserId: text("end_user_id").references(() => endUsers.id),
+  appId: text("app_id"), // developer app attribution
   bearerTokenHash: text("bearer_token_hash"),
   manifestId: text("manifest_id").notNull(),
   orchestratorAddress: text("orchestrator_address"),
@@ -73,7 +76,7 @@ export const streamSessions = sqliteTable("stream_sessions", {
   totalFeeWei: text("total_fee_wei").notNull().default("0"),
   pricePerUnit: text("price_per_unit"),
   pixelsPerUnit: text("pixels_per_unit"),
-  status: text("status").notNull().default("active"), // active | ended | error
+  status: text("status").notNull().default("active"),
   startedAt: text("started_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -161,6 +164,54 @@ export const oidcRefreshTokens = sqliteTable("oidc_refresh_tokens", {
     .$defaultFn(() => new Date().toISOString()),
 });
 
+// ============================================
+// Developer App Tables
+// ============================================
+
+export const developerApps = sqliteTable("developer_apps", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull().references(() => users.id),
+  oidcClientId: text("oidc_client_id").references(() => oidcClients.id),
+  name: text("name").notNull(),
+  subtitle: text("subtitle"), // 30 char max
+  description: text("description"),
+  category: text("category"),
+  logoLightUrl: text("logo_light_url"),
+  logoDarkUrl: text("logo_dark_url"),
+  developerName: text("developer_name"),
+  websiteUrl: text("website_url"),
+  supportUrl: text("support_url"),
+  privacyPolicyUrl: text("privacy_policy_url"),
+  tosUrl: text("tos_url"),
+  demoRecordingUrl: text("demo_recording_url"),
+  linksToPurchases: integer("links_to_purchases").notNull().default(0),
+  status: text("status").notNull().default("draft"), // draft | submitted | in_review | approved | rejected
+  reviewerNotes: text("reviewer_notes"),
+  reviewedBy: text("reviewed_by").references(() => users.id),
+  reviewedAt: text("reviewed_at"),
+  submittedAt: text("submitted_at"),
+  // Pending revision: approved apps can submit scope/grant changes for review; app stays in production
+  pendingScopes: text("pending_scopes"),
+  pendingGrantTypes: text("pending_grant_types"),
+  pendingRevisionSubmittedAt: text("pending_revision_submitted_at"),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+  updatedAt: text("updated_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+export const appAllowedDomains = sqliteTable("app_allowed_domains", {
+  id: text("id").primaryKey(),
+  appId: text("app_id").notNull().references(() => developerApps.id),
+  domain: text("domain").notNull(),
+  verified: integer("verified").notNull().default(0),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
 // Type exports
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -175,3 +226,6 @@ export type OidcSigningKey = typeof oidcSigningKeys.$inferSelect;
 export type OidcClient = typeof oidcClients.$inferSelect;
 export type OidcAuthCode = typeof oidcAuthCodes.$inferSelect;
 export type OidcRefreshToken = typeof oidcRefreshTokens.$inferSelect;
+export type DeveloperApp = typeof developerApps.$inferSelect;
+export type NewDeveloperApp = typeof developerApps.$inferInsert;
+export type AppAllowedDomain = typeof appAllowedDomains.$inferSelect;

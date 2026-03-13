@@ -2,7 +2,7 @@ import { db } from "@/db/index";
 import { oidcClients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 
 export interface OidcClientConfig {
   clientId: string;
@@ -119,6 +119,103 @@ export function validateScopes(clientId: string, requestedScopes: string[]): str
   if (!client) return [];
 
   return requestedScopes.filter((scope) => client.allowedScopes.includes(scope));
+}
+
+export function generateClientId(): string {
+  return `app_${randomBytes(12).toString("hex")}`;
+}
+
+export function generateClientSecret(): string {
+  return `pmth_cs_${randomBytes(32).toString("hex")}`;
+}
+
+/**
+ * Create an OIDC client for a developer app. Returns the DB row ID and
+ * the generated client_id (no secret yet -- that comes from rotateClientSecret).
+ */
+export function createAppClient(displayName: string): {
+  id: string;
+  clientId: string;
+} {
+  const id = uuidv4();
+  const clientId = generateClientId();
+
+  db.insert(oidcClients)
+    .values({
+      id,
+      clientId,
+      clientSecretHash: null,
+      displayName,
+      redirectUris: JSON.stringify([]),
+      allowedScopes: "openid profile email",
+      grantTypes: "authorization_code,refresh_token",
+      tokenEndpointAuthMethod: "none",
+    })
+    .run();
+
+  return { id, clientId };
+}
+
+/**
+ * Generate a new client secret (or rotate an existing one).
+ * Returns the plaintext secret -- it is NOT stored and must be shown to the user once.
+ */
+export function rotateClientSecret(clientId: string): string | null {
+  const client = db
+    .select()
+    .from(oidcClients)
+    .where(eq(oidcClients.clientId, clientId))
+    .get();
+
+  if (!client) return null;
+
+  const secret = generateClientSecret();
+  const secretHash = hashClientSecret(secret);
+
+  db.update(oidcClients)
+    .set({
+      clientSecretHash: secretHash,
+      tokenEndpointAuthMethod: "client_secret_post",
+    })
+    .where(eq(oidcClients.clientId, clientId))
+    .run();
+
+  return secret;
+}
+
+export function updateClientConfig(
+  clientId: string,
+  config: {
+    displayName?: string;
+    redirectUris?: string[];
+    allowedScopes?: string;
+    grantTypes?: string[];
+    tokenEndpointAuthMethod?: "none" | "client_secret_post" | "client_secret_basic";
+  }
+): boolean {
+  const existing = db
+    .select()
+    .from(oidcClients)
+    .where(eq(oidcClients.clientId, clientId))
+    .get();
+
+  if (!existing) return false;
+
+  const updates: Record<string, unknown> = {};
+  if (config.displayName !== undefined) updates.displayName = config.displayName;
+  if (config.redirectUris !== undefined) updates.redirectUris = JSON.stringify(config.redirectUris);
+  if (config.allowedScopes !== undefined) updates.allowedScopes = config.allowedScopes;
+  if (config.grantTypes !== undefined) updates.grantTypes = config.grantTypes.join(",");
+  if (config.tokenEndpointAuthMethod !== undefined) updates.tokenEndpointAuthMethod = config.tokenEndpointAuthMethod;
+
+  if (Object.keys(updates).length === 0) return true;
+
+  db.update(oidcClients)
+    .set(updates)
+    .where(eq(oidcClients.clientId, clientId))
+    .run();
+
+  return true;
 }
 
 export function seedNaapClient(): void {

@@ -134,19 +134,21 @@ async function getAdminUser(request: NextRequest) {
   if (oauthSession?.user) {
     const sessionUser = oauthSession.user as Record<string, unknown>;
     if (sessionUser.id) {
-      return db
+      const user = db
         .select()
         .from(users)
         .where(eq(users.id, sessionUser.id as string))
         .get();
+      if (user?.role !== "admin") return null;
+      return user;
     }
   }
 
   const auth = authenticateRequest(request);
-  if (auth && hasScope(auth.scopes, "admin")) {
-    if (auth.userId) {
-      return db.select().from(users).where(eq(users.id, auth.userId)).get();
-    }
+  if (auth && hasScope(auth.scopes, "admin") && auth.userId) {
+    const user = db.select().from(users).where(eq(users.id, auth.userId)).get();
+    if (user?.role !== "admin") return null;
+    return user;
   }
 
   return null;

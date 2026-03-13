@@ -9,8 +9,8 @@ const KEY_SIZE = 2048;
 
 export interface SigningKeyPair {
   kid: string;
-  publicKey: jose.KeyLike;
-  privateKey: jose.KeyLike;
+  publicKey: jose.CryptoKey;
+  privateKey: jose.CryptoKey;
 }
 
 export async function generateKeyPair(): Promise<{
@@ -114,7 +114,7 @@ export async function getPublicJWKS(): Promise<jose.JSONWebKeySet> {
   return { keys: jwks };
 }
 
-export async function getSigningKeyByKid(kid: string): Promise<jose.KeyLike | null> {
+export async function getSigningKeyByKid(kid: string): Promise<jose.CryptoKey | null> {
   const key = db
     .select()
     .from(oidcSigningKeys)

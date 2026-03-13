@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequest, hasScope, AuthError } from "@/lib/auth";
 import { proxyGenerateLivePayment } from "@/lib/signer-proxy";
+import { db } from "@/db/index";
+import { developerApps } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,6 +20,22 @@ export async function POST(request: NextRequest) {
         { error: "Forbidden: requires 'gateway' scope" },
         { status: 403 }
       );
+    }
+
+    // If the token is scoped to a developer app, verify it is approved
+    if (auth.appId) {
+      const app = db
+        .select({ status: developerApps.status })
+        .from(developerApps)
+        .where(eq(developerApps.id, auth.appId))
+        .get();
+
+      if (!app || app.status !== "approved") {
+        return NextResponse.json(
+          { error: "Forbidden: app is not approved for signer access" },
+          { status: 403 }
+        );
+      }
     }
 
     const body = await request.json();
