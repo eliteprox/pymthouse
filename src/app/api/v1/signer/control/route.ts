@@ -102,11 +102,11 @@ export async function POST(request: NextRequest) {
 function getComposeCommand(action: string): string {
   switch (action) {
     case "start":
-      return "docker compose up -d go-livepeer";
+    case "restart":
+      // --force-recreate ensures fresh container; --remove-orphans cleans stale containers
+      return "docker compose up -d --force-recreate --remove-orphans go-livepeer";
     case "stop":
       return "docker compose stop go-livepeer";
-    case "restart":
-      return "docker compose restart go-livepeer";
     default:
       throw new Error(`Unknown action: ${action}`);
   }
@@ -118,14 +118,24 @@ function buildSignerComposeEnv(
         ethRpcUrl: string;
         ethAcctAddr: string | null;
         ethAddress: string | null;
+        remoteDiscovery: number;
+        orchWebhookUrl: string | null;
+        liveAICapReportInterval: string | null;
       }
     | undefined
 ): NodeJS.ProcessEnv {
+  const rd = signer?.remoteDiscovery === 1;
   return {
     ...process.env,
     SIGNER_NETWORK: "arbitrum-one-mainnet",
     ETH_RPC_URL: signer?.ethRpcUrl ?? "",
     SIGNER_ETH_ADDR: signer?.ethAcctAddr || "",
+    SIGNER_REMOTE_DISCOVERY: rd ? "1" : "0",
+    ORCH_WEBHOOK_URL: rd && signer?.orchWebhookUrl ? signer.orchWebhookUrl : "",
+    LIVE_AI_CAP_REPORT_INTERVAL:
+      rd && signer?.liveAICapReportInterval
+        ? signer.liveAICapReportInterval
+        : "",
   };
 }
 

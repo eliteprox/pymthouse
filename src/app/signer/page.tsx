@@ -111,6 +111,23 @@ export default async function SignerPage() {
           <ConfigRow label="EthPassword" value="***" />
           <ConfigRow label="Datadir" value="/data" />
           <ConfigRow label="RemoteSigner" value="true" />
+          <ConfigRow
+            label="RemoteDiscovery"
+            value={signer.remoteDiscovery === 1 ? "true" : "false"}
+          />
+          {signer.remoteDiscovery === 1 && (
+            <>
+              <ConfigRow
+                label="OrchWebhookUrl"
+                value={signer.orchWebhookUrl || "(empty)"}
+                mono
+              />
+              <ConfigRow
+                label="LiveAICapReportInterval"
+                value={signer.liveAICapReportInterval || "(default)"}
+              />
+            </>
+          )}
           <ConfigRow label="Verbosity" value="99" />
         </div>
       </div>
@@ -155,6 +172,9 @@ export default async function SignerPage() {
             defaultCutPercent: signer.defaultCutPercent,
             billingMode: signer.billingMode,
             naapApiKey: signer.naapApiKey,
+            remoteDiscovery: signer.remoteDiscovery,
+            orchWebhookUrl: signer.orchWebhookUrl,
+            liveAICapReportInterval: signer.liveAICapReportInterval,
           }}
         />
       </div>

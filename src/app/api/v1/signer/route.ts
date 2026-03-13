@@ -9,6 +9,22 @@ import { syncSignerStatus } from "@/lib/signer-proxy";
 
 const SUPPORTED_NETWORK = "arbitrum-one-mainnet";
 
+// Duration format: number + unit (s, m, h) e.g. 5m, 10s, 1h
+const DURATION_REGEX = /^\d+[smh]$/;
+
+function isValidUrl(s: string): boolean {
+  try {
+    new URL(s);
+    return s.startsWith("http://") || s.startsWith("https://");
+  } catch {
+    return false;
+  }
+}
+
+function isValidDuration(s: string): boolean {
+  return DURATION_REGEX.test(s);
+}
+
 /**
  * GET /api/v1/signer -- Get singleton signer status + config
  */
@@ -48,6 +64,11 @@ export async function PATCH(request: NextRequest) {
 
   const body = await request.json();
   const updates: Record<string, unknown> = {};
+  const current = db
+    .select()
+    .from(signerConfig)
+    .where(eq(signerConfig.id, "default"))
+    .get();
 
   if (body.name !== undefined) updates.name = body.name;
   if (body.network !== undefined) {
@@ -65,6 +86,48 @@ export async function PATCH(request: NextRequest) {
     updates.defaultCutPercent = body.defaultCutPercent;
   if (body.billingMode !== undefined) updates.billingMode = body.billingMode;
   if (body.naapApiKey !== undefined) updates.naapApiKey = body.naapApiKey;
+
+  // Remote discovery: when enabled, orchWebhookUrl and liveAICapReportInterval are used
+  if (body.remoteDiscovery !== undefined) {
+    const rd = body.remoteDiscovery === true || body.remoteDiscovery === "true";
+    updates.remoteDiscovery = rd ? 1 : 0;
+    if (!rd) {
+      updates.orchWebhookUrl = null;
+      updates.liveAICapReportInterval = null;
+    }
+  }
+  const effectiveRemoteDiscovery =
+    updates.remoteDiscovery !== undefined
+      ? updates.remoteDiscovery === 1
+      : current?.remoteDiscovery === 1;
+
+  if (body.orchWebhookUrl !== undefined) {
+    if (effectiveRemoteDiscovery) {
+      const url = body.orchWebhookUrl?.trim() || null;
+      if (url && !isValidUrl(url)) {
+        return NextResponse.json(
+          { error: "orchWebhookUrl must be a valid http(s) URL" },
+          { status: 400 }
+        );
+      }
+      updates.orchWebhookUrl = url;
+    }
+  }
+  if (body.liveAICapReportInterval !== undefined) {
+    if (effectiveRemoteDiscovery) {
+      const val = body.liveAICapReportInterval?.trim() || null;
+      if (val && !/^\d+(ns|us|µs|ms|s|m|h)$/.test(val)) {
+        return NextResponse.json(
+          {
+            error:
+              "liveAICapReportInterval must be a valid duration (e.g. 5m, 10s, 1h)",
+          },
+          { status: 400 }
+        );
+      }
+      updates.liveAICapReportInterval = val;
+    }
+  }
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json(

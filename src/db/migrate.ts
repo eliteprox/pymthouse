@@ -194,6 +194,9 @@ export function runMigrations(sqlite: Database) {
   // Backfill newer columns for existing databases (ALTER TABLE is idempotent via try/catch).
   const backfills = [
     "ALTER TABLE signer_config ADD COLUMN eth_acct_addr TEXT;",
+    "ALTER TABLE signer_config ADD COLUMN remote_discovery INTEGER DEFAULT 0;",
+    "ALTER TABLE signer_config ADD COLUMN orch_webhook_url TEXT;",
+    "ALTER TABLE signer_config ADD COLUMN live_ai_cap_report_interval TEXT;",
     "ALTER TABLE sessions ADD COLUMN app_id TEXT;",
     "ALTER TABLE end_users ADD COLUMN app_id TEXT;",
     "ALTER TABLE stream_sessions ADD COLUMN app_id TEXT;",
