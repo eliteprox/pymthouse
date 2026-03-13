@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequestAsync, hasScope, AuthError } from "@/lib/auth";
-import { proxySignOrchestratorInfo } from "@/lib/signer-proxy";
+import { proxySignByocJob } from "@/lib/signer-proxy";
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const result = await proxySignOrchestratorInfo(body, auth);
+    const result = await proxySignByocJob(body, auth);
 
     return NextResponse.json(result.body, { status: result.status });
   } catch (error) {
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
         { status: error.status }
       );
     }
-    console.error("[api] sign-orchestrator-info error:", error);
+    console.error("[api] sign-byoc-job error:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

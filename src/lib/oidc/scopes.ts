@@ -40,6 +40,11 @@ export const OIDC_SCOPES: ScopeDefinition[] = [
     label: "Feature Access",
     description: "See which PymtHouse features are enabled for your account",
   },
+  {
+    value: "gateway",
+    label: "Gateway Access",
+    description: "Use Livepeer gateway signing and payment operations on your behalf",
+  },
 ];
 
 export const OIDC_SCOPE_MAP: Record<string, ScopeDefinition> = Object.fromEntries(

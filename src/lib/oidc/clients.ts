@@ -233,3 +233,17 @@ export function seedNaapClient(): void {
     tokenEndpointAuthMethod: "none", // Public client (SPA/redirect flow)
   });
 }
+
+export function seedSdkClient(): void {
+  registerClient({
+    clientId: "livepeer-sdk",
+    displayName: "Livepeer Gateway SDK",
+    redirectUris: [
+      "http://localhost:*/callback",
+      "http://127.0.0.1:*/callback",
+    ],
+    allowedScopes: "openid profile email gateway",
+    grantTypes: ["authorization_code", "refresh_token"],
+    tokenEndpointAuthMethod: "none", // Public client (native app, PKCE required)
+  });
+}

@@ -209,6 +209,68 @@ export async function proxyGenerateLivePayment(
 }
 
 /**
+ * Proxy: POST /sign-byoc-job
+ */
+export async function proxySignByocJob(
+  requestBody: unknown,
+  auth: AuthResult
+): Promise<ProxyResult> {
+  const signer = getSignerConfig();
+  if (!signer || signer.status !== "running") {
+    return { status: 503, body: { error: "Signer is not running" } };
+  }
+
+  try {
+    const response = await forwardToSigner(
+      "/sign-byoc-job",
+      "POST",
+      requestBody
+    );
+    const responseBody = await response.json();
+
+    if (response.ok) {
+      const who = auth.endUserId || auth.userId || "unknown";
+      console.log(`[proxy] sign-byoc-job forwarded for ${who}`);
+    }
+
+    return { status: response.status, body: responseBody };
+  } catch (error) {
+    console.error("[proxy] Failed to forward sign-byoc-job:", error);
+    return { status: 502, body: { error: "Failed to reach signer" } };
+  }
+}
+
+/**
+ * Proxy: GET /discover-orchestrators
+ */
+export async function proxyDiscoverOrchestrators(
+  auth: AuthResult
+): Promise<ProxyResult> {
+  const signer = getSignerConfig();
+  if (!signer || signer.status !== "running") {
+    return { status: 503, body: { error: "Signer is not running" } };
+  }
+
+  try {
+    const response = await forwardToSigner(
+      "/discover-orchestrators",
+      "GET"
+    );
+    const responseBody = await response.json();
+
+    if (response.ok) {
+      const who = auth.endUserId || auth.userId || "unknown";
+      console.log(`[proxy] discover-orchestrators forwarded for ${who}`);
+    }
+
+    return { status: response.status, body: responseBody };
+  } catch (error) {
+    console.error("[proxy] Failed to forward discover-orchestrators:", error);
+    return { status: 502, body: { error: "Failed to reach signer" } };
+  }
+}
+
+/**
  * Sync signer status by checking both the Docker container and the HTTP endpoint.
  */
 export async function syncSignerStatus(): Promise<{

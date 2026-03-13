@@ -11,7 +11,7 @@ export async function GET(): Promise<NextResponse> {
     userinfo_endpoint: `${issuer}/api/v1/oidc/userinfo`,
     jwks_uri: `${issuer}/api/v1/oidc/jwks`,
     registration_endpoint: undefined, // Dynamic registration not supported
-    scopes_supported: ["openid", "profile", "email", "plan", "entitlements"],
+    scopes_supported: ["openid", "profile", "email", "plan", "entitlements", "gateway"],
     response_types_supported: ["code"],
     response_modes_supported: ["query"],
     grant_types_supported: ["authorization_code", "refresh_token"],

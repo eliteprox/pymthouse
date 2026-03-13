@@ -4,6 +4,7 @@ import { eq, and, gt } from "drizzle-orm";
 import { createHash, randomBytes } from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import type { NextRequest } from "next/server";
+import { verifyAccessToken } from "@/lib/oidc/tokens";
 
 const TOKEN_PREFIX = "pmth_";
 
@@ -158,7 +159,42 @@ export function hasScope(scopes: string, required: string): boolean {
 export function authenticateRequest(request: NextRequest): AuthResult | null {
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) return null;
-  return validateBearerToken(authHeader.slice(7));
+  const token = authHeader.slice(7);
+
+  // Try pmth_ session token first
+  const sessionResult = validateBearerToken(token);
+  if (sessionResult) return sessionResult;
+
+  // Fall back to OIDC JWT verification (async, but we return a promise-compatible shim)
+  // Note: callers that need OIDC support should use authenticateRequestAsync()
+  return null;
+}
+
+/**
+ * Authenticate a request, supporting both pmth_ session tokens and OIDC JWTs.
+ * Use this in API routes that should accept OIDC access tokens from SDK clients.
+ */
+export async function authenticateRequestAsync(request: NextRequest): Promise<AuthResult | null> {
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) return null;
+  const token = authHeader.slice(7);
+
+  // Try pmth_ session token first (fast, synchronous)
+  const sessionResult = validateBearerToken(token);
+  if (sessionResult) return sessionResult;
+
+  // Fall back to OIDC JWT verification
+  const jwtPayload = await verifyAccessToken(token);
+  if (!jwtPayload) return null;
+
+  return {
+    userId: typeof jwtPayload.sub === "string" ? jwtPayload.sub : null,
+    endUserId: null,
+    appId: typeof jwtPayload.client_id === "string" ? jwtPayload.client_id : null,
+    sessionId: typeof jwtPayload.jti === "string" ? jwtPayload.jti : `jwt_${Date.now()}`,
+    scopes: typeof jwtPayload.scope === "string" ? jwtPayload.scope.replace(/\s+/g, ",") : "",
+    tokenHash: "",
+  };
 }
 
 export function requireAuth(

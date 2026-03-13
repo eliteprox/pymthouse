@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequestAsync, hasScope, AuthError } from "@/lib/auth";
-import { proxySignOrchestratorInfo } from "@/lib/signer-proxy";
+import { proxyDiscoverOrchestrators } from "@/lib/signer-proxy";
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
     const auth = await authenticateRequestAsync(request);
     if (!auth) {
@@ -19,8 +19,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const result = await proxySignOrchestratorInfo(body, auth);
+    const result = await proxyDiscoverOrchestrators(auth);
 
     return NextResponse.json(result.body, { status: result.status });
   } catch (error) {
@@ -30,7 +29,7 @@ export async function POST(request: NextRequest) {
         { status: error.status }
       );
     }
-    console.error("[api] sign-orchestrator-info error:", error);
+    console.error("[api] discover-orchestrators error:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

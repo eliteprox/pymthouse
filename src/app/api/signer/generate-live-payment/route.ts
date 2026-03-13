@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authenticateRequest, hasScope, AuthError } from "@/lib/auth";
+import { authenticateRequestAsync, hasScope, AuthError } from "@/lib/auth";
 import { proxyGenerateLivePayment } from "@/lib/signer-proxy";
 import { db } from "@/db/index";
 import { developerApps } from "@/db/schema";
@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = authenticateRequest(request);
+    const auth = await authenticateRequestAsync(request);
     if (!auth) {
       return NextResponse.json(
         { error: "Unauthorized: invalid or expired token" },
