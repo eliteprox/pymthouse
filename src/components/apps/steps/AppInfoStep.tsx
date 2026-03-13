@@ -69,7 +69,7 @@ export default function AppInfoStep({ data, onChange }: Props) {
 
       <div>
         <label className="block text-sm font-medium text-zinc-300 mb-1.5">
-          Description
+          Description <span className="text-red-400">*</span>
         </label>
         <p className="text-xs text-zinc-500 mb-1.5">
           Write a clear, engaging description that highlights what your app does and why people will love it.

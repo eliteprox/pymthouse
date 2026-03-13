@@ -285,6 +285,17 @@ export default function ReviewSubmitStep({
         </div>
       )}
 
+      {appState.status !== "approved" && (!data.name || !data.privacyPolicyUrl || !data.description) && (
+        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-sm">
+          <p className="font-medium mb-1">Missing required fields for submission:</p>
+          <ul className="list-disc list-inside space-y-0.5">
+            {!data.name && <li>App Name (App Info step)</li>}
+            {!data.description && <li>Description (App Info step)</li>}
+            {!data.privacyPolicyUrl && <li>Privacy Policy URL</li>}
+          </ul>
+        </div>
+      )}
+
       <div className="flex justify-end gap-3">
         <button
           onClick={saveFields}
