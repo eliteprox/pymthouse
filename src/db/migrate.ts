@@ -43,7 +43,7 @@ export function runMigrations(sqlite: Database) {
       eth_address TEXT,
       network TEXT NOT NULL DEFAULT 'arbitrum-one-mainnet',
       eth_rpc_url TEXT NOT NULL DEFAULT 'https://arb1.arbitrum.io/rpc',
-      signer_port INTEGER NOT NULL DEFAULT 8935,
+      signer_port INTEGER NOT NULL DEFAULT 8081,
       status TEXT NOT NULL DEFAULT 'stopped',
       deposit_wei TEXT DEFAULT '0',
       reserve_wei TEXT DEFAULT '0',
@@ -217,7 +217,7 @@ export function runMigrations(sqlite: Database) {
     sqlite
       .prepare(
         `INSERT INTO signer_config (id, name, network, eth_rpc_url, signer_port, status, default_cut_percent, billing_mode, created_at)
-         VALUES ('default', 'pymthouse signer', 'arbitrum-one-mainnet', 'https://arb1.arbitrum.io/rpc', 8935, 'stopped', 15.0, 'delegated', ?)`
+         VALUES ('default', 'pymthouse signer', 'arbitrum-one-mainnet', 'https://arb1.arbitrum.io/rpc', 8081, 'stopped', 15.0, 'delegated', ?)`
       )
       .run(new Date().toISOString());
   }

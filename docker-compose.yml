@@ -4,7 +4,7 @@ services:
     command:
       - -remoteSigner
       - -network=${SIGNER_NETWORK:-arbitrum-one-mainnet}
-      - -httpAddr=0.0.0.0:8935
+      - -httpAddr=0.0.0.0:${SIGNER_PORT:-8081}
       - -cliAddr=0.0.0.0:4935
       - -ethUrl=${ETH_RPC_URL:-http://nyc-router.eliteencoder.net:3517}
       - -ethPassword=/data/.eth-password
@@ -14,6 +14,7 @@ services:
     volumes:
       - ./data:/data
     environment:
+      - SIGNER_PORT=${SIGNER_PORT:-8081}
       - SIGNER_REMOTE_DISCOVERY=${SIGNER_REMOTE_DISCOVERY:-0}
       - ORCH_WEBHOOK_URL=${ORCH_WEBHOOK_URL:-}
       - LIVE_AI_CAP_REPORT_INTERVAL=${LIVE_AI_CAP_REPORT_INTERVAL:-}
@@ -40,11 +41,11 @@ services:
         fi
         exec /usr/local/bin/livepeer $$ARGS
       - --
-    expose:
-      - "8935"
+    ports:
+      - "${SIGNER_PORT:-8081}:${SIGNER_PORT:-8081}"  # httpAddr - signer HTTP API
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8935/status"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:${SIGNER_PORT:-8081}/status"]
       interval: 15s
       timeout: 5s
       retries: 3

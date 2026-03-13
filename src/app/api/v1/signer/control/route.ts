@@ -118,6 +118,7 @@ function buildSignerComposeEnv(
         ethRpcUrl: string;
         ethAcctAddr: string | null;
         ethAddress: string | null;
+        signerPort: number;
         remoteDiscovery: number;
         orchWebhookUrl: string | null;
         liveAICapReportInterval: string | null;
@@ -125,11 +126,13 @@ function buildSignerComposeEnv(
     | undefined
 ): NodeJS.ProcessEnv {
   const rd = signer?.remoteDiscovery === 1;
+  const port = signer?.signerPort ?? 8081;
   return {
     ...process.env,
     SIGNER_NETWORK: "arbitrum-one-mainnet",
     ETH_RPC_URL: signer?.ethRpcUrl ?? "",
     SIGNER_ETH_ADDR: signer?.ethAcctAddr || "",
+    SIGNER_PORT: String(port),
     SIGNER_REMOTE_DISCOVERY: rd ? "1" : "0",
     ORCH_WEBHOOK_URL: rd && signer?.orchWebhookUrl ? signer.orchWebhookUrl : "",
     LIVE_AI_CAP_REPORT_INTERVAL:

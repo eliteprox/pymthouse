@@ -9,6 +9,7 @@ interface SignerConfigFormProps {
     network: string;
     ethRpcUrl: string;
     ethAcctAddr: string | null;
+    signerPort: number;
     defaultCutPercent: number;
     billingMode: string;
     naapApiKey: string | null;
@@ -28,6 +29,7 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
     network: config.network,
     ethRpcUrl: config.ethRpcUrl,
     ethAcctAddr: config.ethAcctAddr || "",
+    signerPort: config.signerPort,
     defaultCutPercent: config.defaultCutPercent,
     billingMode: config.billingMode,
     naapApiKey: config.naapApiKey || "",
@@ -50,6 +52,7 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
           ...formData,
           network: "arbitrum-one-mainnet",
           ethAcctAddr: formData.ethAcctAddr || null,
+          signerPort: formData.signerPort,
           naapApiKey: formData.naapApiKey || null,
           remoteDiscovery: formData.remoteDiscovery,
           orchWebhookUrl: formData.remoteDiscovery
@@ -94,6 +97,27 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
             }
             className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50"
           />
+        </div>
+        <div>
+          <label className="block text-xs text-zinc-500 mb-1.5">
+            Signer Port (httpAddr)
+          </label>
+          <input
+            type="number"
+            min="1024"
+            max="65535"
+            value={formData.signerPort}
+            onChange={(e) =>
+              setFormData({
+                ...formData,
+                signerPort: parseInt(e.target.value, 10) || 8081,
+              })
+            }
+            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50"
+          />
+          <p className="text-xs text-zinc-600 mt-0.5">
+            HTTP API port (default: 8081). Restart signer to apply.
+          </p>
         </div>
         <div>
           <label className="block text-xs text-zinc-500 mb-1.5">

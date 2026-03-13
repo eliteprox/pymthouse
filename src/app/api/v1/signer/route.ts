@@ -71,6 +71,16 @@ export async function PATCH(request: NextRequest) {
     .get();
 
   if (body.name !== undefined) updates.name = body.name;
+  if (body.signerPort !== undefined) {
+    const port = Number(body.signerPort);
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+      return NextResponse.json(
+        { error: "signerPort must be an integer between 1024 and 65535" },
+        { status: 400 }
+      );
+    }
+    updates.signerPort = port;
+  }
   if (body.network !== undefined) {
     if (body.network !== SUPPORTED_NETWORK) {
       return NextResponse.json(

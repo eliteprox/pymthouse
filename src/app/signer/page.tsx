@@ -100,7 +100,7 @@ export default async function SignerPage() {
         </div>
         <div className="font-mono text-sm">
           <ConfigRow label="Network" value={signer.network} />
-          <ConfigRow label="HttpAddr" value="0.0.0.0:8935" />
+          <ConfigRow label="HttpAddr" value={`0.0.0.0:${signer.signerPort}`} />
           <ConfigRow label="CliAddr" value="0.0.0.0:4935" />
           <ConfigRow label="EthUrl" value={signer.ethRpcUrl} />
           <ConfigRow
@@ -169,6 +169,7 @@ export default async function SignerPage() {
             network: signer.network,
             ethRpcUrl: signer.ethRpcUrl,
             ethAcctAddr: signer.ethAcctAddr,
+            signerPort: signer.signerPort,
             defaultCutPercent: signer.defaultCutPercent,
             billingMode: signer.billingMode,
             naapApiKey: signer.naapApiKey,

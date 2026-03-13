@@ -30,7 +30,10 @@ export function getSignerConfig() {
  * Build the internal URL for the signer container.
  */
 function getSignerUrl(): string {
-  return process.env.SIGNER_INTERNAL_URL || "http://localhost:8935";
+  if (process.env.SIGNER_INTERNAL_URL) return process.env.SIGNER_INTERNAL_URL;
+  const signer = getSignerConfig();
+  const port = signer?.signerPort ?? 8081;
+  return `http://localhost:${port}`;
 }
 
 async function forwardToSigner(
