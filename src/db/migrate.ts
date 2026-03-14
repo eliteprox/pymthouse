@@ -226,6 +226,15 @@ export function runMigrations(sqlite: Database) {
     try { sqlite.exec(sql); } catch {}
   }
 
+  // Backfill OIDC scopes for legacy device-flow clients created before
+  // gateway/offline_access were added to the SDK flow defaults.
+  sqlite.exec(`
+    UPDATE oidc_clients
+    SET allowed_scopes = trim(allowed_scopes || ' gateway offline_access')
+    WHERE grant_types LIKE '%urn:ietf:params:oauth:grant-type:device_code%'
+      AND (allowed_scopes NOT LIKE '%gateway%' OR allowed_scopes NOT LIKE '%offline_access%');
+  `);
+
   // Seed singleton signer config if it doesn't exist
   const existing = sqlite
     .prepare("SELECT id FROM signer_config WHERE id = 'default'")

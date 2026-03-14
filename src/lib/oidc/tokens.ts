@@ -1,14 +1,57 @@
 import * as jose from "jose";
-import { createHash, randomBytes } from "crypto";
 import { ensureSigningKey, getPublicJWKS } from "./jwks";
+
+export const OIDC_MOUNT_PATH = "/api/v1/oidc";
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
+export function getPublicOrigin(): string {
+  const raw = process.env.NEXTAUTH_URL || "http://localhost:3001";
+  return trimTrailingSlash(raw);
+}
+
+export function getIssuer(): string {
+  const configured =
+    process.env.OIDC_ISSUER || process.env.NEXTAUTH_URL || "http://localhost:3001";
+  const normalized = trimTrailingSlash(configured);
+  return normalized.endsWith(OIDC_MOUNT_PATH)
+    ? normalized
+    : `${normalized}${OIDC_MOUNT_PATH}`;
+}
+
+/**
+ * Verify a JWT access token issued by the OIDC provider.
+ *
+ * Validates the signature against the local JWKS, checks issuer, and
+ * verifies the audience matches.
+ */
+export async function verifyAccessToken(
+  token: string
+): Promise<jose.JWTPayload | null> {
+  try {
+    const issuer = getIssuer();
+    const jwks = await getPublicJWKS();
+    const keySet = jose.createLocalJWKSet(jwks);
+
+    const { payload } = await jose.jwtVerify(token, keySet, {
+      issuer,
+      audience: issuer,
+    });
+
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+// ── Legacy minting helpers ──────────────────────────────────────────
+// Kept for backward compatibility during migration. New tokens are issued
+// by node-oidc-provider.  These will be removed once migration is complete.
 
 const ID_TOKEN_EXPIRY = "1h";
 const ACCESS_TOKEN_EXPIRY = "1h";
-const REFRESH_TOKEN_EXPIRY_DAYS = 30;
-
-export function getIssuer(): string {
-  return process.env.OIDC_ISSUER || process.env.NEXTAUTH_URL || "http://localhost:3001";
-}
 
 export interface IdTokenClaims {
   sub: string;
@@ -25,6 +68,7 @@ export interface AccessTokenClaims {
   scopes: string[];
 }
 
+/** @deprecated Use node-oidc-provider instead */
 export async function mintIdToken(
   clientId: string,
   claims: IdTokenClaims
@@ -47,6 +91,7 @@ export async function mintIdToken(
   return jwt;
 }
 
+/** @deprecated Use node-oidc-provider instead */
 export async function mintAccessToken(
   clientId: string,
   claims: AccessTokenClaims
@@ -64,63 +109,12 @@ export async function mintAccessToken(
     .setAudience(issuer)
     .setIssuedAt()
     .setExpirationTime(ACCESS_TOKEN_EXPIRY)
-    .setJti(randomBytes(16).toString("hex"))
+    .setJti(jose.base64url.encode(crypto.getRandomValues(new Uint8Array(16))))
     .sign(keyPair.privateKey);
 
   return jwt;
 }
 
-export function generateRefreshToken(): { token: string; hash: string; expiresAt: string } {
-  const token = `pmth_rt_${randomBytes(32).toString("hex")}`;
-  const hash = createHash("sha256").update(token).digest("hex");
-  const expiresAt = new Date(
-    Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000
-  ).toISOString();
-
-  return { token, hash, expiresAt };
-}
-
-export function hashRefreshToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
-
-export async function verifyAccessToken(
-  token: string
-): Promise<jose.JWTPayload | null> {
-  try {
-    const issuer = getIssuer();
-    const jwks = await getPublicJWKS();
-    const keySet = jose.createLocalJWKSet(jwks);
-
-    const { payload } = await jose.jwtVerify(token, keySet, {
-      issuer,
-      audience: issuer,
-    });
-
-    return payload;
-  } catch {
-    return null;
-  }
-}
-
-export function generateAuthorizationCode(): string {
-  return randomBytes(32).toString("hex");
-}
-
-export function generatePKCEChallenge(verifier: string, method: string): string {
-  if (method === "plain") {
-    return verifier;
-  }
-  // S256: BASE64URL(SHA256(verifier))
-  const hash = createHash("sha256").update(verifier).digest();
-  return jose.base64url.encode(hash);
-}
-
-export function verifyPKCE(
-  codeVerifier: string,
-  codeChallenge: string,
-  codeChallengeMethod: string
-): boolean {
-  const computed = generatePKCEChallenge(codeVerifier, codeChallengeMethod);
-  return computed === codeChallenge;
-}
+// ── Removed legacy helpers ──────────────────────────────────────────
+// generateRefreshToken, hashRefreshToken, generateAuthorizationCode,
+// generatePKCEChallenge, verifyPKCE — all now handled by node-oidc-provider.

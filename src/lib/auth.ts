@@ -7,6 +7,7 @@ import type { NextRequest } from "next/server";
 import { verifyAccessToken } from "@/lib/oidc/tokens";
 
 const TOKEN_PREFIX = "pmth_";
+const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
 
 export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -185,14 +186,34 @@ export async function authenticateRequestAsync(request: NextRequest): Promise<Au
 
   // Fall back to OIDC JWT verification
   const jwtPayload = await verifyAccessToken(token);
-  if (!jwtPayload) return null;
+  if (!jwtPayload) {
+    if (DEBUG_OIDC_LOGS) {
+      console.warn("[OIDC] bearer token rejected by JWT verifier");
+    }
+    return null;
+  }
+
+  const scopeFromScope =
+    typeof jwtPayload.scope === "string" ? jwtPayload.scope : "";
+  const scpRaw = (jwtPayload as Record<string, unknown>).scp;
+  const scopeFromScp =
+    Array.isArray(scpRaw)
+      ? scpRaw.filter((v): v is string => typeof v === "string").join(" ")
+      : typeof scpRaw === "string"
+        ? scpRaw
+        : "";
+  const normalizedScopes = (scopeFromScope || scopeFromScp)
+    .trim()
+    .replace(/\s+/g, ",");
+  const hasGatewayBoolean = (jwtPayload as Record<string, unknown>).gateway === true;
+  const effectiveScopes = normalizedScopes || (hasGatewayBoolean ? "gateway" : "");
 
   return {
     userId: typeof jwtPayload.sub === "string" ? jwtPayload.sub : null,
     endUserId: null,
     appId: typeof jwtPayload.client_id === "string" ? jwtPayload.client_id : null,
     sessionId: typeof jwtPayload.jti === "string" ? jwtPayload.jti : `jwt_${Date.now()}`,
-    scopes: typeof jwtPayload.scope === "string" ? jwtPayload.scope.replace(/\s+/g, ",") : "",
+    scopes: effectiveScopes,
     tokenHash: "",
   };
 }

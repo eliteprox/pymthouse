@@ -1,11 +1,16 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
 import { developerApps } from "@/db/schema";
 import { getClient } from "@/lib/oidc/clients";
 import { getScopeDefinition } from "@/lib/oidc/scopes";
+import { getProvider } from "@/lib/oidc/provider";
+import { OIDC_MOUNT_PATH } from "@/lib/oidc/tokens";
 import { eq } from "drizzle-orm";
+import { IncomingMessage, ServerResponse } from "http";
+import { Socket } from "net";
 import ConsentForm from "./consent-form";
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -41,16 +46,9 @@ export default async function ConsentPage({
   searchParams: Promise<SearchParams>;
 }) {
   const params = await searchParams;
+  const uid = asSingleValue(params.uid);
 
-  const clientId = asSingleValue(params.client_id);
-  const redirectUri = asSingleValue(params.redirect_uri);
-  const scope = asSingleValue(params.scope);
-  const state = asSingleValue(params.state);
-  const nonce = asSingleValue(params.nonce);
-  const codeChallenge = asSingleValue(params.code_challenge);
-  const codeChallengeMethod = asSingleValue(params.code_challenge_method);
-
-  if (!clientId || !redirectUri || !scope || !state) {
+  if (!uid) {
     return (
       <main className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-6">
         <div className="max-w-md w-full border border-red-500/20 bg-zinc-900/40 rounded-xl p-6">
@@ -58,7 +56,7 @@ export default async function ConsentPage({
             Invalid Authorization Request
           </h1>
           <p className="text-sm text-zinc-400">
-            Missing required parameters. Please start the authorization flow from the client application.
+            Missing interaction ID. Please start the authorization flow from the client application.
           </p>
         </div>
       </main>
@@ -67,17 +65,52 @@ export default async function ConsentPage({
 
   const session = await getServerSession(authOptions);
   if (!session?.user) {
-    const qs = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      scope,
-      state,
-      ...(nonce && { nonce }),
-      ...(codeChallenge && { code_challenge: codeChallenge }),
-      ...(codeChallengeMethod && { code_challenge_method: codeChallengeMethod }),
-    });
-    redirect(`/login?callbackUrl=${encodeURIComponent(`/oidc/consent?${qs.toString()}`)}`);
+    redirect(`/login?callbackUrl=${encodeURIComponent(`/oidc/consent?uid=${uid}`)}`);
   }
+
+  // Fetch interaction details from the provider
+  let interactionDetails: {
+    prompt: { name: string; details: Record<string, unknown> };
+    params: Record<string, unknown>;
+    session?: { accountId?: string };
+  };
+
+  try {
+    const provider = await getProvider();
+    const requestHeaders = await headers();
+    const socket = new Socket();
+    const req = new IncomingMessage(socket);
+    req.method = "GET";
+    req.url = `${OIDC_MOUNT_PATH}/interaction/${uid}`;
+    requestHeaders.forEach((value, key) => {
+      req.headers[key.toLowerCase()] = value;
+    });
+    req.headers.host =
+      requestHeaders.get("host") ||
+      req.headers.host ||
+      "localhost:3001";
+    req.push(null);
+    const res = new ServerResponse(req);
+
+    interactionDetails = await provider.interactionDetails(req, res);
+  } catch {
+    return (
+      <main className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-6">
+        <div className="max-w-md w-full border border-red-500/20 bg-zinc-900/40 rounded-xl p-6">
+          <h1 className="text-lg font-semibold text-red-300 mb-2">
+            Expired or Invalid Request
+          </h1>
+          <p className="text-sm text-zinc-400">
+            This authorization request has expired. Please return to the application and try again.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  const clientId = interactionDetails.params.client_id as string;
+  const redirectUri = interactionDetails.params.redirect_uri as string;
+  const scope = interactionDetails.params.scope as string;
 
   const client = getClient(clientId);
   if (!client) {
@@ -107,9 +140,9 @@ export default async function ConsentPage({
     .where(eq(developerApps.oidcClientId, client.id))
     .get();
 
-  // Intersect requested scopes with what this client actually allows,
-  // so stale or unknown scopes in the request URL never appear on screen.
-  const scopes = scope.split(/\s+/).filter((s) => client.allowedScopes.includes(s));
+  const scopes = scope
+    ? scope.split(/\s+/).filter((s) => client.allowedScopes.includes(s))
+    : [];
   const scopeItems = scopes.map((s) => ({
     name: s,
     label: getScopeDefinition(s)?.label || s,
@@ -118,9 +151,8 @@ export default async function ConsentPage({
       "Access information associated with this permission",
     required: getScopeDefinition(s)?.required || false,
   }));
-  const approvedScopeString = scopes.join(" ");
   const signedInAs = session.user.name || session.user.email || "Your PymtHouse account";
-  const redirectHost = getHostLabel(redirectUri);
+  const redirectHost = getHostLabel(redirectUri || "");
   const websiteHost = developerApp?.websiteUrl
     ? getHostLabel(developerApp.websiteUrl)
     : null;
@@ -255,7 +287,9 @@ export default async function ConsentPage({
             PymtHouse will send you back to{" "}
             <span className="text-zinc-100">{redirectHost}</span> to finish sign-in.
           </p>
-          <p className="text-xs text-zinc-500 mt-2 break-all">{redirectUri}</p>
+          {redirectUri && (
+            <p className="text-xs text-zinc-500 mt-2 break-all">{redirectUri}</p>
+          )}
         </div>
 
         {(developerApp?.websiteUrl ||
@@ -295,15 +329,7 @@ export default async function ConsentPage({
           </div>
         )}
 
-        <ConsentForm
-          clientId={clientId}
-          redirectUri={redirectUri}
-          scope={approvedScopeString}
-          state={state}
-          nonce={nonce}
-          codeChallenge={codeChallenge}
-          codeChallengeMethod={codeChallengeMethod}
-        />
+        <ConsentForm uid={uid} />
 
         <p className="text-xs text-zinc-500 text-center mt-4">
           By authorizing, you let {client.displayName} access only the permissions

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
+import { normalizeUserCode } from "@/lib/oidc/device";
 
 export default function DeviceVerifyForm() {
   const searchParams = useSearchParams();
@@ -22,7 +23,9 @@ export default function DeviceVerifyForm() {
   // If prefilled, immediately look up the device code
   useEffect(() => {
     if (prefilled) {
-      lookupCode(prefilled);
+      const normalized = normalizeUserCode(prefilled);
+      setUserCode(normalized);
+      lookupCode(normalized);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -31,7 +34,7 @@ export default function DeviceVerifyForm() {
     setStatus("loading");
     setError(null);
     try {
-      const res = await fetch("/api/v1/oidc/device_verification", {
+      const res = await fetch("/api/v1/oidc/device/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_code: code, action: "lookup" }),
@@ -55,7 +58,7 @@ export default function DeviceVerifyForm() {
     setStatus("loading");
     setError(null);
     try {
-      const res = await fetch("/api/v1/oidc/device_verification", {
+      const res = await fetch("/api/v1/oidc/device/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -78,7 +81,7 @@ export default function DeviceVerifyForm() {
 
   function handleSubmitCode(e: React.FormEvent) {
     e.preventDefault();
-    const cleaned = userCode.trim().toUpperCase();
+    const cleaned = normalizeUserCode(userCode.trim());
     setUserCode(cleaned);
     lookupCode(cleaned);
   }
@@ -131,9 +134,9 @@ export default function DeviceVerifyForm() {
           <input
             type="text"
             value={userCode}
-            onChange={(e) => setUserCode(e.target.value.toUpperCase())}
+            onChange={(e) => setUserCode(normalizeUserCode(e.target.value))}
             placeholder="ABCD-1234"
-            maxLength={9}
+            maxLength={8}
             className="w-full text-center text-2xl font-mono tracking-[0.3em] px-4 py-4 rounded-xl bg-zinc-950/60 border border-zinc-700 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/50"
             autoFocus
             autoComplete="off"
@@ -148,7 +151,7 @@ export default function DeviceVerifyForm() {
 
         <button
           type="submit"
-          disabled={userCode.length < 9 || status === "loading"}
+          disabled={userCode.length < 8 || status === "loading"}
           className="w-full px-6 py-3 text-sm font-medium rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {status === "loading" ? "Verifying..." : "Continue"}
