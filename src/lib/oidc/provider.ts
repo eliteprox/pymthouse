@@ -76,10 +76,18 @@ function loadClients(): ClientMetadata[] {
 
     const grantTypes = row.grantTypes.split(",").filter(Boolean);
 
+    // node-oidc-provider requires at least one redirect_uri for all clients.
+    // For device-flow-only clients that may have none configured, use a
+    // placeholder so the client can still be registered with the provider.
+    const effectiveRedirectUris =
+      redirectUris.length > 0
+        ? redirectUris
+        : [`${getIssuer()}/cb`];
+
     const meta: ClientMetadata = {
       client_id: row.clientId,
       client_name: row.displayName,
-      redirect_uris: redirectUris,
+      redirect_uris: effectiveRedirectUris,
       grant_types: grantTypes,
       response_types: ["code"],
       token_endpoint_auth_method: row.tokenEndpointAuthMethod as "none" | "client_secret_post" | "client_secret_basic",
