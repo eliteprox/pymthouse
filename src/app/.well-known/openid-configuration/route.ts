@@ -10,11 +10,12 @@ export async function GET(): Promise<NextResponse> {
     token_endpoint: `${issuer}/api/v1/oidc/token`,
     userinfo_endpoint: `${issuer}/api/v1/oidc/userinfo`,
     jwks_uri: `${issuer}/api/v1/oidc/jwks`,
+    device_authorization_endpoint: `${issuer}/api/v1/oidc/device_authorization`,
     registration_endpoint: undefined, // Dynamic registration not supported
     scopes_supported: ["openid", "profile", "email", "plan", "entitlements", "gateway"],
     response_types_supported: ["code"],
     response_modes_supported: ["query"],
-    grant_types_supported: ["authorization_code", "refresh_token"],
+    grant_types_supported: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"],
     subject_types_supported: ["public"],
     id_token_signing_alg_values_supported: ["RS256"],
     token_endpoint_auth_methods_supported: [

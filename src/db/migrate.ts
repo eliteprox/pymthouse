@@ -148,6 +148,24 @@ export function runMigrations(sqlite: Database) {
     CREATE INDEX IF NOT EXISTS idx_oidc_auth_codes_code ON oidc_auth_codes(code);
     CREATE INDEX IF NOT EXISTS idx_oidc_refresh_tokens_token_hash ON oidc_refresh_tokens(token_hash);
 
+    -- Device Authorization Flow (RFC 8628)
+    CREATE TABLE IF NOT EXISTS oidc_device_codes (
+      id TEXT PRIMARY KEY,
+      device_code TEXT NOT NULL UNIQUE,
+      user_code TEXT NOT NULL UNIQUE,
+      client_id TEXT NOT NULL,
+      scopes TEXT NOT NULL,
+      verification_uri TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      interval INTEGER NOT NULL DEFAULT 5,
+      status TEXT NOT NULL DEFAULT 'pending',
+      user_id TEXT REFERENCES users(id),
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_oidc_device_codes_device_code ON oidc_device_codes(device_code);
+    CREATE INDEX IF NOT EXISTS idx_oidc_device_codes_user_code ON oidc_device_codes(user_code);
+
     -- Developer App tables
     CREATE TABLE IF NOT EXISTS developer_apps (
       id TEXT PRIMARY KEY,

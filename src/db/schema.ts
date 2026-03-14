@@ -167,6 +167,23 @@ export const oidcRefreshTokens = sqliteTable("oidc_refresh_tokens", {
     .$defaultFn(() => new Date().toISOString()),
 });
 
+// Device authorization codes (RFC 8628)
+export const oidcDeviceCodes = sqliteTable("oidc_device_codes", {
+  id: text("id").primaryKey(),
+  deviceCode: text("device_code").notNull().unique(),
+  userCode: text("user_code").notNull().unique(),
+  clientId: text("client_id").notNull(),
+  scopes: text("scopes").notNull(),
+  verificationUri: text("verification_uri").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  interval: integer("interval").notNull().default(5), // polling interval in seconds
+  status: text("status").notNull().default("pending"), // pending | authorized | denied | expired
+  userId: text("user_id").references(() => users.id), // set when user authorizes
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
 // ============================================
 // Developer App Tables
 // ============================================
@@ -229,6 +246,7 @@ export type OidcSigningKey = typeof oidcSigningKeys.$inferSelect;
 export type OidcClient = typeof oidcClients.$inferSelect;
 export type OidcAuthCode = typeof oidcAuthCodes.$inferSelect;
 export type OidcRefreshToken = typeof oidcRefreshTokens.$inferSelect;
+export type OidcDeviceCode = typeof oidcDeviceCodes.$inferSelect;
 export type DeveloperApp = typeof developerApps.$inferSelect;
 export type NewDeveloperApp = typeof developerApps.$inferInsert;
 export type AppAllowedDomain = typeof appAllowedDomains.$inferSelect;

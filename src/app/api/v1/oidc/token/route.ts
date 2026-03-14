@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db/index";
-import { oidcAuthCodes, oidcRefreshTokens, users } from "@/db/schema";
+import { oidcAuthCodes, oidcDeviceCodes, oidcRefreshTokens, users } from "@/db/schema";
 import { eq, and, gt } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import {
@@ -290,6 +290,124 @@ async function handleRefreshTokenGrant(
   );
 }
 
+async function handleDeviceCodeGrant(
+  body: Record<string, string>,
+  clientId: string
+): Promise<NextResponse> {
+  const deviceCode = body.device_code;
+
+  if (!deviceCode) {
+    return errorResponse("invalid_request", "device_code is required");
+  }
+
+  const now = new Date().toISOString();
+
+  const stored = db
+    .select()
+    .from(oidcDeviceCodes)
+    .where(
+      and(
+        eq(oidcDeviceCodes.deviceCode, deviceCode),
+        eq(oidcDeviceCodes.clientId, clientId)
+      )
+    )
+    .get();
+
+  if (!stored) {
+    return errorResponse("invalid_grant", "Unknown device code");
+  }
+
+  // Check expiry
+  if (stored.expiresAt <= now) {
+    db.update(oidcDeviceCodes)
+      .set({ status: "expired" })
+      .where(eq(oidcDeviceCodes.id, stored.id))
+      .run();
+    return errorResponse("expired_token", "The device code has expired");
+  }
+
+  // RFC 8628 error codes for polling
+  if (stored.status === "pending") {
+    return NextResponse.json(
+      { error: "authorization_pending", error_description: "The user has not yet authorized the device" },
+      { status: 400, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
+  if (stored.status === "denied") {
+    return errorResponse("access_denied", "The user denied the authorization request");
+  }
+
+  if (stored.status === "expired") {
+    return errorResponse("expired_token", "The device code has expired");
+  }
+
+  if (stored.status !== "authorized" || !stored.userId) {
+    return errorResponse("server_error", "Unexpected device code state", 500);
+  }
+
+  // Device code is authorized — issue tokens (one-time use: mark consumed)
+  db.update(oidcDeviceCodes)
+    .set({ status: "consumed" })
+    .where(eq(oidcDeviceCodes.id, stored.id))
+    .run();
+
+  // Get user for token claims
+  const user = db
+    .select()
+    .from(users)
+    .where(eq(users.id, stored.userId))
+    .get();
+
+  if (!user) {
+    return errorResponse("server_error", "User not found", 500);
+  }
+
+  const scopes = stored.scopes.split(" ");
+  const { plan, entitlements } = derivePlanAndEntitlements(user.role);
+
+  const idToken = await mintIdToken(clientId, {
+    sub: user.id,
+    email: scopes.includes("email") ? user.email : undefined,
+    name: scopes.includes("profile") ? user.name || undefined : undefined,
+    role: user.role,
+    plan: scopes.includes("plan") ? plan : undefined,
+    entitlements: scopes.includes("entitlements") ? entitlements : undefined,
+  });
+
+  const accessToken = await mintAccessToken(clientId, {
+    sub: user.id,
+    scopes,
+  });
+
+  // Generate refresh token
+  const { token: refreshToken, hash: refreshTokenHash, expiresAt: refreshExpiresAt } =
+    generateRefreshToken();
+
+  db.insert(oidcRefreshTokens)
+    .values({
+      id: uuidv4(),
+      tokenHash: refreshTokenHash,
+      clientId,
+      userId: user.id,
+      scopes: stored.scopes,
+      expiresAt: refreshExpiresAt,
+    })
+    .run();
+
+  return NextResponse.json(
+    {
+      access_token: accessToken,
+      token_type: "Bearer",
+      expires_in: 3600,
+      id_token: idToken,
+      refresh_token: refreshToken,
+      scope: stored.scopes,
+    },
+    { headers: { "Cache-Control": "no-store" } }
+  );
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   let body: Record<string, string>;
   try {
@@ -355,6 +473,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
     return handleRefreshTokenGrant(body, clientId);
+  }
+
+  if (grantType === "urn:ietf:params:oauth:grant-type:device_code") {
+    if (!client.grantTypes.includes("urn:ietf:params:oauth:grant-type:device_code")) {
+      return errorResponse(
+        "unauthorized_client",
+        "Client not authorized for device_code grant"
+      );
+    }
+    return handleDeviceCodeGrant(body, clientId);
   }
 
   return errorResponse("unsupported_grant_type", `Grant type ${grantType} is not supported`);

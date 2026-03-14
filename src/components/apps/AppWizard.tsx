@@ -212,6 +212,7 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
           <TestingStep
             appId={appState.id}
             clientId={appState.clientId}
+            grantTypes={formData.grantTypes}
             redirectUris={formData.redirectUris}
             onRedirectUrisChange={(uris) => updateFormData({ redirectUris: uris })}
             allowedScopes={formData.allowedScopes}

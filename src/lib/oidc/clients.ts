@@ -243,7 +243,7 @@ export function seedSdkClient(): void {
       "http://127.0.0.1:*/callback",
     ],
     allowedScopes: "openid profile email gateway",
-    grantTypes: ["authorization_code", "refresh_token"],
+    grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"],
     tokenEndpointAuthMethod: "none", // Public client (native app, PKCE required)
   });
 }
