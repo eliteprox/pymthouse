@@ -5,6 +5,7 @@ import { IncomingMessage, ServerResponse } from "http";
 import { Socket } from "net";
 import { authOptions } from "@/lib/next-auth-options";
 import { getProvider } from "@/lib/oidc/provider";
+import { getPublicOrigin } from "@/lib/oidc/tokens";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -27,7 +28,11 @@ function buildNodeRequest(
   requestHeaders.forEach((value, key) => {
     req.headers[key.toLowerCase()] = value;
   });
-  req.headers.host = requestHeaders.get("host") || "localhost:3001";
+  const publicUrl = new URL(getPublicOrigin());
+  req.headers.host = requestHeaders.get("x-forwarded-host") || publicUrl.host;
+  if (!req.headers["x-forwarded-proto"]) {
+    req.headers["x-forwarded-proto"] = publicUrl.protocol.replace(":", "");
+  }
   req.push(null);
   const res = new ServerResponse(req);
   return { req, res };

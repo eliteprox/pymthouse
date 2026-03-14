@@ -10,7 +10,7 @@ import { getProvider } from "@/lib/oidc/provider";
 import { IncomingMessage, ServerResponse } from "http";
 import { Socket } from "net";
 import { normalizeProviderPath, PROVIDER_ENDPOINT_PATHS } from "@/lib/oidc/routes";
-import { OIDC_MOUNT_PATH } from "@/lib/oidc/tokens";
+import { OIDC_MOUNT_PATH, getPublicOrigin } from "@/lib/oidc/tokens";
 
 const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
 
@@ -64,12 +64,25 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
   // Without this, mountPath is '' and resume URLs become /auth/:uid instead of /api/v1/oidc/auth/:uid.
   (req as IncomingMessage & { baseUrl?: string }).baseUrl = mountPath;
 
-  // Copy headers
+  // Copy headers from the incoming request
   request.headers.forEach((value, key) => {
     req.headers[key.toLowerCase()] = value;
   });
-  // Ensure host header is set
-  req.headers.host = url.host;
+
+  // In production behind a reverse proxy, request.url is the internal URL
+  // (e.g. http://localhost:3001/...) so url.host would be "localhost:3001".
+  // The provider uses ctx.href (host + protocol) to build absolute URLs for
+  // redirects and verification_uri. Override with the public-facing origin so
+  // those URLs point to the real domain, not the internal loopback.
+  const publicOrigin = getPublicOrigin();
+  const publicUrl = new URL(publicOrigin);
+  req.headers.host = publicUrl.host;
+  if (!req.headers["x-forwarded-proto"]) {
+    req.headers["x-forwarded-proto"] = publicUrl.protocol.replace(":", "");
+  }
+  if (!req.headers["x-forwarded-host"]) {
+    req.headers["x-forwarded-host"] = publicUrl.host;
+  }
 
   // Push body data if present
   if (body && body.length > 0) {

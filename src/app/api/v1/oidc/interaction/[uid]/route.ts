@@ -11,7 +11,7 @@ import { authOptions } from "@/lib/next-auth-options";
 import { getProvider } from "@/lib/oidc/provider";
 import { IncomingMessage, ServerResponse } from "http";
 import { Socket } from "net";
-import { OIDC_MOUNT_PATH, getIssuer } from "@/lib/oidc/tokens";
+import { OIDC_MOUNT_PATH, getIssuer, getPublicOrigin } from "@/lib/oidc/tokens";
 
 const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
 
@@ -28,7 +28,11 @@ function buildNodeRequest(
   request.headers.forEach((value, key) => {
     req.headers[key.toLowerCase()] = value;
   });
-  req.headers.host = url.host;
+  const publicUrl = new URL(getPublicOrigin());
+  req.headers.host = publicUrl.host;
+  if (!req.headers["x-forwarded-proto"]) {
+    req.headers["x-forwarded-proto"] = publicUrl.protocol.replace(":", "");
+  }
   req.push(null);
   const res = new ServerResponse(req);
   return { req, res };

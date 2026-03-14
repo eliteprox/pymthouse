@@ -7,7 +7,7 @@ import { developerApps } from "@/db/schema";
 import { getClient } from "@/lib/oidc/clients";
 import { getScopeDefinition } from "@/lib/oidc/scopes";
 import { getProvider } from "@/lib/oidc/provider";
-import { OIDC_MOUNT_PATH } from "@/lib/oidc/tokens";
+import { OIDC_MOUNT_PATH, getPublicOrigin } from "@/lib/oidc/tokens";
 import { eq } from "drizzle-orm";
 import { IncomingMessage, ServerResponse } from "http";
 import { Socket } from "net";
@@ -85,10 +85,11 @@ export default async function ConsentPage({
     requestHeaders.forEach((value, key) => {
       req.headers[key.toLowerCase()] = value;
     });
-    req.headers.host =
-      requestHeaders.get("host") ||
-      req.headers.host ||
-      "localhost:3001";
+    const publicUrl = new URL(getPublicOrigin());
+    req.headers.host = requestHeaders.get("x-forwarded-host") || publicUrl.host;
+    if (!req.headers["x-forwarded-proto"]) {
+      req.headers["x-forwarded-proto"] = publicUrl.protocol.replace(":", "");
+    }
     req.push(null);
     const res = new ServerResponse(req);
 
