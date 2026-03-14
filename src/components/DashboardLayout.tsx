@@ -3,33 +3,58 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 
-const navItems = [
+interface NavItem {
+  label: string;
+  href: string;
+  icon: string;
+  roles?: string[];
+  group?: string; // if set, item is shown under this group heading
+}
+
+const allNavItems: NavItem[] = [
   {
     label: "Dashboard",
     href: "/",
     icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
   },
   {
+    label: "My Apps",
+    href: "/apps",
+    icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4",
+  },
+  {
+    label: "App Reviews",
+    href: "/admin/apps",
+    icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4",
+    roles: ["admin"],
+    group: "Admin",
+  },
+  {
     label: "Signer Admin",
     href: "/signer",
     icon: "M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z",
+    roles: ["admin"],
+    group: "Admin",
   },
   {
     label: "Streams",
     href: "/streams",
     icon: "M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z",
+    roles: ["admin", "operator"],
   },
   {
     label: "Users",
     href: "/users",
     icon: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z",
+    roles: ["admin", "operator"],
   },
   {
     label: "Billing",
     href: "/billing",
     icon: "M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z",
+    roles: ["admin", "operator"],
   },
 ];
 
@@ -41,6 +66,16 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
   const { data: session, status } = useSession();
+
+  const userRole = (session?.user as Record<string, unknown> | undefined)?.role as string | undefined;
+
+  const navItems = useMemo(
+    () =>
+      allNavItems.filter(
+        (item) => !item.roles || (userRole && item.roles.includes(userRole))
+      ),
+    [userRole]
+  );
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -73,40 +108,86 @@ export default function DashboardLayout({
           </p>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1">
-          {navItems.map((item) => {
-            const isActive =
-              item.href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(item.href);
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+          {(() => {
+            const adminItems = navItems.filter((i) => i.group === "Admin");
+            const otherItems = navItems.filter((i) => !i.group);
 
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  isActive
-                    ? "bg-emerald-500/10 text-emerald-400"
-                    : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
-                }`}
-              >
-                <svg
-                  className="w-5 h-5 shrink-0"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d={item.icon}
-                  />
-                </svg>
-                {item.label}
-              </Link>
+              <>
+                {otherItems.map((item) => {
+                  const isActive =
+                    item.href === "/"
+                      ? pathname === "/"
+                      : pathname.startsWith(item.href);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        isActive
+                          ? "bg-emerald-500/10 text-emerald-400"
+                          : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
+                      }`}
+                    >
+                      <svg
+                        className="w-5 h-5 shrink-0"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.5}
+                          d={item.icon}
+                        />
+                      </svg>
+                      {item.label}
+                    </Link>
+                  );
+                })}
+                {adminItems.length > 0 && (
+                  <>
+                    <div className="pt-4 mt-2 border-t border-zinc-800">
+                      <p className="px-3 py-1.5 text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                        Admin
+                      </p>
+                    </div>
+                    {adminItems.map((item) => {
+                      const isActive = pathname.startsWith(item.href);
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                            isActive
+                              ? "bg-emerald-500/10 text-emerald-400"
+                              : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
+                          }`}
+                        >
+                          <svg
+                            className="w-5 h-5 shrink-0"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={1.5}
+                              d={item.icon}
+                            />
+                          </svg>
+                          {item.label}
+                        </Link>
+                      );
+                    })}
+                  </>
+                )}
+              </>
             );
-          })}
+          })()}
         </nav>
 
         {/* User info */}

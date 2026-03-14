@@ -43,7 +43,7 @@ export function runMigrations(sqlite: Database) {
       eth_address TEXT,
       network TEXT NOT NULL DEFAULT 'arbitrum-one-mainnet',
       eth_rpc_url TEXT NOT NULL DEFAULT 'https://arb1.arbitrum.io/rpc',
-      signer_port INTEGER NOT NULL DEFAULT 8935,
+      signer_port INTEGER NOT NULL DEFAULT 8081,
       status TEXT NOT NULL DEFAULT 'stopped',
       deposit_wei TEXT DEFAULT '0',
       reserve_wei TEXT DEFAULT '0',
@@ -92,12 +92,121 @@ export function runMigrations(sqlite: Database) {
     CREATE INDEX IF NOT EXISTS idx_stream_sessions_end_user_id ON stream_sessions(end_user_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_end_user_id ON transactions(end_user_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_stream_session_id ON transactions(stream_session_id);
+
+    -- OIDC Provider tables
+    CREATE TABLE IF NOT EXISTS oidc_signing_keys (
+      id TEXT PRIMARY KEY,
+      kid TEXT NOT NULL UNIQUE,
+      algorithm TEXT NOT NULL DEFAULT 'RS256',
+      public_key_pem TEXT NOT NULL,
+      private_key_pem TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      rotated_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS oidc_clients (
+      id TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL UNIQUE,
+      client_secret_hash TEXT,
+      display_name TEXT NOT NULL,
+      redirect_uris TEXT NOT NULL,
+      allowed_scopes TEXT NOT NULL DEFAULT 'openid profile email',
+      grant_types TEXT NOT NULL DEFAULT 'authorization_code,refresh_token',
+      token_endpoint_auth_method TEXT NOT NULL DEFAULT 'none',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS oidc_auth_codes (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      client_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      scopes TEXT NOT NULL,
+      nonce TEXT,
+      code_challenge TEXT,
+      code_challenge_method TEXT,
+      redirect_uri TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      consumed_at TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS oidc_refresh_tokens (
+      id TEXT PRIMARY KEY,
+      token_hash TEXT NOT NULL UNIQUE,
+      client_id TEXT NOT NULL,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      scopes TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_oidc_signing_keys_kid ON oidc_signing_keys(kid);
+    CREATE INDEX IF NOT EXISTS idx_oidc_clients_client_id ON oidc_clients(client_id);
+    CREATE INDEX IF NOT EXISTS idx_oidc_auth_codes_code ON oidc_auth_codes(code);
+    CREATE INDEX IF NOT EXISTS idx_oidc_refresh_tokens_token_hash ON oidc_refresh_tokens(token_hash);
+
+    -- Developer App tables
+    CREATE TABLE IF NOT EXISTS developer_apps (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL REFERENCES users(id),
+      oidc_client_id TEXT REFERENCES oidc_clients(id),
+      name TEXT NOT NULL,
+      subtitle TEXT,
+      description TEXT,
+      category TEXT,
+      logo_light_url TEXT,
+      logo_dark_url TEXT,
+      developer_name TEXT,
+      website_url TEXT,
+      support_url TEXT,
+      privacy_policy_url TEXT,
+      tos_url TEXT,
+      demo_recording_url TEXT,
+      links_to_purchases INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'draft',
+      reviewer_notes TEXT,
+      reviewed_by TEXT REFERENCES users(id),
+      reviewed_at TEXT,
+      submitted_at TEXT,
+      pending_scopes TEXT,
+      pending_grant_types TEXT,
+      pending_revision_submitted_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS app_allowed_domains (
+      id TEXT PRIMARY KEY,
+      app_id TEXT NOT NULL REFERENCES developer_apps(id),
+      domain TEXT NOT NULL,
+      verified INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_developer_apps_owner_id ON developer_apps(owner_id);
+    CREATE INDEX IF NOT EXISTS idx_developer_apps_status ON developer_apps(status);
+    CREATE INDEX IF NOT EXISTS idx_app_allowed_domains_app_id ON app_allowed_domains(app_id);
   `);
 
-  // Backfill newer signer_config fields for existing databases.
-  try {
-    sqlite.exec("ALTER TABLE signer_config ADD COLUMN eth_acct_addr TEXT;");
-  } catch {}
+  // Backfill newer columns for existing databases (ALTER TABLE is idempotent via try/catch).
+  const backfills = [
+    "ALTER TABLE signer_config ADD COLUMN eth_acct_addr TEXT;",
+    "ALTER TABLE signer_config ADD COLUMN remote_discovery INTEGER DEFAULT 0;",
+    "ALTER TABLE signer_config ADD COLUMN orch_webhook_url TEXT;",
+    "ALTER TABLE signer_config ADD COLUMN live_ai_cap_report_interval TEXT;",
+    "ALTER TABLE sessions ADD COLUMN app_id TEXT;",
+    "ALTER TABLE end_users ADD COLUMN app_id TEXT;",
+    "ALTER TABLE stream_sessions ADD COLUMN app_id TEXT;",
+    "ALTER TABLE developer_apps ADD COLUMN pending_scopes TEXT;",
+    "ALTER TABLE developer_apps ADD COLUMN pending_grant_types TEXT;",
+    "ALTER TABLE developer_apps ADD COLUMN pending_revision_submitted_at TEXT;",
+  ];
+  for (const sql of backfills) {
+    try { sqlite.exec(sql); } catch {}
+  }
 
   // Seed singleton signer config if it doesn't exist
   const existing = sqlite
@@ -108,7 +217,7 @@ export function runMigrations(sqlite: Database) {
     sqlite
       .prepare(
         `INSERT INTO signer_config (id, name, network, eth_rpc_url, signer_port, status, default_cut_percent, billing_mode, created_at)
-         VALUES ('default', 'pymthouse signer', 'arbitrum-one-mainnet', 'https://arb1.arbitrum.io/rpc', 8935, 'stopped', 15.0, 'delegated', ?)`
+         VALUES ('default', 'pymthouse signer', 'arbitrum-one-mainnet', 'https://arb1.arbitrum.io/rpc', 8081, 'stopped', 15.0, 'delegated', ?)`
       )
       .run(new Date().toISOString());
   }

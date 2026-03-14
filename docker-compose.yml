@@ -1,10 +1,10 @@
 services:
   go-livepeer:
-    image: livepeer/go-livepeer:latest
+    image: livepeer/go-livepeer:0.8.10
     command:
       - -remoteSigner
       - -network=${SIGNER_NETWORK:-arbitrum-one-mainnet}
-      - -httpAddr=0.0.0.0:8935
+      - -httpAddr=0.0.0.0:${SIGNER_PORT:-8081}
       - -cliAddr=0.0.0.0:4935
       - -ethUrl=${ETH_RPC_URL:-http://nyc-router.eliteencoder.net:3517}
       - -ethPassword=/data/.eth-password
@@ -13,6 +13,11 @@ services:
       - -v=99
     volumes:
       - ./data:/data
+    environment:
+      - SIGNER_PORT=${SIGNER_PORT:-8081}
+      - SIGNER_REMOTE_DISCOVERY=${SIGNER_REMOTE_DISCOVERY:-0}
+      - ORCH_WEBHOOK_URL=${ORCH_WEBHOOK_URL:-}
+      - LIVE_AI_CAP_REPORT_INTERVAL=${LIVE_AI_CAP_REPORT_INTERVAL:-}
     entrypoint:
       - /bin/sh
       - -c
@@ -28,13 +33,20 @@ services:
             *) ARGS="$$ARGS $$arg" ;;
           esac
         done
+        # Add remote discovery flags when enabled
+        if [ "$$SIGNER_REMOTE_DISCOVERY" = "1" ] || [ "$$SIGNER_REMOTE_DISCOVERY" = "true" ]; then
+          ARGS="$$ARGS -remoteDiscovery=true"
+          [ -n "$$ORCH_WEBHOOK_URL" ] && ARGS="$$ARGS -orchWebhookUrl=$$ORCH_WEBHOOK_URL"
+          [ -n "$$LIVE_AI_CAP_REPORT_INTERVAL" ] && ARGS="$$ARGS -liveAICapReportInterval=$$LIVE_AI_CAP_REPORT_INTERVAL"
+        fi
         exec /usr/local/bin/livepeer $$ARGS
       - --
-    expose:
-      - "8935"
+    ports:
+      - "${SIGNER_PORT:-8081}:${SIGNER_PORT:-8081}"  # httpAddr - signer HTTP API
+      - "127.0.0.1:4935:4935"  # cliAddr - admin CLI API (localhost only, not exposed externally)
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8935/status"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:${SIGNER_PORT:-8081}/status"]
       interval: 15s
       timeout: 5s
       retries: 3

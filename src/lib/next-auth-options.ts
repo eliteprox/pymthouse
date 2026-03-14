@@ -84,7 +84,7 @@ export const authOptions: NextAuthOptions = {
 
       if (!existing) {
         const userCount = db.select().from(users).all().length;
-        const role = userCount === 0 ? "admin" : "operator";
+        const role = userCount === 0 ? "admin" : "developer";
 
         db.insert(users)
           .values({

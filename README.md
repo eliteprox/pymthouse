@@ -68,7 +68,26 @@ In another terminal:
 npm run bootstrap
 ```
 
-This prints a `pmth_...` admin token. Paste it into the login page to sign in.
+This creates an admin user and prints a `pmth_...` bearer token. The token is valid for 1 year.
+
+Optionally specify an email for the admin user:
+
+```bash
+npm run bootstrap admin@example.com
+```
+
+If an admin already exists, the script issues a new token for the existing admin instead of creating a new user.
+
+**Using the token:**
+
+- **Web login**: Paste the token into the login page at `http://localhost:3001/login`
+- **API requests**: Use the `Authorization` header:
+
+```bash
+curl -H "Authorization: Bearer pmth_..." http://localhost:3001/api/v1/signers
+```
+
+Once logged in, you can issue additional gateway tokens from the admin dashboard.
 
 ## Common commands
 

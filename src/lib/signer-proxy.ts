@@ -9,6 +9,7 @@ import {
   calculateLv2vPixels,
 } from "./proto";
 import type { AuthResult } from "./auth";
+import { getSenderInfo } from "./signer-cli";
 
 export interface ProxyResult {
   status: number;
@@ -30,7 +31,10 @@ export function getSignerConfig() {
  * Build the internal URL for the signer container.
  */
 function getSignerUrl(): string {
-  return process.env.SIGNER_INTERNAL_URL || "http://localhost:8935";
+  if (process.env.SIGNER_INTERNAL_URL) return process.env.SIGNER_INTERNAL_URL;
+  const signer = getSignerConfig();
+  const port = signer?.signerPort ?? 8081;
+  return `http://localhost:${port}`;
 }
 
 async function forwardToSigner(
@@ -205,6 +209,68 @@ export async function proxyGenerateLivePayment(
 }
 
 /**
+ * Proxy: POST /sign-byoc-job
+ */
+export async function proxySignByocJob(
+  requestBody: unknown,
+  auth: AuthResult
+): Promise<ProxyResult> {
+  const signer = getSignerConfig();
+  if (!signer || signer.status !== "running") {
+    return { status: 503, body: { error: "Signer is not running" } };
+  }
+
+  try {
+    const response = await forwardToSigner(
+      "/sign-byoc-job",
+      "POST",
+      requestBody
+    );
+    const responseBody = await response.json();
+
+    if (response.ok) {
+      const who = auth.endUserId || auth.userId || "unknown";
+      console.log(`[proxy] sign-byoc-job forwarded for ${who}`);
+    }
+
+    return { status: response.status, body: responseBody };
+  } catch (error) {
+    console.error("[proxy] Failed to forward sign-byoc-job:", error);
+    return { status: 502, body: { error: "Failed to reach signer" } };
+  }
+}
+
+/**
+ * Proxy: GET /discover-orchestrators
+ */
+export async function proxyDiscoverOrchestrators(
+  auth: AuthResult
+): Promise<ProxyResult> {
+  const signer = getSignerConfig();
+  if (!signer || signer.status !== "running") {
+    return { status: 503, body: { error: "Signer is not running" } };
+  }
+
+  try {
+    const response = await forwardToSigner(
+      "/discover-orchestrators",
+      "GET"
+    );
+    const responseBody = await response.json();
+
+    if (response.ok) {
+      const who = auth.endUserId || auth.userId || "unknown";
+      console.log(`[proxy] discover-orchestrators forwarded for ${who}`);
+    }
+
+    return { status: response.status, body: responseBody };
+  } catch (error) {
+    console.error("[proxy] Failed to forward discover-orchestrators:", error);
+    return { status: 502, body: { error: "Failed to reach signer" } };
+  }
+}
+
+/**
  * Sync signer status by checking both the Docker container and the HTTP endpoint.
  */
 export async function syncSignerStatus(): Promise<{
@@ -276,12 +342,21 @@ export async function syncSignerStatus(): Promise<{
     status = "stopped";
   }
 
+  // Fetch deposit/reserve from CLI port (same data livepeer_cli reads).
+  // Best-effort: only updates if the CLI is reachable.
+  const dbSet: Record<string, unknown> = {
+    status,
+    ethAddress: ethAddress || null,
+    lastError,
+  };
+  const senderInfo = await getSenderInfo();
+  if (senderInfo) {
+    dbSet.depositWei = senderInfo.deposit;
+    dbSet.reserveWei = senderInfo.reserve.fundsRemaining;
+  }
+
   db.update(signerConfig)
-    .set({
-      status,
-      ethAddress: ethAddress || null,
-      lastError,
-    })
+    .set(dbSet)
     .where(eq(signerConfig.id, "default"))
     .run();
 

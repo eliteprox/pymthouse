@@ -102,11 +102,11 @@ export async function POST(request: NextRequest) {
 function getComposeCommand(action: string): string {
   switch (action) {
     case "start":
-      return "docker compose up -d go-livepeer";
+    case "restart":
+      // --force-recreate ensures fresh container; --remove-orphans cleans stale containers
+      return "docker compose up -d --force-recreate --remove-orphans go-livepeer";
     case "stop":
       return "docker compose stop go-livepeer";
-    case "restart":
-      return "docker compose restart go-livepeer";
     default:
       throw new Error(`Unknown action: ${action}`);
   }
@@ -118,14 +118,27 @@ function buildSignerComposeEnv(
         ethRpcUrl: string;
         ethAcctAddr: string | null;
         ethAddress: string | null;
+        signerPort: number;
+        remoteDiscovery: number;
+        orchWebhookUrl: string | null;
+        liveAICapReportInterval: string | null;
       }
     | undefined
 ): NodeJS.ProcessEnv {
+  const rd = signer?.remoteDiscovery === 1;
+  const port = signer?.signerPort ?? 8081;
   return {
     ...process.env,
     SIGNER_NETWORK: "arbitrum-one-mainnet",
     ETH_RPC_URL: signer?.ethRpcUrl ?? "",
     SIGNER_ETH_ADDR: signer?.ethAcctAddr || "",
+    SIGNER_PORT: String(port),
+    SIGNER_REMOTE_DISCOVERY: rd ? "1" : "0",
+    ORCH_WEBHOOK_URL: rd && signer?.orchWebhookUrl ? signer.orchWebhookUrl : "",
+    LIVE_AI_CAP_REPORT_INTERVAL:
+      rd && signer?.liveAICapReportInterval
+        ? signer.liveAICapReportInterval
+        : "",
   };
 }
 
@@ -134,19 +147,21 @@ async function getAdminUser(request: NextRequest) {
   if (oauthSession?.user) {
     const sessionUser = oauthSession.user as Record<string, unknown>;
     if (sessionUser.id) {
-      return db
+      const user = db
         .select()
         .from(users)
         .where(eq(users.id, sessionUser.id as string))
         .get();
+      if (user?.role !== "admin") return null;
+      return user;
     }
   }
 
   const auth = authenticateRequest(request);
-  if (auth && hasScope(auth.scopes, "admin")) {
-    if (auth.userId) {
-      return db.select().from(users).where(eq(users.id, auth.userId)).get();
-    }
+  if (auth && hasScope(auth.scopes, "admin") && auth.userId) {
+    const user = db.select().from(users).where(eq(users.id, auth.userId)).get();
+    if (user?.role !== "admin") return null;
+    return user;
   }
 
   return null;

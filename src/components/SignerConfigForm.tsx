@@ -9,9 +9,13 @@ interface SignerConfigFormProps {
     network: string;
     ethRpcUrl: string;
     ethAcctAddr: string | null;
+    signerPort: number;
     defaultCutPercent: number;
     billingMode: string;
     naapApiKey: string | null;
+    remoteDiscovery: number;
+    orchWebhookUrl: string | null;
+    liveAICapReportInterval: string | null;
   };
 }
 
@@ -25,9 +29,13 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
     network: config.network,
     ethRpcUrl: config.ethRpcUrl,
     ethAcctAddr: config.ethAcctAddr || "",
+    signerPort: config.signerPort,
     defaultCutPercent: config.defaultCutPercent,
     billingMode: config.billingMode,
     naapApiKey: config.naapApiKey || "",
+    remoteDiscovery: config.remoteDiscovery === 1,
+    orchWebhookUrl: config.orchWebhookUrl || "",
+    liveAICapReportInterval: config.liveAICapReportInterval || "5m",
   });
 
   async function handleSubmit(e: React.FormEvent) {
@@ -44,7 +52,15 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
           ...formData,
           network: "arbitrum-one-mainnet",
           ethAcctAddr: formData.ethAcctAddr || null,
+          signerPort: formData.signerPort,
           naapApiKey: formData.naapApiKey || null,
+          remoteDiscovery: formData.remoteDiscovery,
+          orchWebhookUrl: formData.remoteDiscovery
+            ? formData.orchWebhookUrl || null
+            : null,
+          liveAICapReportInterval: formData.remoteDiscovery
+            ? formData.liveAICapReportInterval || null
+            : null,
         }),
       });
 
@@ -81,6 +97,27 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
             }
             className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50"
           />
+        </div>
+        <div>
+          <label className="block text-xs text-zinc-500 mb-1.5">
+            Signer Port (httpAddr)
+          </label>
+          <input
+            type="number"
+            min="1024"
+            max="65535"
+            value={formData.signerPort}
+            onChange={(e) =>
+              setFormData({
+                ...formData,
+                signerPort: parseInt(e.target.value, 10) || 8081,
+              })
+            }
+            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50"
+          />
+          <p className="text-xs text-zinc-600 mt-0.5">
+            HTTP API port (default: 8081). Restart signer to apply.
+          </p>
         </div>
         <div>
           <label className="block text-xs text-zinc-500 mb-1.5">
@@ -153,6 +190,64 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
             <option value="prepay">Prepay</option>
           </select>
         </div>
+        <div className="sm:col-span-2">
+          <label className="flex items-center gap-2 text-xs text-zinc-500 mb-1.5">
+            <input
+              type="checkbox"
+              checked={formData.remoteDiscovery}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  remoteDiscovery: e.target.checked,
+                  orchWebhookUrl: e.target.checked ? formData.orchWebhookUrl : "",
+                  liveAICapReportInterval: e.target.checked
+                    ? formData.liveAICapReportInterval
+                    : "",
+                })
+              }
+              className="rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/50"
+            />
+            Remote Discovery (orchWebhookUrl + liveAICapReportInterval)
+          </label>
+        </div>
+        {formData.remoteDiscovery && (
+          <>
+            <div className="sm:col-span-2">
+              <label className="block text-xs text-zinc-500 mb-1.5">
+                Orch Webhook URL
+              </label>
+              <input
+                type="url"
+                value={formData.orchWebhookUrl}
+                onChange={(e) =>
+                  setFormData({ ...formData, orchWebhookUrl: e.target.value })
+                }
+                className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-none focus:border-emerald-500/50 font-mono text-xs"
+                placeholder="https://example.com/orch-info.json"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-zinc-500 mb-1.5">
+                Live AI Cap Report Interval
+              </label>
+              <input
+                type="text"
+                value={formData.liveAICapReportInterval}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    liveAICapReportInterval: e.target.value,
+                  })
+                }
+                className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-none focus:border-emerald-500/50 font-mono text-xs"
+                placeholder="5m"
+              />
+              <p className="text-xs text-zinc-600 mt-0.5">
+                e.g. 5m, 10s, 1h
+              </p>
+            </div>
+          </>
+        )}
         <div className="sm:col-span-2">
           <label className="block text-xs text-zinc-500 mb-1.5">
             NaaP API Key (optional)

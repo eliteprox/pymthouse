@@ -4,6 +4,7 @@ import { eq, and, gt } from "drizzle-orm";
 import { createHash, randomBytes } from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import type { NextRequest } from "next/server";
+import { verifyAccessToken } from "@/lib/oidc/tokens";
 
 const TOKEN_PREFIX = "pmth_";
 
@@ -23,6 +24,7 @@ export function generateBearerToken(): { token: string; hash: string } {
 export function createSession(opts: {
   userId?: string;
   endUserId?: string;
+  appId?: string;
   label?: string;
   scopes?: string;
   expiresInDays?: number;
@@ -30,6 +32,7 @@ export function createSession(opts: {
   const {
     userId,
     endUserId,
+    appId,
     label,
     scopes = "gateway",
     expiresInDays = 90,
@@ -38,6 +41,7 @@ export function createSession(opts: {
   return createSessionWithExpiryMs({
     userId,
     endUserId,
+    appId,
     label,
     scopes,
     expiresInMs: expiresInDays * 24 * 60 * 60 * 1000,
@@ -47,6 +51,7 @@ export function createSession(opts: {
 export function createShortLivedSession(opts: {
   userId?: string;
   endUserId?: string;
+  appId?: string;
   label?: string;
   scopes?: string;
   expiresInMinutes: number;
@@ -54,6 +59,7 @@ export function createShortLivedSession(opts: {
   const {
     userId,
     endUserId,
+    appId,
     label,
     scopes = "gateway",
     expiresInMinutes,
@@ -62,6 +68,7 @@ export function createShortLivedSession(opts: {
   return createSessionWithExpiryMs({
     userId,
     endUserId,
+    appId,
     label,
     scopes,
     expiresInMs: expiresInMinutes * 60 * 1000,
@@ -71,11 +78,12 @@ export function createShortLivedSession(opts: {
 function createSessionWithExpiryMs(opts: {
   userId?: string;
   endUserId?: string;
+  appId?: string;
   label?: string;
   scopes: string;
   expiresInMs: number;
 }): { sessionId: string; token: string } {
-  const { userId, endUserId, label, scopes, expiresInMs } = opts;
+  const { userId, endUserId, appId, label, scopes, expiresInMs } = opts;
   const safeExpiresInMs = Math.max(1, Math.floor(expiresInMs));
 
   const { token, hash } = generateBearerToken();
@@ -87,6 +95,7 @@ function createSessionWithExpiryMs(opts: {
       id: sessionId,
       userId: userId || null,
       endUserId: endUserId || null,
+      appId: appId || null,
       label: label || null,
       tokenHash: hash,
       scopes,
@@ -105,6 +114,7 @@ export function revokeSession(sessionId: string): boolean {
 export interface AuthResult {
   userId: string | null;
   endUserId: string | null;
+  appId: string | null;
   sessionId: string;
   scopes: string;
   tokenHash: string;
@@ -131,6 +141,7 @@ export function validateBearerToken(token: string): AuthResult | null {
   return {
     userId: session.userId,
     endUserId: session.endUserId,
+    appId: session.appId || null,
     sessionId: session.id,
     scopes: session.scopes,
     tokenHash: hash,
@@ -148,7 +159,42 @@ export function hasScope(scopes: string, required: string): boolean {
 export function authenticateRequest(request: NextRequest): AuthResult | null {
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) return null;
-  return validateBearerToken(authHeader.slice(7));
+  const token = authHeader.slice(7);
+
+  // Try pmth_ session token first
+  const sessionResult = validateBearerToken(token);
+  if (sessionResult) return sessionResult;
+
+  // Fall back to OIDC JWT verification (async, but we return a promise-compatible shim)
+  // Note: callers that need OIDC support should use authenticateRequestAsync()
+  return null;
+}
+
+/**
+ * Authenticate a request, supporting both pmth_ session tokens and OIDC JWTs.
+ * Use this in API routes that should accept OIDC access tokens from SDK clients.
+ */
+export async function authenticateRequestAsync(request: NextRequest): Promise<AuthResult | null> {
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) return null;
+  const token = authHeader.slice(7);
+
+  // Try pmth_ session token first (fast, synchronous)
+  const sessionResult = validateBearerToken(token);
+  if (sessionResult) return sessionResult;
+
+  // Fall back to OIDC JWT verification
+  const jwtPayload = await verifyAccessToken(token);
+  if (!jwtPayload) return null;
+
+  return {
+    userId: typeof jwtPayload.sub === "string" ? jwtPayload.sub : null,
+    endUserId: null,
+    appId: typeof jwtPayload.client_id === "string" ? jwtPayload.client_id : null,
+    sessionId: typeof jwtPayload.jti === "string" ? jwtPayload.jti : `jwt_${Date.now()}`,
+    scopes: typeof jwtPayload.scope === "string" ? jwtPayload.scope.replace(/\s+/g, ",") : "",
+    tokenHash: "",
+  };
 }
 
 export function requireAuth(

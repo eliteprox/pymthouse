@@ -1,3 +1,8 @@
+/**
+ * @deprecated This endpoint is deprecated in favor of OIDC /api/v1/oidc/authorize.
+ * It will be removed in a future release. Set LEGACY_NAAP_LINK_ENABLED=false to disable.
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/next-auth-options";
@@ -10,6 +15,7 @@ import {
   hasScope,
 } from "@/lib/auth";
 
+const LEGACY_ENABLED = process.env.LEGACY_NAAP_LINK_ENABLED !== "false";
 const ALLOWED_REDIRECT_PREFIX = "/api/v1/auth/providers/";
 
 function getSingleParam(
@@ -61,6 +67,18 @@ async function getAuthenticatedAdminUserId(
 }
 
 export async function GET(request: NextRequest) {
+  if (!LEGACY_ENABLED) {
+    return NextResponse.json(
+      {
+        error: "deprecated",
+        message: "This endpoint is deprecated. Use OIDC /api/v1/oidc/authorize instead.",
+      },
+      { status: 410 }
+    );
+  }
+
+  console.warn("[DEPRECATED] /api/v1/naap/auth is deprecated. Use OIDC /api/v1/oidc/authorize instead.");
+
   const redirectUrl = getSingleParam(request.nextUrl.searchParams, "redirect_url");
   const state = getSingleParam(request.nextUrl.searchParams, "state");
 

@@ -1,5 +1,8 @@
 export const dynamic = "force-dynamic";
 
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
 import { signerConfig, streamSessions, transactions } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -7,6 +10,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import SignerControlPanel from "@/components/SignerControlPanel";
 import SignerConfigForm from "@/components/SignerConfigForm";
 import SignerLogs from "@/components/SignerLogs";
+import SignerLiveStats from "@/components/SignerLiveStats";
 
 function formatWei(wei: string | null): string {
   if (!wei || wei === "0") return "0 WEI";
@@ -16,7 +20,15 @@ function formatWei(wei: string | null): string {
   return `${eth.toFixed(6)} ETH`;
 }
 
-export default function SignerPage() {
+export default async function SignerPage() {
+  const session = await getServerSession(authOptions);
+  const role = (session?.user as Record<string, unknown> | undefined)?.role as
+    | string
+    | undefined;
+  if (!session?.user || role !== "admin") {
+    redirect("/");
+  }
+
   const signer = db
     .select()
     .from(signerConfig)
@@ -89,7 +101,7 @@ export default function SignerPage() {
         </div>
         <div className="font-mono text-sm">
           <ConfigRow label="Network" value={signer.network} />
-          <ConfigRow label="HttpAddr" value="0.0.0.0:8935" />
+          <ConfigRow label="HttpAddr" value={`0.0.0.0:${signer.signerPort}`} />
           <ConfigRow label="CliAddr" value="0.0.0.0:4935" />
           <ConfigRow label="EthUrl" value={signer.ethRpcUrl} />
           <ConfigRow
@@ -100,14 +112,34 @@ export default function SignerPage() {
           <ConfigRow label="EthPassword" value="***" />
           <ConfigRow label="Datadir" value="/data" />
           <ConfigRow label="RemoteSigner" value="true" />
+          <ConfigRow
+            label="RemoteDiscovery"
+            value={signer.remoteDiscovery === 1 ? "true" : "false"}
+          />
+          {signer.remoteDiscovery === 1 && (
+            <>
+              <ConfigRow
+                label="OrchWebhookUrl"
+                value={signer.orchWebhookUrl || "(empty)"}
+                mono
+              />
+              <ConfigRow
+                label="LiveAICapReportInterval"
+                value={signer.liveAICapReportInterval || "(default)"}
+              />
+            </>
+          )}
           <ConfigRow label="Verbosity" value="99" />
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Live signer state from CLI port 4935 */}
+      <div className="border border-zinc-800 rounded-xl p-6 bg-zinc-900/30 mb-8">
+        <SignerLiveStats />
+      </div>
+
+      {/* Activity stats from DB */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Deposit" value={formatWei(signer.depositWei)} />
-        <StatCard label="Reserve" value={formatWei(signer.reserveWei)} />
         <StatCard
           label="Active Streams"
           value={activeSessions.length.toString()}
@@ -141,9 +173,13 @@ export default function SignerPage() {
             network: signer.network,
             ethRpcUrl: signer.ethRpcUrl,
             ethAcctAddr: signer.ethAcctAddr,
+            signerPort: signer.signerPort,
             defaultCutPercent: signer.defaultCutPercent,
             billingMode: signer.billingMode,
             naapApiKey: signer.naapApiKey,
+            remoteDiscovery: signer.remoteDiscovery,
+            orchWebhookUrl: signer.orchWebhookUrl,
+            liveAICapReportInterval: signer.liveAICapReportInterval,
           }}
         />
       </div>
