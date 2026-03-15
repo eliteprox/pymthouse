@@ -14,7 +14,24 @@ import { OIDC_MOUNT_PATH, getPublicOrigin } from "@/lib/oidc/tokens";
 
 const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
 
-function resolveRedirectLocation(location: string, origin: string): URL {
+export function deriveExternalOriginFromHeaders(headers: Headers): string {
+  const publicFallback = getPublicOrigin();
+  const xfHostRaw = headers.get("x-forwarded-host");
+  if (!xfHostRaw) return publicFallback;
+
+  const xfProtoRaw = headers.get("x-forwarded-proto");
+  const host = xfHostRaw.split(",")[0]?.trim();
+  const protoCandidate = xfProtoRaw?.split(",")[0]?.trim().toLowerCase();
+  const proto =
+    protoCandidate === "http" || protoCandidate === "https"
+      ? protoCandidate
+      : new URL(publicFallback).protocol.replace(":", "");
+
+  if (!host) return publicFallback;
+  return `${proto}://${host}`;
+}
+
+export function resolveRedirectLocation(location: string, origin: string): URL {
   if (/^https?:\/\//i.test(location)) {
     return new URL(location);
   }
@@ -69,20 +86,14 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
     req.headers[key.toLowerCase()] = value;
   });
 
-  // In production behind a reverse proxy, request.url is the internal URL
-  // (e.g. http://localhost:3001/...) so url.host would be "localhost:3001".
-  // The provider uses ctx.href (host + protocol) to build absolute URLs for
-  // redirects and verification_uri. Override with the public-facing origin so
-  // those URLs point to the real domain, not the internal loopback.
-  const publicOrigin = getPublicOrigin();
-  const publicUrl = new URL(publicOrigin);
-  req.headers.host = publicUrl.host;
-  if (!req.headers["x-forwarded-proto"]) {
-    req.headers["x-forwarded-proto"] = publicUrl.protocol.replace(":", "");
-  }
-  if (!req.headers["x-forwarded-host"]) {
-    req.headers["x-forwarded-host"] = publicUrl.host;
-  }
+  // In production behind a reverse proxy, request.url is often the internal URL
+  // (e.g. http://localhost:3001/...), which must never leak into provider redirects.
+  // Resolve external origin from forwarded headers (fallback to NEXTAUTH_URL).
+  const externalOrigin = deriveExternalOriginFromHeaders(request.headers);
+  const externalUrl = new URL(externalOrigin);
+  req.headers.host = externalUrl.host;
+  req.headers["x-forwarded-proto"] = externalUrl.protocol.replace(":", "");
+  req.headers["x-forwarded-host"] = externalUrl.host;
 
   // Push body data if present
   if (body && body.length > 0) {
@@ -134,7 +145,7 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
         const location = headers.get("location");
         if (location) {
           const redirectResponse = NextResponse.redirect(
-            resolveRedirectLocation(location, url.origin),
+            resolveRedirectLocation(location, externalOrigin),
             statusCode as 301 | 302 | 303 | 307 | 308,
           );
           const setCookies = rawHeaders["set-cookie"];
