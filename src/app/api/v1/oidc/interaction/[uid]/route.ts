@@ -24,7 +24,8 @@ const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
  * forwarded headers) and take the interaction result as an explicit JS
  * parameter — neither reads from the HTTP body. Omitting the body keeps
  * this bridge simple and avoids stream-lifecycle bugs.
- */\nfunction buildNodeRequest(
+ */
+function buildNodeRequest(
   method: "GET" | "POST",
   uid: string,
   request: NextRequest,
