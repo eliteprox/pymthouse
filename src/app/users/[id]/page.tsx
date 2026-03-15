@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { db } from "@/db/index";
-import { endUsers, sessions, streamSessions, transactions } from "@/db/schema";
+import { endUsers, streamSessions, transactions } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -31,18 +31,6 @@ export default async function UserDetailPage({
     .get();
 
   if (!user) notFound();
-
-  const userTokens = db
-    .select({
-      id: sessions.id,
-      label: sessions.label,
-      scopes: sessions.scopes,
-      expiresAt: sessions.expiresAt,
-      createdAt: sessions.createdAt,
-    })
-    .from(sessions)
-    .where(eq(sessions.endUserId, id))
-    .all();
 
   const userStreams = db
     .select()
@@ -89,7 +77,7 @@ export default async function UserDetailPage({
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <div className="border border-zinc-800 rounded-xl p-4 bg-zinc-900/30">
           <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1">
             Credit Balance
@@ -114,65 +102,11 @@ export default async function UserDetailPage({
             {userStreams.length}
           </p>
         </div>
-        <div className="border border-zinc-800 rounded-xl p-4 bg-zinc-900/30">
-          <p className="text-xs text-zinc-500 uppercase tracking-wider mb-1">
-            Gateway Tokens
-          </p>
-          <p className="text-lg font-bold text-cyan-400">
-            {userTokens.length}
-          </p>
-        </div>
       </div>
 
       {/* Actions: issue token, add credits */}
       <div className="border border-zinc-800 rounded-xl p-6 bg-zinc-900/30 mb-8">
         <UserActions userId={id} />
-      </div>
-
-      {/* Active tokens */}
-      <div className="border border-zinc-800 rounded-xl bg-zinc-900/30 mb-8">
-        <div className="px-5 py-4 border-b border-zinc-800">
-          <h3 className="font-semibold text-zinc-200">Gateway Tokens</h3>
-        </div>
-        {userTokens.length === 0 ? (
-          <div className="text-center py-8 text-zinc-500 text-sm">
-            No tokens issued for this user
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
-                  <th className="text-left py-3 px-4 font-medium">Label</th>
-                  <th className="text-left py-3 px-4 font-medium">Scopes</th>
-                  <th className="text-right py-3 px-4 font-medium">Expires</th>
-                  <th className="text-right py-3 px-4 font-medium">Created</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/50">
-                {userTokens.map((tok) => (
-                  <tr
-                    key={tok.id}
-                    className="hover:bg-zinc-900/50 transition-colors"
-                  >
-                    <td className="py-3 px-4 text-zinc-300">
-                      {tok.label || tok.id.slice(0, 8)}
-                    </td>
-                    <td className="py-3 px-4 text-zinc-400 text-xs">
-                      {tok.scopes}
-                    </td>
-                    <td className="py-3 px-4 text-right text-zinc-500 text-xs">
-                      {new Date(tok.expiresAt).toLocaleDateString()}
-                    </td>
-                    <td className="py-3 px-4 text-right text-zinc-500 text-xs">
-                      {new Date(tok.createdAt).toLocaleDateString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
 
       {/* Stream sessions */}

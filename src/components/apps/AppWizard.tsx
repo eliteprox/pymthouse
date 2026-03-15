@@ -102,8 +102,9 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
           body: JSON.stringify(formData),
         });
         if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || "Failed to create app");
+          const text = await res.text();
+          const data = text ? JSON.parse(text) : {};
+          throw new Error(data.error || `Failed to create app (${res.status})`);
         }
         const data = await res.json();
         setAppState({
@@ -119,8 +120,9 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
           body: JSON.stringify(formData),
         });
         if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || "Failed to update app");
+          const text = await res.text();
+          const data = text ? JSON.parse(text) : {};
+          throw new Error(data.error || `Failed to update app (${res.status})`);
         }
       }
     } catch (err) {
