@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { deriveExternalOriginFromHeaders, resolveRedirectLocation } from "./route";
+import { deriveExternalOriginFromHeaders, resolveRedirectLocation } from "./utils";
 
 test("deriveExternalOriginFromHeaders prefers forwarded host+proto", () => {
   const headers = new Headers({
