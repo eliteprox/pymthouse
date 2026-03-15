@@ -1,4 +1,4 @@
-import { normalizeProviderPath, PROVIDER_ENDPOINT_PATHS } from "@/lib/oidc/routes";
+import { PROVIDER_ENDPOINT_PATHS } from "@/lib/oidc/routes";
 import { OIDC_MOUNT_PATH, getPublicOrigin } from "@/lib/oidc/tokens";
 
 export function deriveExternalOriginFromHeaders(headers: Headers): string {
@@ -18,9 +18,17 @@ export function deriveExternalOriginFromHeaders(headers: Headers): string {
   return `${proto}://${host}`;
 }
 
-export function resolveRedirectLocation(location: string, origin: string): URL {
+export function resolveRedirectLocation(
+  location: string,
+  origin: string,
+  allowedOrigins?: Set<string>,
+): URL {
   if (/^https?:\/\//i.test(location)) {
-    return new URL(location);
+    const redirectUrl = new URL(location);
+    if (allowedOrigins && !allowedOrigins.has(redirectUrl.origin)) {
+      throw new Error(`[OIDC] Redirect to unregistered origin blocked: ${redirectUrl.origin}`);
+    }
+    return redirectUrl;
   }
 
   // When provider emits relative paths, ensure they remain under our mount.

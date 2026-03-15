@@ -23,3 +23,37 @@ test("resolveRedirectLocation resolves provider relative redirects against exter
   const redirect = resolveRedirectLocation("/auth/abc123", "https://pymthouse.com");
   assert.equal(redirect.href, "https://pymthouse.com/api/v1/oidc/auth/abc123");
 });
+
+test("resolveRedirectLocation passes absolute URL when origin is in allowed set", () => {
+  const allowed = new Set(["https://app.example.com"]);
+  const redirect = resolveRedirectLocation(
+    "https://app.example.com/callback?code=abc",
+    "https://pymthouse.com",
+    allowed,
+  );
+  assert.equal(redirect.href, "https://app.example.com/callback?code=abc");
+});
+
+test("resolveRedirectLocation passes server-origin absolute URL when allowed", () => {
+  const allowed = new Set(["https://pymthouse.com"]);
+  const redirect = resolveRedirectLocation(
+    "https://pymthouse.com/api/v1/oidc/auth/uid123",
+    "https://pymthouse.com",
+    allowed,
+  );
+  assert.equal(redirect.href, "https://pymthouse.com/api/v1/oidc/auth/uid123");
+});
+
+test("resolveRedirectLocation throws when absolute URL origin is not in allowed set", () => {
+  const allowed = new Set(["https://pymthouse.com", "https://app.example.com"]);
+  assert.throws(
+    () => resolveRedirectLocation("https://evil.example.com/steal", "https://pymthouse.com", allowed),
+    /Redirect to unregistered origin blocked/,
+  );
+});
+
+test("resolveRedirectLocation permits absolute URL when no allowedOrigins set provided", () => {
+  // No allowed set — backward-compatible permissive behaviour
+  const redirect = resolveRedirectLocation("https://any.example.com/cb", "https://pymthouse.com");
+  assert.equal(redirect.href, "https://any.example.com/cb");
+});

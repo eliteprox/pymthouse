@@ -334,7 +334,16 @@ export async function getProvider(): Promise<Provider> {
 
     // Cookie signing keys and path
     cookies: {
-      keys: [process.env.NEXTAUTH_SECRET || "dev-secret-change-me"],
+      keys: (() => {
+        const secret = process.env.NEXTAUTH_SECRET;
+        if (!secret && process.env.NODE_ENV === "production") {
+          throw new Error(
+            "NEXTAUTH_SECRET must be set in production. " +
+            "Generate one with: openssl rand -base64 32",
+          );
+        }
+        return [secret ?? "dev-secret-change-me"];
+      })(),
       // Use path=/ so _interaction cookie is sent for /oidc/interaction, /api/v1/oidc/interaction,
       // and consent POSTs. The default (path=destination) would restrict the cookie to the
       // interaction URL only, breaking client-side POSTs to the API route.

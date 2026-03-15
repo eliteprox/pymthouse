@@ -15,12 +15,20 @@ import { OIDC_MOUNT_PATH, getIssuer, getPublicOrigin } from "@/lib/oidc/tokens";
 
 const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
 
-function buildNodeRequest(
+/**
+ * Build a minimal Node.js IncomingMessage/ServerResponse pair for calling
+ * node-oidc-provider's `interactionDetails` and `interactionResult` APIs.
+ *
+ * The POST request body is intentionally NOT forwarded here. Both provider
+ * methods read state from the signed `_interaction` cookie (present in the
+ * forwarded headers) and take the interaction result as an explicit JS
+ * parameter — neither reads from the HTTP body. Omitting the body keeps
+ * this bridge simple and avoids stream-lifecycle bugs.
+ */\nfunction buildNodeRequest(
   method: "GET" | "POST",
   uid: string,
   request: NextRequest,
 ): { req: IncomingMessage; res: ServerResponse } {
-  const url = new URL(request.url);
   const socket = new Socket();
   const req = new IncomingMessage(socket);
   req.method = method;

@@ -11,9 +11,11 @@ import { IncomingMessage, ServerResponse } from "http";
 import { Socket } from "net";
 import { normalizeProviderPath } from "@/lib/oidc/routes";
 import { OIDC_MOUNT_PATH } from "@/lib/oidc/tokens";
+import { getRegisteredRedirectOrigins } from "@/lib/oidc/clients";
 import { deriveExternalOriginFromHeaders, resolveRedirectLocation } from "./utils";
 
 const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
+
 
 /**
  * Convert a Web API Request/Response to the Node.js HTTP pair that
@@ -111,8 +113,12 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
       if ([301, 302, 303, 307, 308].includes(statusCode)) {
         const location = headers.get("location");
         if (location) {
+          const allowedOrigins = new Set([
+            new URL(externalOrigin).origin,
+            ...getRegisteredRedirectOrigins(),
+          ]);
           const redirectResponse = NextResponse.redirect(
-            resolveRedirectLocation(location, externalOrigin),
+            resolveRedirectLocation(location, externalOrigin, allowedOrigins),
             statusCode as 301 | 302 | 303 | 307 | 308,
           );
           const setCookies = rawHeaders["set-cookie"];
