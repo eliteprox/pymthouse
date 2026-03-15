@@ -11,8 +11,8 @@ import { findAccount } from "./account";
 import { getIssuer } from "./tokens";
 import { hashClientSecret } from "./clients";
 import { db } from "@/db/index";
-import { oidcSigningKeys, oidcClients } from "@/db/schema";
-import { desc } from "drizzle-orm";
+import { oidcSigningKeys, oidcClients, appAllowedDomains, developerApps } from "@/db/schema";
+import { desc, eq } from "drizzle-orm";
 import { timingSafeEqual } from "crypto";
 import * as jose from "jose";
 
@@ -93,6 +93,19 @@ function loadClients(): ClientMetadata[] {
       token_endpoint_auth_method: row.tokenEndpointAuthMethod as "none" | "client_secret_post" | "client_secret_basic",
       scope: row.allowedScopes,
     };
+
+    // White-label client metadata
+    if (row.postLogoutRedirectUris) {
+      try {
+        const parsed = JSON.parse(row.postLogoutRedirectUris) as string[];
+        if (parsed.length > 0) meta.post_logout_redirect_uris = parsed;
+      } catch { /* malformed JSON, skip */ }
+    }
+    if (row.initiateLoginUri) meta.initiate_login_uri = row.initiateLoginUri;
+    if (row.logoUri) meta.logo_uri = row.logoUri;
+    if (row.policyUri) meta.policy_uri = row.policyUri;
+    if (row.tosUri) meta.tos_uri = row.tosUri;
+    if (row.clientUri) meta.client_uri = row.clientUri;
 
     if (row.clientSecretHash) {
       // Store the SHA-256 hash in client_secret and patch comparison logic
@@ -221,20 +234,39 @@ export async function getProvider(): Promise<Provider> {
 
     jwks: jwks as Configuration["jwks"],
 
-    // Allow CORS from redirect URI origins, plus the issuer origin (admin UI testing device flow).
+    // Allow CORS from redirect URI origins, whitelisted domains, plus the issuer origin.
     clientBasedCORS: (ctx, origin, client) => {
       const issuerOrigin = new URL(issuer).origin;
       if (origin === issuerOrigin) {
         return true; // Same-origin (e.g. admin UI at localhost:3001 testing device flow)
       }
+      // Check redirect URI origins
       const uris = client.redirectUris ?? [];
-      return uris.some((uri) => {
+      const matchesRedirectUri = uris.some((uri) => {
         try {
           return new URL(uri).origin === origin;
         } catch {
           return false;
         }
       });
+      if (matchesRedirectUri) return true;
+
+      // Check appAllowedDomains table for this client
+      const clientRow = db.select().from(oidcClients)
+        .where(eq(oidcClients.clientId, client.clientId))
+        .get();
+      if (clientRow) {
+        const appRow = db.select({ id: developerApps.id }).from(developerApps)
+          .where(eq(developerApps.oidcClientId, clientRow.id))
+          .get();
+        if (appRow) {
+          const domains = db.select().from(appAllowedDomains)
+            .where(eq(appAllowedDomains.appId, appRow.id))
+            .all();
+          if (domains.some((d) => d.domain === origin)) return true;
+        }
+      }
+      return false;
     },
 
     // Custom scopes
@@ -287,6 +319,7 @@ export async function getProvider(): Promise<Provider> {
         charset: "base-20",
         mask: "****-****",
       },
+      rpInitiatedLogout: { enabled: true },
       userinfo: { enabled: true },
       revocation: { enabled: true },
       introspection: { enabled: true },
@@ -413,4 +446,13 @@ export async function getProvider(): Promise<Provider> {
   setInterval(() => SqliteAdapter.cleanup(), 10 * 60 * 1000);
 
   return _provider;
+}
+
+/**
+ * Reset the cached provider instance, forcing re-initialization on the next
+ * call to getProvider(). Call this after updating client metadata (e.g. from
+ * the app settings API) so the provider picks up the changes.
+ */
+export function resetProvider(): void {
+  _provider = null;
 }

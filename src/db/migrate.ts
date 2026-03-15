@@ -221,6 +221,12 @@ export function runMigrations(sqlite: Database) {
     "ALTER TABLE developer_apps ADD COLUMN pending_scopes TEXT;",
     "ALTER TABLE developer_apps ADD COLUMN pending_grant_types TEXT;",
     "ALTER TABLE developer_apps ADD COLUMN pending_revision_submitted_at TEXT;",
+    "ALTER TABLE oidc_clients ADD COLUMN post_logout_redirect_uris TEXT;",
+    "ALTER TABLE oidc_clients ADD COLUMN initiate_login_uri TEXT;",
+    "ALTER TABLE oidc_clients ADD COLUMN logo_uri TEXT;",
+    "ALTER TABLE oidc_clients ADD COLUMN policy_uri TEXT;",
+    "ALTER TABLE oidc_clients ADD COLUMN tos_uri TEXT;",
+    "ALTER TABLE oidc_clients ADD COLUMN client_uri TEXT;",
   ];
   for (const sql of backfills) {
     try { sqlite.exec(sql); } catch {}

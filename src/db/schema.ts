@@ -130,6 +130,13 @@ export const oidcClients = sqliteTable("oidc_clients", {
   allowedScopes: text("allowed_scopes").notNull().default("openid profile email"),
   grantTypes: text("grant_types").notNull().default("authorization_code,refresh_token"), // comma-separated
   tokenEndpointAuthMethod: text("token_endpoint_auth_method").notNull().default("none"), // none | client_secret_post | client_secret_basic
+  // OIDC client metadata for white-label support
+  postLogoutRedirectUris: text("post_logout_redirect_uris"), // JSON array
+  initiateLoginUri: text("initiate_login_uri"),
+  logoUri: text("logo_uri"),
+  policyUri: text("policy_uri"),
+  tosUri: text("tos_uri"),
+  clientUri: text("client_uri"),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),

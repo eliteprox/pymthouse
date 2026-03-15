@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
-import { developerApps } from "@/db/schema";
+import { developerApps, oidcClients } from "@/db/schema";
 import { getClient } from "@/lib/oidc/clients";
 import { getScopeDefinition } from "@/lib/oidc/scopes";
 import { getProvider } from "@/lib/oidc/provider";
@@ -136,10 +136,19 @@ export default async function ConsentPage({
       websiteUrl: developerApps.websiteUrl,
       privacyPolicyUrl: developerApps.privacyPolicyUrl,
       supportUrl: developerApps.supportUrl,
+      logoLightUrl: developerApps.logoLightUrl,
     })
     .from(developerApps)
     .where(eq(developerApps.oidcClientId, client.id))
     .get();
+
+  // Fetch logo_uri from OIDC client metadata (synced from app settings)
+  const oidcClientRow = db
+    .select({ logoUri: oidcClients.logoUri })
+    .from(oidcClients)
+    .where(eq(oidcClients.clientId, clientId))
+    .get();
+  const logoUrl = oidcClientRow?.logoUri || developerApp?.logoLightUrl || null;
 
   const scopes = scope
     ? scope.split(/\s+/).filter((s) => client.allowedScopes.includes(s))
@@ -152,7 +161,7 @@ export default async function ConsentPage({
       "Access information associated with this permission",
     required: getScopeDefinition(s)?.required || false,
   }));
-  const signedInAs = session.user.name || session.user.email || "Your PymtHouse account";
+  const signedInAs = session.user.name || session.user.email || "Your account";
   const redirectHost = getHostLabel(redirectUri || "");
   const websiteHost = developerApp?.websiteUrl
     ? getHostLabel(developerApp.websiteUrl)
@@ -162,21 +171,29 @@ export default async function ConsentPage({
     <main className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-6">
       <div className="max-w-2xl w-full border border-zinc-800 bg-zinc-900/60 rounded-2xl p-6 sm:p-8 shadow-2xl shadow-black/30">
         <div className="flex items-start gap-4 mb-6">
-          <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shrink-0">
-            <svg
-              className="w-7 h-7 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
-              />
-            </svg>
-          </div>
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt={client.displayName}
+              className="w-14 h-14 rounded-2xl object-cover shrink-0 border border-zinc-700"
+            />
+          ) : (
+            <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shrink-0">
+              <svg
+                className="w-7 h-7 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+                />
+              </svg>
+            </div>
+          )}
           <div className="min-w-0">
             <div className="inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-emerald-300">
               Permission Request
@@ -202,7 +219,7 @@ export default async function ConsentPage({
             <p className="text-sm text-zinc-400 mt-1">
               {developerApp?.developerName
                 ? `Built by ${developerApp.developerName}`
-                : "Registered PymtHouse application"}
+                : "Registered application"}
             </p>
             {websiteHost && (
               <p className="text-xs text-zinc-500 mt-2">
@@ -285,7 +302,7 @@ export default async function ConsentPage({
             After You Continue
           </p>
           <p className="text-sm text-zinc-300 mt-2">
-            PymtHouse will send you back to{" "}
+            You will be sent back to{" "}
             <span className="text-zinc-100">{redirectHost}</span> to finish sign-in.
           </p>
           {redirectUri && (

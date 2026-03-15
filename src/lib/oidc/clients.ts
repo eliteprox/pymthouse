@@ -231,6 +231,12 @@ export function updateClientConfig(
     allowedScopes?: string;
     grantTypes?: string[];
     tokenEndpointAuthMethod?: "none" | "client_secret_post" | "client_secret_basic";
+    postLogoutRedirectUris?: string[];
+    initiateLoginUri?: string | null;
+    logoUri?: string | null;
+    policyUri?: string | null;
+    tosUri?: string | null;
+    clientUri?: string | null;
   }
 ): boolean {
   const existing = db
@@ -247,6 +253,12 @@ export function updateClientConfig(
   if (config.allowedScopes !== undefined) updates.allowedScopes = config.allowedScopes;
   if (config.grantTypes !== undefined) updates.grantTypes = config.grantTypes.join(",");
   if (config.tokenEndpointAuthMethod !== undefined) updates.tokenEndpointAuthMethod = config.tokenEndpointAuthMethod;
+  if (config.postLogoutRedirectUris !== undefined) updates.postLogoutRedirectUris = JSON.stringify(config.postLogoutRedirectUris);
+  if (config.initiateLoginUri !== undefined) updates.initiateLoginUri = config.initiateLoginUri;
+  if (config.logoUri !== undefined) updates.logoUri = config.logoUri;
+  if (config.policyUri !== undefined) updates.policyUri = config.policyUri;
+  if (config.tosUri !== undefined) updates.tosUri = config.tosUri;
+  if (config.clientUri !== undefined) updates.clientUri = config.clientUri;
 
   if (Object.keys(updates).length === 0) return true;
 
