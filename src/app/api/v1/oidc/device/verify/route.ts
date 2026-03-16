@@ -107,7 +107,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // Resolve the resource indicator from the original device auth request
     // so the token exchange can issue audience-bound JWT access tokens.
-    const resource = deviceCode.params?.resource || deviceCode.resource || getIssuer();
+    const params =
+      typeof deviceCode.params === "object" && deviceCode.params !== null
+        ? (deviceCode.params as Record<string, unknown>)
+        : null;
+    const resourceFromParams = params?.resource;
+    const resource =
+      typeof resourceFromParams === "string" && resourceFromParams.length > 0
+        ? resourceFromParams
+        : typeof deviceCode.resource === "string" && deviceCode.resource.length > 0
+          ? deviceCode.resource
+          : getIssuer();
 
     await adapter.upsert(
       deviceCode.jti!,
