@@ -10,9 +10,15 @@ import { getProvider } from "@/lib/oidc/provider";
 import { IncomingMessage, ServerResponse } from "http";
 import { Socket } from "net";
 import { normalizeProviderPath } from "@/lib/oidc/routes";
-import { OIDC_MOUNT_PATH } from "@/lib/oidc/tokens";
+import { OIDC_MOUNT_PATH, getIssuer } from "@/lib/oidc/tokens";
 import { getRegisteredRedirectOrigins } from "@/lib/oidc/clients";
 import { deriveExternalOriginFromHeaders, resolveRedirectLocation } from "./utils";
+
+const RESOURCE_REQUIRED_GRANTS = new Set([
+  "urn:ietf:params:oauth:grant-type:device_code",
+  "authorization_code",
+  "refresh_token",
+]);
 
 const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
 
@@ -41,7 +47,27 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
   path = normalizedPath;
 
   // Create a Node.js IncomingMessage from the NextRequest
-  const body = request.body ? Buffer.from(await request.arrayBuffer()) : null;
+  let body = request.body ? Buffer.from(await request.arrayBuffer()) : null;
+
+  // RFC 8707 strict mode: ensure resource indicator is present on token-issuing
+  // endpoints so access tokens are always audience-bound JWTs.
+  const contentType = request.headers.get("content-type") || "";
+  if (
+    request.method === "POST" &&
+    contentType.includes("application/x-www-form-urlencoded") &&
+    body &&
+    body.length > 0 &&
+    (path === "/device/auth" || path === "/token")
+  ) {
+    const params = new URLSearchParams(body.toString("utf-8"));
+    const grantType = params.get("grant_type");
+    const needsResource =
+      path === "/device/auth" || (grantType && RESOURCE_REQUIRED_GRANTS.has(grantType));
+    if (needsResource && !params.has("resource")) {
+      params.set("resource", getIssuer());
+      body = Buffer.from(params.toString(), "utf-8");
+    }
+  }
   const socket = new Socket();
   const req = new IncomingMessage(socket);
   req.method = request.method;
@@ -66,6 +92,7 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
 
   // Push body data if present
   if (body && body.length > 0) {
+    req.headers["content-length"] = String(body.length);
     req.push(body);
   }
   req.push(null); // Signal end of stream
@@ -133,8 +160,31 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
         }
       }
 
+      // Rewrite verification_uri in device auth responses to point to our
+      // custom React UI instead of the provider's built-in HTML form.
+      let finalBody: Buffer | null = responseBody.length > 0 ? responseBody : null;
+      const ct = headers.get("content-type") || "";
+      if (
+        finalBody &&
+        ct.includes("application/json") &&
+        path === "/device/auth"
+      ) {
+        try {
+          const json = JSON.parse(finalBody.toString("utf-8"));
+          if (json.verification_uri) {
+            const customBase = `${externalOrigin}/oidc/device`;
+            json.verification_uri = customBase;
+            if (json.verification_uri_complete && json.user_code) {
+              json.verification_uri_complete = `${customBase}?user_code=${encodeURIComponent(json.user_code)}`;
+            }
+            finalBody = Buffer.from(JSON.stringify(json), "utf-8");
+            headers.set("content-length", String(finalBody.length));
+          }
+        } catch { /* non-JSON body, pass through */ }
+      }
+
       const nextResponse = new NextResponse(
-        responseBody.length > 0 ? responseBody : null,
+        finalBody ? new Uint8Array(finalBody) : null,
         { status: statusCode, headers },
       );
 

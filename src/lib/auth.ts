@@ -175,6 +175,7 @@ export function authenticateRequest(request: NextRequest): AuthResult | null {
  * Authenticate a request, supporting both pmth_ session tokens and OIDC JWTs.
  * Use this in API routes that should accept OIDC access tokens from SDK clients.
  */
+
 export async function authenticateRequestAsync(request: NextRequest): Promise<AuthResult | null> {
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) return null;
@@ -184,11 +185,16 @@ export async function authenticateRequestAsync(request: NextRequest): Promise<Au
   const sessionResult = validateBearerToken(token);
   if (sessionResult) return sessionResult;
 
-  // Fall back to OIDC JWT verification
+  // Verify OIDC JWT access token (stateless, audience-bound per RFC 8707)
   const jwtPayload = await verifyAccessToken(token);
   if (!jwtPayload) {
     if (DEBUG_OIDC_LOGS) {
-      console.warn("[OIDC] bearer token rejected by JWT verifier");
+      const parts = token.split(".");
+      const isJwtShaped = parts.length === 3;
+      console.warn(
+        "[OIDC] bearer token rejected by JWT verifier:",
+        isJwtShaped ? "JWT signature/issuer/audience mismatch" : "not a JWT (opaque token?)",
+      );
     }
     return null;
   }

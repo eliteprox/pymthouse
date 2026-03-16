@@ -318,6 +318,21 @@ export async function getProvider(): Promise<Provider> {
         enabled: true,
         charset: "base-20",
         mask: "****-****",
+        // Redirect the provider's built-in device pages to our custom React UI.
+        // Without these overrides, visiting `/api/v1/oidc/device/<code>` renders
+        // the provider's default HTML which fails (devInteractions is off).
+        userCodeInputSource: async (ctx, _form, _out, _err) => {
+          ctx.redirect(`${issuer.replace(/\/api\/v1\/oidc$/, "")}/oidc/device`);
+        },
+        userCodeConfirmSource: async (ctx, _form, _client, _deviceInfo, userCode) => {
+          ctx.redirect(
+            `${issuer.replace(/\/api\/v1\/oidc$/, "")}/oidc/device?user_code=${encodeURIComponent(userCode)}`,
+          );
+        },
+        successSource: async (ctx) => {
+          ctx.body = `<!DOCTYPE html><html><head><title>Device Authorized</title></head>`
+            + `<body><h1>Device Authorized</h1><p>You can close this window and return to your device.</p></body></html>`;
+        },
       },
       rpInitiatedLogout: { enabled: true },
       userinfo: { enabled: true },
@@ -325,13 +340,21 @@ export async function getProvider(): Promise<Provider> {
       introspection: { enabled: true },
       resourceIndicators: {
         enabled: true,
-        defaultResource: async (_ctx) => {
-          return getIssuer();
+        defaultResource: async (_ctx, _client, oneOf) => {
+          // RFC 8707 strict mode: require an explicit resource parameter.
+          // When the grant already has a single resource bound, allow it through;
+          // otherwise return the issuer so the provider can validate it.
+          if (typeof oneOf === "string") return oneOf;
+          if (Array.isArray(oneOf) && oneOf.length === 1) return oneOf[0];
+          return issuer;
         },
         getResourceServerInfo: async (_ctx, resourceIndicator, _client) => {
+          if (resourceIndicator !== issuer) {
+            throw new Error(`Unknown resource indicator: ${resourceIndicator}`);
+          }
           return {
             scope: "openid profile email role plan entitlements gateway offline_access",
-            audience: resourceIndicator,
+            audience: issuer,
             accessTokenFormat: "jwt" as const,
             accessTokenTTL: 3600,
             jwt: {

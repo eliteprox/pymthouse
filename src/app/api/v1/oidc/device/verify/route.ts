@@ -105,7 +105,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const now = Math.floor(Date.now() / 1000);
     const expiresIn = deviceCode.exp ? Math.max(deviceCode.exp - now, 1) : 600;
 
-    // Mark the device code as approved with an account and grant binding.
+    // Resolve the resource indicator from the original device auth request
+    // so the token exchange can issue audience-bound JWT access tokens.
+    const resource = deviceCode.params?.resource || deviceCode.resource || getIssuer();
+
     await adapter.upsert(
       deviceCode.jti!,
       {
@@ -113,6 +116,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         accountId: userId,
         grantId,
         scope,
+        resource,
         authTime: now,
         acr: typeof deviceCode.acr === "string" ? deviceCode.acr : "urn:pmth:session",
         amr: Array.isArray(deviceCode.amr) ? deviceCode.amr : ["pwd"],
