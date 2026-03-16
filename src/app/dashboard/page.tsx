@@ -95,6 +95,8 @@ function AdminDashboard() {
         <p className="text-zinc-500 mt-1">Platform overview</p>
       </div>
 
+      <FreeUsageBanner />
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         {stats.map((stat) => (
           <div
@@ -172,6 +174,36 @@ function AdminDashboard() {
   );
 }
 
+function FreeUsageBanner() {
+  return (
+    <div className="mb-6 flex items-start gap-3 p-4 rounded-xl border border-teal-500/20 bg-teal-500/5">
+      <svg
+        className="w-5 h-5 text-teal-400 mt-0.5 shrink-0"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={1.5}
+          d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+        />
+      </svg>
+      <div>
+        <p className="text-sm font-medium text-teal-300">
+          Free for a limited time
+        </p>
+        <p className="text-xs text-zinc-400 mt-0.5">
+          App usage is currently free for all users during our beta period.
+          Usage is tracked via signing requests and billing will be introduced
+          in a future update.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function DeveloperDashboard() {
   return (
     <DashboardLayout>
@@ -179,6 +211,8 @@ function DeveloperDashboard() {
         <h2 className="text-2xl font-bold tracking-tight">Dashboard</h2>
         <p className="text-zinc-500 mt-1">Developer overview</p>
       </div>
+
+      <FreeUsageBanner />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="border border-zinc-800 rounded-xl p-6 bg-zinc-900/30">
