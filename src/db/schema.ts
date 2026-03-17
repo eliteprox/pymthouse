@@ -1,13 +1,15 @@
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 
-// Admin/operator/developer accounts (OAuth login)
+// Admin/operator/developer accounts (OAuth or wallet login)
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
-  email: text("email").notNull(),
+  email: text("email"),
   name: text("name"),
-  oauthProvider: text("oauth_provider").notNull(), // google | github | bootstrap
+  oauthProvider: text("oauth_provider").notNull(), // google | github | bootstrap | privy-wallet
   oauthSubject: text("oauth_subject").notNull(),
   role: text("role").notNull().default("developer"), // admin | operator | developer
+  walletAddress: text("wallet_address"),
+  privyDid: text("privy_did").unique(),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -130,6 +132,13 @@ export const oidcClients = sqliteTable("oidc_clients", {
   allowedScopes: text("allowed_scopes").notNull().default("openid profile email"),
   grantTypes: text("grant_types").notNull().default("authorization_code,refresh_token"), // comma-separated
   tokenEndpointAuthMethod: text("token_endpoint_auth_method").notNull().default("none"), // none | client_secret_post | client_secret_basic
+  // OIDC client metadata for white-label support
+  postLogoutRedirectUris: text("post_logout_redirect_uris"), // JSON array
+  initiateLoginUri: text("initiate_login_uri"),
+  logoUri: text("logo_uri"),
+  policyUri: text("policy_uri"),
+  tosUri: text("tos_uri"),
+  clientUri: text("client_uri"),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -222,6 +231,18 @@ export const developerApps = sqliteTable("developer_apps", {
     .$defaultFn(() => new Date().toISOString()),
 });
 
+// Admin invites -- one-time codes for promoting users to admin role
+export const adminInvites = sqliteTable("admin_invites", {
+  id: text("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  createdBy: text("created_by").notNull().references(() => users.id),
+  usedBy: text("used_by").references(() => users.id),
+  expiresAt: text("expires_at").notNull(),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
 export const appAllowedDomains = sqliteTable("app_allowed_domains", {
   id: text("id").primaryKey(),
   appId: text("app_id").notNull().references(() => developerApps.id),
@@ -249,4 +270,5 @@ export type OidcRefreshToken = typeof oidcRefreshTokens.$inferSelect;
 export type OidcDeviceCode = typeof oidcDeviceCodes.$inferSelect;
 export type DeveloperApp = typeof developerApps.$inferSelect;
 export type NewDeveloperApp = typeof developerApps.$inferInsert;
+export type AdminInvite = typeof adminInvites.$inferSelect;
 export type AppAllowedDomain = typeof appAllowedDomains.$inferSelect;

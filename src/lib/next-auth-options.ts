@@ -7,6 +7,7 @@ import { users } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { validateBearerToken, hasScope } from "@/lib/auth";
+import { verifyPrivyToken, findOrCreateDeveloperUser, getPrivyClient } from "@/lib/privy";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -41,6 +42,68 @@ export const authOptions: NextAuthOptions = {
       },
     }),
 
+    // Privy wallet login -- developer sign-in with ETH wallet
+    CredentialsProvider({
+      id: "privy-wallet",
+      name: "Wallet",
+      credentials: {
+        privyToken: { label: "Privy Token", type: "text" },
+        walletAddress: { label: "Wallet Address", type: "text" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.privyToken) return null;
+
+        const privyDid = await verifyPrivyToken(credentials.privyToken);
+        if (!privyDid) return null;
+
+        // Get additional user info from Privy if available
+        let email: string | undefined;
+        let name: string | undefined;
+        try {
+          const client = getPrivyClient();
+          if (client) {
+            const privyUser = await client.users()._get(privyDid);
+            const emailAccount = privyUser.linked_accounts.find(
+              (a) => a.type === "email"
+            ) as { address: string } | undefined;
+            email = emailAccount?.address || undefined;
+            // Pick up wallet from linked accounts (email users get embedded wallets)
+            if (!credentials.walletAddress) {
+              const walletAccount = privyUser.linked_accounts.find(
+                (a) => a.type === "wallet"
+              ) as { address: string } | undefined;
+              if (walletAccount?.address) {
+                credentials.walletAddress = walletAccount.address;
+              }
+            }
+          }
+        } catch {
+          // Non-critical: proceed without extra info
+        }
+
+        const { id } = findOrCreateDeveloperUser(
+          privyDid,
+          credentials.walletAddress || undefined,
+          undefined,
+          email
+        );
+
+        const user = db
+          .select()
+          .from(users)
+          .where(eq(users.id, id))
+          .get();
+
+        if (!user) return null;
+
+        return {
+          id: user.id,
+          email: user.email || undefined,
+          name: user.name || user.walletAddress || "Developer",
+        };
+      },
+    }),
+
     ...(process.env.GOOGLE_CLIENT_ID
       ? [
           GoogleProvider({
@@ -65,6 +128,9 @@ export const authOptions: NextAuthOptions = {
       // Token login -- user already validated in authorize()
       if (account.provider === "token") return true;
 
+      // Privy wallet login -- user already created/found in authorize()
+      if (account.provider === "privy-wallet") return true;
+
       // OAuth login
       if (!user.email) return false;
 
@@ -83,9 +149,6 @@ export const authOptions: NextAuthOptions = {
         .get();
 
       if (!existing) {
-        const userCount = db.select().from(users).all().length;
-        const role = userCount === 0 ? "admin" : "developer";
-
         db.insert(users)
           .values({
             id: uuidv4(),
@@ -93,7 +156,7 @@ export const authOptions: NextAuthOptions = {
             name: user.name || null,
             oauthProvider: provider,
             oauthSubject: subject,
-            role,
+            role: "developer",
           })
           .run();
       }
