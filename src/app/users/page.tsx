@@ -53,7 +53,7 @@ export default function UsersPage() {
       <div className="mb-8">
         <h2 className="text-2xl font-bold tracking-tight">Users</h2>
         <p className="text-zinc-500 mt-1">
-          End users and admin operators
+          App users and platform accounts
         </p>
       </div>
 
@@ -61,9 +61,9 @@ export default function UsersPage() {
       <div className="border border-zinc-800 rounded-xl bg-zinc-900/30 mb-8">
         <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
           <div>
-            <h3 className="font-semibold text-zinc-200">End Users</h3>
+            <h3 className="font-semibold text-zinc-200">App Users</h3>
             <p className="text-xs text-zinc-500 mt-0.5">
-              Users with gateway tokens, credit balances, and usage tracking
+              App users with credit balances and usage tracking
             </p>
           </div>
           <CreateEndUserForm />
@@ -71,9 +71,9 @@ export default function UsersPage() {
 
         {enriched.length === 0 ? (
           <div className="text-center py-12 text-zinc-500">
-            <p>No end users yet</p>
+            <p>No app users yet</p>
             <p className="text-xs mt-1">
-              Create an end user and issue them a gateway token
+              Create an app user to get started
             </p>
           </div>
         ) : (
@@ -83,7 +83,6 @@ export default function UsersPage() {
                 <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
                   <th className="text-left py-3 px-4 font-medium">User</th>
                   <th className="text-right py-3 px-4 font-medium">Credits</th>
-                  <th className="text-right py-3 px-4 font-medium">Tokens</th>
                   <th className="text-right py-3 px-4 font-medium">Streams</th>
                   <th className="text-right py-3 px-4 font-medium">Txns</th>
                   <th className="text-center py-3 px-4 font-medium">Status</th>
@@ -113,9 +112,6 @@ export default function UsersPage() {
                     </td>
                     <td className="py-3 px-4 text-right text-zinc-300 font-mono text-xs">
                       {formatWei(user.creditBalanceWei)}
-                    </td>
-                    <td className="py-3 px-4 text-right text-zinc-300">
-                      {user.tokenCount}
                     </td>
                     <td className="py-3 px-4 text-right text-zinc-300">
                       {user.streamCount}
@@ -149,10 +145,10 @@ export default function UsersPage() {
       <div className="border border-zinc-800 rounded-xl bg-zinc-900/30">
         <div className="px-5 py-4 border-b border-zinc-800">
           <h3 className="font-semibold text-zinc-200">
-            Admin / Operator Users
+            Platform Accounts
           </h3>
           <p className="text-xs text-zinc-500 mt-0.5">
-            OAuth-authenticated administrators
+            Administrators and developers
           </p>
         </div>
         <UserTable users={adminUsers} />

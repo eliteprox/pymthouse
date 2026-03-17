@@ -2,7 +2,7 @@
 
 interface UserRow {
   id: string;
-  email: string;
+  email: string | null;
   name: string | null;
   role: string;
   oauthProvider: string;
@@ -65,7 +65,7 @@ export default function UserTable({ users }: UserTableProps) {
                   <p className="text-zinc-200 font-medium">
                     {user.name || "Unknown"}
                   </p>
-                  <p className="text-zinc-500 text-xs">{user.email}</p>
+                  <p className="text-zinc-500 text-xs">{user.email || "—"}</p>
                 </div>
               </td>
               <td className="py-3 px-4">

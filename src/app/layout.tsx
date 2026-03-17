@@ -3,9 +3,9 @@ import "./globals.css";
 import Providers from "@/components/Providers";
 
 export const metadata: Metadata = {
-  title: "pymthouse - Livepeer Payment Clearinghouse",
+  title: "pymthouse - Identity & Payment Infrastructure",
   description:
-    "Standalone payment clearinghouse for go-livepeer remote signers",
+    "Whitelabel identity and payment infrastructure for Livepeer orchestrators",
 };
 
 export default function RootLayout({

@@ -5,6 +5,8 @@ import { proxySignOrchestratorInfo } from "@/lib/signer-proxy";
 export async function POST(request: NextRequest) {
   try {
     const auth = await authenticateRequestAsync(request);
+    // DEBUG: remove after fixing 403
+    console.log("[DEBUG sign-orch-info] auth result:", JSON.stringify(auth ? { userId: auth.userId, appId: auth.appId, scopes: auth.scopes, sessionId: auth.sessionId?.slice(0,12) } : null));
     if (!auth) {
       return NextResponse.json(
         { error: "Unauthorized: invalid or expired token" },
@@ -13,6 +15,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!hasScope(auth.scopes, "gateway")) {
+      console.log("[DEBUG sign-orch-info] hasScope('gateway') = false, scopes =", JSON.stringify(auth.scopes));
       return NextResponse.json(
         { error: "Forbidden: requires 'gateway' scope" },
         { status: 403 }

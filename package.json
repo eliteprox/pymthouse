@@ -15,7 +15,8 @@
     "proto:compile": "pbjs -t static-module -w es6 -o src/lib/proto-generated.js proto/lp_rpc.proto && pbts -o src/lib/proto-generated.d.ts src/lib/proto-generated.js",
     "bootstrap": "npx tsx scripts/bootstrap-admin.ts",
     "db:prepare": "npx tsx scripts/db-migrate.ts",
-    "oidc:seed": "npx tsx scripts/seed-oidc.ts"
+    "oidc:seed": "npx tsx scripts/seed-oidc.ts",
+    "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@privy-io/node": "^0.9.0",
@@ -26,6 +27,7 @@
     "jose": "^6.2.1",
     "next": "^15.1.0",
     "next-auth": "^4.24.0",
+    "oidc-provider": "^9.7.0",
     "protobufjs": "^7.4.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -34,6 +36,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^22.0.0",
+    "@types/oidc-provider": "^9.5.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/uuid": "^10.0.0",
