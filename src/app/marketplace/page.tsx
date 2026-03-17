@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { useSession } from "next-auth/react";
+import { useInsideDashboard } from "@/context/MarketplaceLayoutContext";
 
 interface MarketplaceApp {
   id: string;
@@ -31,7 +31,7 @@ const DEFAULT_CATEGORY_COLOR =
   "bg-zinc-500/15 text-zinc-400 border-zinc-500/20";
 
 export default function MarketplacePage() {
-  const { data: session } = useSession();
+  const insideDashboard = useInsideDashboard();
   const [apps, setApps] = useState<MarketplaceApp[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -70,39 +70,8 @@ export default function MarketplacePage() {
     return result;
   }, [apps, search, selectedCategory]);
 
-  return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      {/* Header */}
-      <header className="border-b border-zinc-800 bg-zinc-900/50">
-        <div className="max-w-6xl mx-auto px-6 py-6 flex items-center justify-between">
-          <div>
-            <Link href="/" className="text-xl font-bold tracking-tight">
-              <span className="text-emerald-400">pymt</span>house
-            </Link>
-            <p className="text-xs text-zinc-500 mt-0.5">App Marketplace</p>
-          </div>
-          {session?.user ? (
-            <Link
-              href="/dashboard"
-              className="flex items-center gap-2 px-4 py-2 text-sm text-zinc-300 hover:text-zinc-100 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
-            >
-              <span className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-bold">
-                {session.user.name?.[0]?.toUpperCase() || "?"}
-              </span>
-              Dashboard
-            </Link>
-          ) : (
-            <Link
-              href="/login"
-              className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
-            >
-              Sign In
-            </Link>
-          )}
-        </div>
-      </header>
-
-      <div className="max-w-6xl mx-auto px-6 py-10">
+  const innerContent = (
+    <>
         {/* Page title and search */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-zinc-100">Marketplace</h1>
@@ -277,7 +246,32 @@ export default function MarketplacePage() {
             ))}
           </div>
         )}
-      </div>
+    </>
+  );
+
+  if (insideDashboard) {
+    return innerContent;
+  }
+
+  return (
+    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+      <header className="border-b border-zinc-800 bg-zinc-900/50">
+        <div className="max-w-6xl mx-auto px-6 py-6 flex items-center justify-between">
+          <div>
+            <Link href="/" className="text-xl font-bold tracking-tight">
+              <span className="text-emerald-400">pymt</span>house
+            </Link>
+            <p className="text-xs text-zinc-500 mt-0.5">App Marketplace</p>
+          </div>
+          <Link
+            href="/login"
+            className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
+          >
+            Sign In
+          </Link>
+        </div>
+      </header>
+      <div className="max-w-6xl mx-auto px-6 py-10">{innerContent}</div>
     </div>
   );
 }

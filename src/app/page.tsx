@@ -17,16 +17,16 @@ export default async function LandingPage() {
           </h1>
           <div className="flex items-center gap-4">
             <Link
-              href="/login"
+              href="/marketplace"
               className="text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
             >
-              Sign in
+              Marketplace
             </Link>
             <Link
               href="/login"
-              className="px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 transition-colors"
+              className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
             >
-              Get Started
+              Sign in
             </Link>
           </div>
         </div>
@@ -39,17 +39,11 @@ export default async function LandingPage() {
           <br />
           <span className="text-emerald-400">Infrastructure</span>
         </h2>
-        <p className="text-lg text-zinc-400 max-w-2xl mx-auto mb-10">
+        <p className="text-lg text-zinc-400 max-w-2xl mx-auto">
           Whitelabel identity and payment infrastructure for Livepeer
           orchestrators. Connect your wallet, register your app, and start
           building.
         </p>
-        <Link
-          href="/login"
-          className="inline-flex px-6 py-3 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 transition-colors"
-        >
-          Create Account
-        </Link>
       </div>
 
       {/* Feature cards */}

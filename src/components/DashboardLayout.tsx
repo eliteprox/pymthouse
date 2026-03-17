@@ -91,7 +91,7 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      router.push("/login");
+      router.push("/");
     }
   }, [status, router]);
 
@@ -219,7 +219,7 @@ export default function DashboardLayout({
               </div>
             </div>
             <button
-              onClick={() => signOut({ callbackUrl: "/login?admin=1" })}
+              onClick={() => signOut({ callbackUrl: "/" })}
               className="mt-3 w-full text-xs text-zinc-500 hover:text-zinc-300 transition-colors text-left"
             >
               Sign out

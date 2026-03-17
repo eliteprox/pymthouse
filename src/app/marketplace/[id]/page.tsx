@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useSession } from "next-auth/react";
+import { useInsideDashboard } from "@/context/MarketplaceLayoutContext";
 
 interface AppDetail {
   id: string;
@@ -292,7 +292,11 @@ export default function MarketplaceAppDetailPage() {
 }
 
 function PageShell({ children }: { children: React.ReactNode }) {
-  const { data: session } = useSession();
+  const insideDashboard = useInsideDashboard();
+
+  if (insideDashboard) {
+    return <>{children}</>;
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -304,24 +308,12 @@ function PageShell({ children }: { children: React.ReactNode }) {
             </Link>
             <p className="text-xs text-zinc-500 mt-0.5">App Marketplace</p>
           </div>
-          {session?.user ? (
-            <Link
-              href="/dashboard"
-              className="flex items-center gap-2 px-4 py-2 text-sm text-zinc-300 hover:text-zinc-100 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
-            >
-              <span className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-bold">
-                {session.user.name?.[0]?.toUpperCase() || "?"}
-              </span>
-              Dashboard
-            </Link>
-          ) : (
-            <Link
-              href="/login"
-              className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
-            >
-              Sign In
-            </Link>
-          )}
+          <Link
+            href="/login"
+            className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
+          >
+            Sign In
+          </Link>
         </div>
       </header>
       <div className="max-w-6xl mx-auto px-6 py-10">{children}</div>
