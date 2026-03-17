@@ -19,7 +19,7 @@ function formatWei(wei: string): string {
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
-  if (!session) redirect("/login");
+  if (!session) redirect("/");
 
   const role = (session.user as Record<string, unknown>)?.role as string;
 
