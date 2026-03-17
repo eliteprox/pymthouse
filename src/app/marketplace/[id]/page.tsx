@@ -306,7 +306,7 @@ function PageShell({ children }: { children: React.ReactNode }) {
           </div>
           {session?.user ? (
             <Link
-              href="/"
+              href="/dashboard"
               className="flex items-center gap-2 px-4 py-2 text-sm text-zinc-300 hover:text-zinc-100 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
             >
               <span className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-bold">
