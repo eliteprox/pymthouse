@@ -55,6 +55,14 @@ export async function GET(
         grantTypes: client.grantTypes,
         tokenEndpointAuthMethod: client.tokenEndpointAuthMethod,
         hasSecret: !!client.clientSecretHash,
+        postLogoutRedirectUris: client.postLogoutRedirectUris
+          ? (JSON.parse(client.postLogoutRedirectUris) as string[])
+          : [],
+        initiateLoginUri: client.initiateLoginUri,
+        logoUri: client.logoUri,
+        policyUri: client.policyUri,
+        tosUri: client.tosUri,
+        clientUri: client.clientUri,
       };
     }
   }

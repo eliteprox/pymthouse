@@ -7,6 +7,7 @@ import type { NextRequest } from "next/server";
 import { verifyAccessToken } from "@/lib/oidc/tokens";
 
 const TOKEN_PREFIX = "pmth_";
+const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
 
 export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -174,6 +175,7 @@ export function authenticateRequest(request: NextRequest): AuthResult | null {
  * Authenticate a request, supporting both pmth_ session tokens and OIDC JWTs.
  * Use this in API routes that should accept OIDC access tokens from SDK clients.
  */
+
 export async function authenticateRequestAsync(request: NextRequest): Promise<AuthResult | null> {
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) return null;
@@ -183,16 +185,41 @@ export async function authenticateRequestAsync(request: NextRequest): Promise<Au
   const sessionResult = validateBearerToken(token);
   if (sessionResult) return sessionResult;
 
-  // Fall back to OIDC JWT verification
+  // Verify OIDC JWT access token (stateless, audience-bound per RFC 8707)
   const jwtPayload = await verifyAccessToken(token);
-  if (!jwtPayload) return null;
+  if (!jwtPayload) {
+    if (DEBUG_OIDC_LOGS) {
+      const parts = token.split(".");
+      const isJwtShaped = parts.length === 3;
+      console.warn(
+        "[OIDC] bearer token rejected by JWT verifier:",
+        isJwtShaped ? "JWT signature/issuer/audience mismatch" : "not a JWT (opaque token?)",
+      );
+    }
+    return null;
+  }
+
+  const scopeFromScope =
+    typeof jwtPayload.scope === "string" ? jwtPayload.scope : "";
+  const scpRaw = (jwtPayload as Record<string, unknown>).scp;
+  const scopeFromScp =
+    Array.isArray(scpRaw)
+      ? scpRaw.filter((v): v is string => typeof v === "string").join(" ")
+      : typeof scpRaw === "string"
+        ? scpRaw
+        : "";
+  const normalizedScopes = (scopeFromScope || scopeFromScp)
+    .trim()
+    .replace(/\s+/g, ",");
+  const hasGatewayBoolean = (jwtPayload as Record<string, unknown>).gateway === true;
+  const effectiveScopes = normalizedScopes || (hasGatewayBoolean ? "gateway" : "");
 
   return {
     userId: typeof jwtPayload.sub === "string" ? jwtPayload.sub : null,
     endUserId: null,
     appId: typeof jwtPayload.client_id === "string" ? jwtPayload.client_id : null,
     sessionId: typeof jwtPayload.jti === "string" ? jwtPayload.jti : `jwt_${Date.now()}`,
-    scopes: typeof jwtPayload.scope === "string" ? jwtPayload.scope.replace(/\s+/g, ",") : "",
+    scopes: effectiveScopes,
     tokenHash: "",
   };
 }

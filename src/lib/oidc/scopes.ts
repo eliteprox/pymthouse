@@ -31,6 +31,11 @@ export const OIDC_SCOPES: ScopeDefinition[] = [
     description: "See your email address",
   },
   {
+    value: "role",
+    label: "Account Role",
+    description: "See your account role in PymtHouse",
+  },
+  {
     value: "plan",
     label: "Subscription Plan",
     description: "See your current PymtHouse plan tier",
@@ -44,6 +49,11 @@ export const OIDC_SCOPES: ScopeDefinition[] = [
     value: "gateway",
     label: "Gateway Access",
     description: "Use Livepeer gateway signing and payment operations on your behalf",
+  },
+  {
+    value: "offline_access",
+    label: "Offline Access",
+    description: "Allow the app to refresh access without asking you to sign in again",
   },
 ];
 

@@ -148,6 +148,31 @@ export default function AuthAndDomainsStep({ data, onChange }: Props) {
               <p className="text-xs text-zinc-500">Allow token renewal without re-authorization</p>
             </div>
           </label>
+          <label className="flex items-center gap-3 p-3 rounded-lg border border-zinc-800 bg-zinc-800/20 cursor-pointer hover:border-zinc-600">
+            <input
+              type="checkbox"
+              checked={data.grantTypes.includes("urn:ietf:params:oauth:grant-type:device_code")}
+              onChange={() => {
+                const grant = "urn:ietf:params:oauth:grant-type:device_code";
+                const has = data.grantTypes.includes(grant);
+                onChange({
+                  grantTypes: has
+                    ? data.grantTypes.filter((g) => g !== grant)
+                    : [...data.grantTypes, grant],
+                });
+              }}
+              className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40"
+            />
+            <div>
+              <p className="text-sm font-medium text-zinc-200">
+                Device Authorization Flow
+              </p>
+              <p className="text-xs text-zinc-500">
+                For CLI tools, smart TVs, and IoT devices — no redirect URI needed.
+                User enters a code on a separate device to authorize.
+              </p>
+            </div>
+          </label>
         </div>
       </div>
     </div>

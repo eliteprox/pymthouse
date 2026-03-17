@@ -16,7 +16,7 @@ interface NavItem {
 const allNavItems: NavItem[] = [
   {
     label: "Dashboard",
-    href: "/",
+    href: "/dashboard",
     icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
   },
   {
@@ -40,6 +40,13 @@ const allNavItems: NavItem[] = [
     label: "Signer Admin",
     href: "/signer",
     icon: "M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z",
+    roles: ["admin"],
+    group: "Admin",
+  },
+  {
+    label: "Admin Mgmt",
+    href: "/admin/manage",
+    icon: "M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z",
     roles: ["admin"],
     group: "Admin",
   },
@@ -109,7 +116,7 @@ export default function DashboardLayout({
             <span className="text-emerald-400">pymt</span>house
           </h1>
           <p className="text-xs text-zinc-500 mt-1">
-            Payment Clearinghouse
+            Identity & Payments
           </p>
         </div>
 
@@ -122,8 +129,8 @@ export default function DashboardLayout({
               <>
                 {otherItems.map((item) => {
                   const isActive =
-                    item.href === "/"
-                      ? pathname === "/"
+                    item.href === "/dashboard"
+                      ? pathname === "/dashboard"
                       : pathname.startsWith(item.href);
                   return (
                     <Link
@@ -212,7 +219,7 @@ export default function DashboardLayout({
               </div>
             </div>
             <button
-              onClick={() => signOut()}
+              onClick={() => signOut({ callbackUrl: "/login?admin=1" })}
               className="mt-3 w-full text-xs text-zinc-500 hover:text-zinc-300 transition-colors text-left"
             >
               Sign out

@@ -27,7 +27,7 @@ export default function PrivyProviderWrapper({
             createOnLogin: "users-without-wallets",
           },
         },
-        loginMethods: ["email", "google", "twitter"],
+        loginMethods: ["wallet", "email", "google", "twitter"],
       }}
     >
       {children}

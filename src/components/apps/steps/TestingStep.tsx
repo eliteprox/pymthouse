@@ -6,6 +6,7 @@ import { getScopeDefinition } from "@/lib/oidc/scopes";
 interface Props {
   appId: string | null;
   clientId: string | null;
+  grantTypes: string[];
   redirectUris: string[];
   onRedirectUrisChange: (uris: string[]) => void;
   allowedScopes: string;
@@ -18,6 +19,7 @@ interface Props {
 export default function TestingStep({
   appId,
   clientId,
+  grantTypes,
   redirectUris,
   onRedirectUrisChange,
   allowedScopes,
@@ -32,6 +34,17 @@ export default function TestingStep({
   const [secret, setSecret] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [deviceTestLoading, setDeviceTestLoading] = useState(false);
+  const [deviceTestResult, setDeviceTestResult] = useState<{
+    user_code: string;
+    verification_uri: string;
+    verification_uri_complete: string;
+    device_code: string;
+    expires_in: number;
+  } | null>(null);
+
+  const hasAuthCodeFlow = grantTypes.includes("authorization_code");
+  const hasDeviceFlow = grantTypes.includes("urn:ietf:params:oauth:grant-type:device_code");
 
   const addRedirectUri = async () => {
     const uri = newUri.trim();
@@ -149,106 +162,236 @@ export default function TestingStep({
         </p>
       </div>
 
-      {/* Redirect URIs */}
-      <div className="space-y-2">
-        <label className="block text-sm font-medium text-zinc-300">
-          Redirect URIs
-        </label>
-        <p className="text-xs text-zinc-500">
-          URIs where PymtHouse can redirect after authorization. Wildcards (*) are supported.
-        </p>
-        <div className="flex gap-2 mb-2">
-          <input
-            type="text"
-            value={newUri}
-            onChange={(e) => setNewUri(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addRedirectUri())}
-            placeholder="https://myapp.com/callback"
-            className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-          />
-          <button
-            onClick={addRedirectUri}
-            disabled={!newUri.trim()}
-            className="px-3 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 disabled:opacity-40 transition-colors"
-          >
-            Add
-          </button>
-        </div>
-        {redirectUris.length > 0 && (
-          <div className="space-y-1">
-            {redirectUris.map((uri) => (
-              <div
-                key={uri}
-                className="flex items-center justify-between px-3 py-1.5 bg-zinc-800/50 rounded-lg"
-              >
-                <code className="text-xs text-zinc-300 truncate">{uri}</code>
-                <button
-                  onClick={() => removeRedirectUri(uri)}
-                  className="text-zinc-500 hover:text-red-400 ml-2 shrink-0"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            ))}
+      {/* Authorization Code Flow Section */}
+      {hasAuthCodeFlow && (
+        <div className="space-y-6 p-5 rounded-xl border border-zinc-800 bg-zinc-900/30">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+            <h3 className="text-sm font-semibold text-zinc-200">Authorization Code Flow</h3>
           </div>
-        )}
-      </div>
 
-      {/* Domain Whitelisting */}
-      <div className="space-y-4">
-        <div>
-          <h3 className="text-sm font-medium text-zinc-300">Domain Whitelisting</h3>
-          <p className="text-xs text-zinc-500 mt-1">
-            Allowed origins for CORS and request validation. Redirect URIs above should match these domains.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={newDomain}
-            onChange={(e) => setNewDomain(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addDomain())}
-            placeholder="example.com"
-            className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-          />
-          <button
-            onClick={addDomain}
-            disabled={adding || !newDomain.trim() || !appId}
-            className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-500 disabled:opacity-40 transition-colors"
-          >
-            {adding ? "Adding..." : "Add Domain"}
-          </button>
-        </div>
-        {domains.length > 0 ? (
+          {/* Redirect URIs */}
           <div className="space-y-2">
-            {domains.map((d) => (
-              <div
-                key={d.id}
-                className="flex items-center justify-between px-4 py-3 bg-zinc-800/50 rounded-lg border border-zinc-800"
+            <label className="block text-sm font-medium text-zinc-300">
+              Redirect URIs
+            </label>
+            <p className="text-xs text-zinc-500">
+              URIs where PymtHouse can redirect after authorization. Wildcards (*) are supported.
+            </p>
+            <div className="flex gap-2 mb-2">
+              <input
+                type="text"
+                value={newUri}
+                onChange={(e) => setNewUri(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addRedirectUri())}
+                placeholder="https://myapp.com/callback"
+                className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+              />
+              <button
+                onClick={addRedirectUri}
+                disabled={!newUri.trim()}
+                className="px-3 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 disabled:opacity-40 transition-colors"
               >
-                <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <code className="text-sm text-zinc-200">{d.domain}</code>
-                </div>
-                <button
-                  onClick={() => removeDomain(d.id)}
-                  className="text-zinc-500 hover:text-red-400 transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
+                Add
+              </button>
+            </div>
+            {redirectUris.length > 0 && (
+              <div className="space-y-1">
+                {redirectUris.map((uri) => (
+                  <div
+                    key={uri}
+                    className="flex items-center justify-between px-3 py-1.5 bg-zinc-800/50 rounded-lg"
+                  >
+                    <code className="text-xs text-zinc-300 truncate">{uri}</code>
+                    <button
+                      onClick={() => removeRedirectUri(uri)}
+                      className="text-zinc-500 hover:text-red-400 ml-2 shrink-0"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        ) : (
-          <div className="text-center py-6 text-zinc-500 text-sm">
-            No domains added yet. Add your application&apos;s domains above.
+
+          {/* Domain Whitelisting */}
+          <div className="space-y-4">
+            <div>
+              <h4 className="text-sm font-medium text-zinc-300">Domain Whitelisting</h4>
+              <p className="text-xs text-zinc-500 mt-1">
+                Allowed origins for CORS and request validation. Redirect URIs above should match these domains.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newDomain}
+                onChange={(e) => setNewDomain(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addDomain())}
+                placeholder="example.com"
+                className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+              />
+              <button
+                onClick={addDomain}
+                disabled={adding || !newDomain.trim() || !appId}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-500 disabled:opacity-40 transition-colors"
+              >
+                {adding ? "Adding..." : "Add Domain"}
+              </button>
+            </div>
+            {domains.length > 0 ? (
+              <div className="space-y-2">
+                {domains.map((d) => (
+                  <div
+                    key={d.id}
+                    className="flex items-center justify-between px-4 py-3 bg-zinc-800/50 rounded-lg border border-zinc-800"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                      <code className="text-sm text-zinc-200">{d.domain}</code>
+                    </div>
+                    <button
+                      onClick={() => removeDomain(d.id)}
+                      className="text-zinc-500 hover:text-red-400 transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-4 text-zinc-500 text-sm">
+                No domains added yet. Add your application&apos;s domains above.
+              </div>
+            )}
           </div>
-        )}
-      </div>
+
+          {/* Test Auth Code Flow */}
+          <div className="border-t border-zinc-800 pt-4">
+            {testUrl && (
+              <>
+                <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+                  Test Authorization Code Flow
+                </label>
+                <button
+                  onClick={() => window.open(testUrl, "_blank")}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-500 transition-colors"
+                >
+                  Open Test Flow
+                </button>
+                <p className="text-xs text-zinc-500 mt-1.5">
+                  Opens a new tab with a test authorization request. Make sure you have
+                  a redirect URI configured that can receive the callback.
+                </p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Requested scopes:{" "}
+                  <span className="text-zinc-400">{selectedScopes.join(", ")}</span>
+                </p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Using redirect URI:{" "}
+                  <code className="text-zinc-400">{selectedRedirectUri}</code>
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Device Authorization Flow Section */}
+      {hasDeviceFlow && (
+        <div className="space-y-4 p-5 rounded-xl border border-zinc-800 bg-zinc-900/30">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-violet-500" />
+            <h3 className="text-sm font-semibold text-zinc-200">Device Authorization Flow</h3>
+          </div>
+          <p className="text-xs text-zinc-500">
+            For CLI tools, smart TVs, and IoT devices. No redirect URIs or domain whitelisting required.
+          </p>
+
+          {clientId ? (
+            <>
+              {!deviceTestResult ? (
+                <div>
+                  <button
+                    onClick={async () => {
+                      setDeviceTestLoading(true);
+                      try {
+                        const res = await fetch("/api/v1/oidc/device_authorization", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                          body: new URLSearchParams({
+                            client_id: clientId,
+                            scope: allowedScopes,
+                          }),
+                        });
+                        if (res.ok) {
+                          setDeviceTestResult(await res.json());
+                        }
+                      } finally {
+                        setDeviceTestLoading(false);
+                      }
+                    }}
+                    disabled={deviceTestLoading}
+                    className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-500 disabled:opacity-40 transition-colors"
+                  >
+                    {deviceTestLoading ? "Requesting..." : "Start Device Flow Test"}
+                  </button>
+                  <p className="text-xs text-zinc-500 mt-1.5">
+                    Simulates a CLI/device client requesting authorization. You&apos;ll get a user code to enter on the verification page.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3 p-4 bg-zinc-800/50 rounded-lg border border-violet-500/20">
+                  <div>
+                    <p className="text-xs text-zinc-500 mb-1">User Code</p>
+                    <div className="flex items-center gap-2">
+                      <code className="text-2xl font-bold tracking-widest text-violet-400">
+                        {deviceTestResult.user_code}
+                      </code>
+                      <button
+                        onClick={() => copyToClipboard(deviceTestResult.user_code, "userCode")}
+                        className="px-2 py-1 bg-zinc-700 text-zinc-200 rounded text-xs hover:bg-zinc-600 transition-colors"
+                      >
+                        {copied === "userCode" ? "Copied!" : "Copy"}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs text-zinc-500 mb-1">Verification URL</p>
+                    <div className="flex items-center gap-2">
+                      <code className="text-sm text-zinc-300 break-all">
+                        {deviceTestResult.verification_uri}
+                      </code>
+                      <button
+                        onClick={() => window.open(deviceTestResult.verification_uri_complete, "_blank")}
+                        className="px-2 py-1 bg-violet-600 text-white rounded text-xs hover:bg-violet-500 transition-colors shrink-0"
+                      >
+                        Open
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    Expires in {Math.floor(deviceTestResult.expires_in / 60)} minutes. Open the verification URL and enter the code to approve.
+                  </p>
+                  <button
+                    onClick={() => setDeviceTestResult(null)}
+                    className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                  >
+                    Reset
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-zinc-500">Create app first to test the device flow.</p>
+          )}
+        </div>
+      )}
 
       {/* Divider */}
       <div className="border-t border-zinc-800" />
@@ -333,38 +476,6 @@ export default function TestingStep({
         </div>
       </div>
 
-      {/* Test Flow */}
-      {testUrl && (
-        <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1.5">
-            Test Authorization Flow
-          </label>
-          <button
-            onClick={() => window.open(testUrl, "_blank")}
-            className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-500 transition-colors"
-          >
-            Open Test Flow
-          </button>
-          <p className="text-xs text-zinc-500 mt-1.5">
-            Opens a new tab with a test authorization request. Make sure you have
-            a redirect URI configured that can receive the callback.
-          </p>
-          <p className="text-xs text-zinc-500 mt-1">
-            Requested scopes:{" "}
-            <span className="text-zinc-400">{selectedScopes.join(", ")}</span>
-          </p>
-          <p className="text-xs text-zinc-500 mt-1">
-            Using redirect URI:{" "}
-            <code className="text-zinc-400">{selectedRedirectUri}</code>
-          </p>
-        </div>
-      )}
-      {!testUrl && clientId && (
-        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-sm">
-          Add at least one redirect URI above before testing the authorization flow.
-        </div>
-      )}
-
       {/* Integration Checklist */}
       <div className="p-4 bg-zinc-800/30 rounded-lg border border-zinc-800">
         <p className="text-sm font-medium text-zinc-300 mb-3">
@@ -372,8 +483,19 @@ export default function TestingStep({
         </p>
         <div className="space-y-2">
           {[
-            "Redirect URI is configured and accessible",
-            "Token exchange works (authorization_code grant)",
+            ...(hasAuthCodeFlow
+              ? [
+                  "Redirect URI is configured and accessible",
+                  "Token exchange works (authorization_code grant)",
+                ]
+              : []),
+            ...(hasDeviceFlow
+              ? [
+                  "Device authorization flow returns user code",
+                  "User can approve device code on verification page",
+                  "Token exchange works (device_code grant)",
+                ]
+              : []),
             "UserInfo endpoint returns expected claims",
             "Refresh token flow works (if enabled)",
           ].map((item) => (

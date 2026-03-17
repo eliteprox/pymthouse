@@ -59,6 +59,45 @@ export function registerClient(config: OidcClientConfig): void {
     .run();
 }
 
+/**
+ * Return the set of allowed redirect URI origins for all registered clients.
+ * Used for defense-in-depth origin validation when forwarding provider redirects.
+ * Wildcard URIs (e.g. http://localhost:*) are expanded to common dev ports.
+ */
+export function getRegisteredRedirectOrigins(): Set<string> {
+  const rows = db.select().from(oidcClients).all();
+  const origins = new Set<string>();
+  const commonPorts = [
+    "3000", "3001", "3002", "3003", "3004", "3005",
+    "4000", "4001", "4200", "5000", "5173", "5174",
+    "8000", "8080", "8081", "8888", "9000",
+  ];
+
+  for (const row of rows) {
+    const uris = JSON.parse(row.redirectUris) as string[];
+    for (const uri of uris) {
+      if (uri.includes("*")) {
+        // Expand wildcard patterns to the same set used when loading into the provider.
+        for (const port of commonPorts) {
+          try {
+            origins.add(new URL(uri.replace(/:\*/, `:${port}`).replace(/\*/g, "")).origin);
+          } catch {
+            /* malformed URI, skip */
+          }
+        }
+      } else {
+        try {
+          origins.add(new URL(uri).origin);
+        } catch {
+          /* malformed URI, skip */
+        }
+      }
+    }
+  }
+
+  return origins;
+}
+
 export function getClient(clientId: string): {
   id: string;
   clientId: string;
@@ -192,6 +231,12 @@ export function updateClientConfig(
     allowedScopes?: string;
     grantTypes?: string[];
     tokenEndpointAuthMethod?: "none" | "client_secret_post" | "client_secret_basic";
+    postLogoutRedirectUris?: string[];
+    initiateLoginUri?: string | null;
+    logoUri?: string | null;
+    policyUri?: string | null;
+    tosUri?: string | null;
+    clientUri?: string | null;
   }
 ): boolean {
   const existing = db
@@ -208,6 +253,12 @@ export function updateClientConfig(
   if (config.allowedScopes !== undefined) updates.allowedScopes = config.allowedScopes;
   if (config.grantTypes !== undefined) updates.grantTypes = config.grantTypes.join(",");
   if (config.tokenEndpointAuthMethod !== undefined) updates.tokenEndpointAuthMethod = config.tokenEndpointAuthMethod;
+  if (config.postLogoutRedirectUris !== undefined) updates.postLogoutRedirectUris = JSON.stringify(config.postLogoutRedirectUris);
+  if (config.initiateLoginUri !== undefined) updates.initiateLoginUri = config.initiateLoginUri;
+  if (config.logoUri !== undefined) updates.logoUri = config.logoUri;
+  if (config.policyUri !== undefined) updates.policyUri = config.policyUri;
+  if (config.tosUri !== undefined) updates.tosUri = config.tosUri;
+  if (config.clientUri !== undefined) updates.clientUri = config.clientUri;
 
   if (Object.keys(updates).length === 0) return true;
 
@@ -243,7 +294,7 @@ export function seedSdkClient(): void {
       "http://127.0.0.1:*/callback",
     ],
     allowedScopes: "openid profile email gateway",
-    grantTypes: ["authorization_code", "refresh_token"],
+    grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"],
     tokenEndpointAuthMethod: "none", // Public client (native app, PKCE required)
   });
 }

@@ -1,6 +1,6 @@
 import { PrivyClient } from "@privy-io/node";
 import { db } from "@/db/index";
-import { endUsers } from "@/db/schema";
+import { endUsers, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 
@@ -33,19 +33,19 @@ export function isPrivyEnabled(): boolean {
 }
 
 /**
- * Verify a Privy identity token and return the user's DID.
- * Uses the @privy-io/node SDK's users().get() method.
+ * Verify a Privy access token and return the user's DID.
+ * Uses the @privy-io/node SDK's utils().auth().verifyAccessToken() method.
  * Returns null if verification fails.
  */
 export async function verifyPrivyToken(
-  idToken: string
+  accessToken: string
 ): Promise<string | null> {
   const client = getPrivyClient();
   if (!client) return null;
 
   try {
-    const user = await client.users().get({ id_token: idToken });
-    return user.id;
+    const result = await client.utils().auth().verifyAccessToken(accessToken);
+    return result.user_id;
   } catch {
     return null;
   }
@@ -97,6 +97,51 @@ export function getEndUserByDid(privyDid: string) {
     .from(endUsers)
     .where(eq(endUsers.privyDid, privyDid))
     .get();
+}
+
+/**
+ * Find or create a developer user in the users table by Privy DID.
+ * Used for wallet-based developer sign-in via NextAuth.
+ */
+export function findOrCreateDeveloperUser(
+  privyDid: string,
+  walletAddress?: string,
+  name?: string,
+  email?: string
+): { id: string; isNew: boolean } {
+  const existing = db
+    .select()
+    .from(users)
+    .where(eq(users.privyDid, privyDid))
+    .get();
+
+  if (existing) {
+    // Update wallet address if it changed
+    if (walletAddress && walletAddress !== existing.walletAddress) {
+      db.update(users)
+        .set({ walletAddress })
+        .where(eq(users.id, existing.id))
+        .run();
+    }
+    return { id: existing.id, isNew: false };
+  }
+
+  const id = uuidv4();
+  const safeEmail = email || `${privyDid}@privy.local`;
+  db.insert(users)
+    .values({
+      id,
+      email: safeEmail,
+      name: name || (walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : null),
+      oauthProvider: "privy-wallet",
+      oauthSubject: privyDid,
+      role: "developer",
+      walletAddress: walletAddress || null,
+      privyDid,
+    })
+    .run();
+
+  return { id, isNew: true };
 }
 
 /**
