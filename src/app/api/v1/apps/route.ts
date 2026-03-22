@@ -26,6 +26,9 @@ export async function GET() {
       category: developerApps.category,
       status: developerApps.status,
       logoLightUrl: developerApps.logoLightUrl,
+      brandingMode: developerApps.brandingMode,
+      customLoginEnabled: developerApps.customLoginEnabled,
+      customLoginDomain: developerApps.customLoginDomain,
       createdAt: developerApps.createdAt,
       updatedAt: developerApps.updatedAt,
       clientId: oidcClients.clientId,
@@ -75,6 +78,10 @@ export async function POST(request: NextRequest) {
       category: body.category || null,
       developerName: body.developerName || null,
       websiteUrl: body.websiteUrl || null,
+      // Default to black-label mode (pymthouse branding)
+      brandingMode: "blackLabel",
+      customLoginEnabled: 0,
+      customIssuerEnabled: 0,
       createdAt: now,
       updatedAt: now,
     })

@@ -59,6 +59,13 @@ export default async function DeviceVerificationPage({
         </div>
 
         <DeviceVerifyForm />
+
+        <p className="text-xs text-zinc-600 text-center mt-6">
+          Identity powered by{" "}
+          <span className="text-zinc-500">
+            <span className="text-emerald-500">pymt</span>house
+          </span>
+        </p>
       </div>
     </main>
   );

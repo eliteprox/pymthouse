@@ -14,6 +14,7 @@ import { SqliteAdapter } from "@/lib/oidc/adapter";
 import { getClient } from "@/lib/oidc/clients";
 import { normalizeUserCode } from "@/lib/oidc/device";
 import { getIssuer } from "@/lib/oidc/tokens";
+import { resolveAppBrandingByClientId } from "@/lib/oidc/branding";
 
 function errorResponse(
   error: string,
@@ -69,6 +70,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (action === "lookup") {
     const clientId = deviceCode.clientId || deviceCode.params?.client_id;
     const client = typeof clientId === "string" ? getClient(clientId) : null;
+    const branding = typeof clientId === "string" 
+      ? resolveAppBrandingByClientId(clientId) 
+      : null;
     const scope =
       typeof deviceCode.scope === "string"
         ? deviceCode.scope
@@ -78,6 +82,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({
       client_name: client?.displayName || clientId || "Unknown Application",
       scopes: scope.split(" ").filter(Boolean),
+      branding: branding ? {
+        mode: branding.mode,
+        displayName: branding.displayName,
+        logoUrl: branding.logoUrl,
+        primaryColor: branding.primaryColor,
+      } : null,
     });
   }
 

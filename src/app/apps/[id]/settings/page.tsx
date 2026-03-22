@@ -19,6 +19,13 @@ export default function AppSettingsPage() {
     tokenEndpointAuthMethod: string;
     hasSecret: boolean;
     domains: { id: string; domain: string }[];
+    brandingMode?: string;
+    brandingLogoUrl?: string;
+    brandingPrimaryColor?: string;
+    brandingSupportEmail?: string;
+    customLoginDomain?: string;
+    customDomainVerificationToken?: string;
+    customDomainVerifiedAt?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -27,6 +34,7 @@ export default function AppSettingsPage() {
       .then((data) => {
         if (!data.oidcClient) return;
         setAppName(data.name || "App");
+        const wl = data.whiteLabelConfig || {};
         setSettingsData({
           appId: data.id,
           clientId: data.oidcClient.clientId,
@@ -41,6 +49,13 @@ export default function AppSettingsPage() {
               domain: d.domain,
             })
           ),
+          brandingMode: wl.brandingMode || "blackLabel",
+          brandingLogoUrl: wl.brandingLogoUrl || undefined,
+          brandingPrimaryColor: wl.brandingPrimaryColor || undefined,
+          brandingSupportEmail: wl.brandingSupportEmail || undefined,
+          customLoginDomain: wl.customLoginDomain || undefined,
+          customDomainVerificationToken: wl.customDomainVerificationToken || undefined,
+          customDomainVerifiedAt: wl.customDomainVerifiedAt || undefined,
         });
       })
       .finally(() => setLoading(false));

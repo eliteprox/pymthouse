@@ -10,6 +10,7 @@ import { SqliteAdapter } from "./adapter";
 import { findAccount } from "./account";
 import { getIssuer } from "./tokens";
 import { hashClientSecret } from "./clients";
+import { getTrustedLoginHosts, normalizeDomain } from "./custom-domains";
 import { db } from "@/db/index";
 import { oidcSigningKeys, oidcClients, appAllowedDomains, developerApps } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
@@ -234,12 +235,25 @@ export async function getProvider(): Promise<Provider> {
 
     jwks: jwks as Configuration["jwks"],
 
-    // Allow CORS from redirect URI origins, whitelisted domains, plus the issuer origin.
+    // Allow CORS from redirect URI origins, whitelisted domains, custom login domains, plus the issuer origin.
     clientBasedCORS: (ctx, origin, client) => {
       const issuerOrigin = new URL(issuer).origin;
       if (origin === issuerOrigin) {
-        return true; // Same-origin (e.g. admin UI at localhost:3001 testing device flow)
+        return true;
       }
+
+      // Check if origin is a trusted login host (custom domains)
+      const trustedHosts = getTrustedLoginHosts();
+      try {
+        const originUrl = new URL(origin);
+        const originHost = normalizeDomain(originUrl.host);
+        if (trustedHosts.some(h => normalizeDomain(h) === originHost)) {
+          return true;
+        }
+      } catch {
+        // Invalid origin URL, continue with other checks
+      }
+
       // Check redirect URI origins
       const uris = client.redirectUris ?? [];
       const matchesRedirectUri = uris.some((uri) => {

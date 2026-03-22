@@ -1,0 +1,168 @@
+import { getPublicOrigin, getIssuer } from "./tokens";
+import { getTrustedLoginHosts, normalizeDomain } from "./custom-domains";
+
+export interface SecurityContext {
+  requestOrigin: string;
+  canonicalOrigin: string;
+  canonicalIssuer: string;
+  isTrustedOrigin: boolean;
+  isCanonicalOrigin: boolean;
+}
+
+export function buildSecurityContext(requestHost: string): SecurityContext {
+  const canonicalOrigin = getPublicOrigin();
+  const canonicalIssuer = getIssuer();
+  const canonicalHost = new URL(canonicalOrigin).host;
+  
+  const normalizedRequestHost = normalizeDomain(requestHost);
+  const normalizedCanonicalHost = normalizeDomain(canonicalHost);
+  
+  const isCanonicalOrigin = normalizedRequestHost === normalizedCanonicalHost;
+  const trustedHosts = getTrustedLoginHosts();
+  const isTrustedOrigin = trustedHosts.some(h => normalizeDomain(h) === normalizedRequestHost);
+
+  const isLocalhost = requestHost.includes("localhost") || requestHost.startsWith("127.");
+  const requestOrigin = isLocalhost ? `http://${requestHost}` : `https://${requestHost}`;
+
+  return {
+    requestOrigin,
+    canonicalOrigin,
+    canonicalIssuer,
+    isTrustedOrigin,
+    isCanonicalOrigin,
+  };
+}
+
+export function validateRedirectUri(
+  redirectUri: string,
+  allowedUris: string[],
+  strictMode: boolean = true
+): boolean {
+  try {
+    const redirectUrl = new URL(redirectUri);
+    
+    for (const allowedUri of allowedUris) {
+      if (allowedUri.includes("*")) {
+        const pattern = allowedUri
+          .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+          .replace(/\*/g, ".*");
+        const regex = new RegExp(`^${pattern}$`);
+        if (regex.test(redirectUri)) {
+          return true;
+        }
+      } else if (redirectUri === allowedUri) {
+        return true;
+      } else if (!strictMode) {
+        try {
+          const allowedUrl = new URL(allowedUri);
+          if (redirectUrl.origin === allowedUrl.origin && 
+              redirectUrl.pathname === allowedUrl.pathname) {
+            return true;
+          }
+        } catch {
+          continue;
+        }
+      }
+    }
+    
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export function validatePostLogoutUri(
+  postLogoutUri: string,
+  allowedUris: string[]
+): boolean {
+  return validateRedirectUri(postLogoutUri, allowedUris, true);
+}
+
+export function sanitizeOrigin(origin: string): string | null {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+export function isSafeRedirectUrl(url: string, allowedOrigins: Set<string>): boolean {
+  try {
+    const parsed = new URL(url);
+    const sanitized = sanitizeOrigin(parsed.origin);
+    if (!sanitized) return false;
+    return allowedOrigins.has(sanitized);
+  } catch {
+    return false;
+  }
+}
+
+export function getCookieOptions(isCustomDomain: boolean): {
+  sameSite: "lax" | "none" | "strict";
+  secure: boolean;
+  httpOnly: boolean;
+  path: string;
+} {
+  const isProduction = process.env.NODE_ENV === "production";
+  
+  return {
+    sameSite: isCustomDomain ? "none" : "lax",
+    secure: isProduction || isCustomDomain,
+    httpOnly: true,
+    path: "/",
+  };
+}
+
+export function validateCorsOrigin(
+  origin: string,
+  clientRedirectUris: string[],
+  trustedOrigins: Set<string>
+): boolean {
+  const sanitized = sanitizeOrigin(origin);
+  if (!sanitized) return false;
+
+  if (trustedOrigins.has(sanitized)) {
+    return true;
+  }
+
+  for (const uri of clientRedirectUris) {
+    try {
+      const uriOrigin = new URL(uri).origin;
+      if (sanitized === uriOrigin) {
+        return true;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return false;
+}
+
+export function assertTrustedHost(host: string): void {
+  const trustedHosts = getTrustedLoginHosts();
+  const normalized = normalizeDomain(host);
+  
+  if (!trustedHosts.some(h => normalizeDomain(h) === normalized)) {
+    throw new Error(`Untrusted host: ${host}`);
+  }
+}
+
+export function getSecureHeaders(isCustomDomain: boolean): Record<string, string> {
+  const headers: Record<string, string> = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "X-XSS-Protection": "1; mode=block",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+  };
+
+  if (process.env.NODE_ENV === "production") {
+    headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+  }
+
+  return headers;
+}

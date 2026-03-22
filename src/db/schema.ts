@@ -223,6 +223,19 @@ export const developerApps = sqliteTable("developer_apps", {
   pendingScopes: text("pending_scopes"),
   pendingGrantTypes: text("pending_grant_types"),
   pendingRevisionSubmittedAt: text("pending_revision_submitted_at"),
+  // White-label identity hosting configuration
+  brandingMode: text("branding_mode").notNull().default("blackLabel"), // blackLabel | whiteLabel
+  customLoginEnabled: integer("custom_login_enabled").notNull().default(0), // 0=false, 1=true
+  customLoginDomain: text("custom_login_domain"), // e.g., login.daydream.live
+  customDomainVerifiedAt: text("custom_domain_verified_at"), // ISO timestamp when domain was verified
+  customDomainVerificationToken: text("custom_domain_verification_token"), // DNS TXT record value for verification
+  // Future multi-issuer support (disabled in phase 1)
+  customIssuerEnabled: integer("custom_issuer_enabled").notNull().default(0), // 0=false, reserved for future
+  customIssuerUrl: text("custom_issuer_url"), // reserved for future per-tenant issuer
+  // Branding overrides for white-label mode
+  brandingPrimaryColor: text("branding_primary_color"), // hex color e.g., #10b981
+  brandingLogoUrl: text("branding_logo_url"), // override logo for hosted login
+  brandingSupportEmail: text("branding_support_email"), // custom support email for branded login
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -248,6 +261,9 @@ export const appAllowedDomains = sqliteTable("app_allowed_domains", {
   appId: text("app_id").notNull().references(() => developerApps.id),
   domain: text("domain").notNull(),
   verified: integer("verified").notNull().default(0),
+  purpose: text("purpose").notNull().default("cors"), // cors | customLogin
+  verificationToken: text("verification_token"), // DNS TXT record value for verification
+  verifiedAt: text("verified_at"), // ISO timestamp when domain was verified
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),

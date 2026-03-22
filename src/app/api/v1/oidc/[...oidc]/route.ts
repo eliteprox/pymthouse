@@ -10,9 +10,11 @@ import { getProvider } from "@/lib/oidc/provider";
 import { IncomingMessage, ServerResponse } from "http";
 import { Socket } from "net";
 import { normalizeProviderPath } from "@/lib/oidc/routes";
-import { OIDC_MOUNT_PATH, getIssuer } from "@/lib/oidc/tokens";
+import { OIDC_MOUNT_PATH, getIssuer, getPublicOrigin } from "@/lib/oidc/tokens";
 import { getRegisteredRedirectOrigins } from "@/lib/oidc/clients";
-import { deriveExternalOriginFromHeaders, resolveRedirectLocation } from "./utils";
+import { isVerifiedCustomDomain } from "@/lib/oidc/custom-domains";
+import { getSecureHeaders } from "@/lib/oidc/security";
+import { deriveExternalOriginFromHeaders, resolveRedirectLocation, getTrustedOidcOrigins } from "./utils";
 
 const RESOURCE_REQUIRED_GRANTS = new Set([
   "urn:ietf:params:oauth:grant-type:device_code",
@@ -140,9 +142,11 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
       if ([301, 302, 303, 307, 308].includes(statusCode)) {
         const location = headers.get("location");
         if (location) {
+          const trustedOrigins = getTrustedOidcOrigins();
           const allowedOrigins = new Set([
             new URL(externalOrigin).origin,
             ...getRegisteredRedirectOrigins(),
+            ...trustedOrigins,
           ]);
           const redirectResponse = NextResponse.redirect(
             resolveRedirectLocation(location, externalOrigin, allowedOrigins),
@@ -155,6 +159,13 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
               redirectResponse.headers.append("Set-Cookie", cookie);
             }
           }
+          
+          // Add security headers to redirect responses
+          const redirectSecureHeaders = getSecureHeaders(false);
+          for (const [key, value] of Object.entries(redirectSecureHeaders)) {
+            redirectResponse.headers.set(key, value);
+          }
+          
           resolve(redirectResponse);
           return originalEnd(chunk, ...args);
         }
@@ -181,6 +192,17 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
             headers.set("content-length", String(finalBody.length));
           }
         } catch { /* non-JSON body, pass through */ }
+      }
+
+      // Determine if this is a custom domain request
+      const requestHost = req.headers["x-forwarded-host"] || req.headers.host || "";
+      const hostStr = Array.isArray(requestHost) ? requestHost[0] : requestHost;
+      const isCustomDomain = isVerifiedCustomDomain(hostStr);
+      
+      // Add security headers
+      const secureHeaders = getSecureHeaders(isCustomDomain);
+      for (const [key, value] of Object.entries(secureHeaders)) {
+        headers.set(key, value);
       }
 
       const nextResponse = new NextResponse(

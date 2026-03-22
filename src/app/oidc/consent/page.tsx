@@ -8,6 +8,8 @@ import { getClient } from "@/lib/oidc/clients";
 import { getScopeDefinition } from "@/lib/oidc/scopes";
 import { getProvider } from "@/lib/oidc/provider";
 import { OIDC_MOUNT_PATH, getPublicOrigin } from "@/lib/oidc/tokens";
+import { resolveAppBrandingByClientId, getDefaultBranding, shouldUseWhiteLabelBranding } from "@/lib/oidc/branding";
+import { resolveHostContext } from "@/lib/oidc/host-resolution";
 import { eq } from "drizzle-orm";
 import { IncomingMessage, ServerResponse } from "http";
 import { Socket } from "net";
@@ -129,6 +131,9 @@ export default async function ConsentPage({
     );
   }
 
+  const branding = resolveAppBrandingByClientId(clientId);
+  const isWhiteLabel = shouldUseWhiteLabelBranding(branding);
+
   const developerApp = db
     .select({
       name: developerApps.name,
@@ -148,7 +153,9 @@ export default async function ConsentPage({
     .from(oidcClients)
     .where(eq(oidcClients.clientId, clientId))
     .get();
-  const logoUrl = oidcClientRow?.logoUri || developerApp?.logoLightUrl || null;
+  const logoUrl = isWhiteLabel 
+    ? (branding.logoUrl || oidcClientRow?.logoUri || developerApp?.logoLightUrl || null)
+    : (oidcClientRow?.logoUri || developerApp?.logoLightUrl || null);
 
   const scopes = scope
     ? scope.split(/\s+/).filter((s) => client.allowedScopes.includes(s))
@@ -167,6 +174,10 @@ export default async function ConsentPage({
     ? getHostLabel(developerApp.websiteUrl)
     : null;
 
+  const primaryColorStyle = { backgroundColor: branding.primaryColor };
+  const primaryBorderStyle = { borderColor: `${branding.primaryColor}33` };
+  const primaryBgStyle = { backgroundColor: `${branding.primaryColor}1a` };
+
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-6">
       <div className="max-w-2xl w-full border border-zinc-800 bg-zinc-900/60 rounded-2xl p-6 sm:p-8 shadow-2xl shadow-black/30">
@@ -178,7 +189,10 @@ export default async function ConsentPage({
               className="w-14 h-14 rounded-2xl object-cover shrink-0 border border-zinc-700"
             />
           ) : (
-            <div className="w-14 h-14 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center shrink-0">
+            <div 
+              className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0"
+              style={primaryColorStyle}
+            >
               <svg
                 className="w-7 h-7 text-white"
                 fill="none"
@@ -195,15 +209,27 @@ export default async function ConsentPage({
             </div>
           )}
           <div className="min-w-0">
-            <div className="inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-emerald-300">
+            <div 
+              className="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em]"
+              style={{ 
+                borderColor: `${branding.primaryColor}33`,
+                backgroundColor: `${branding.primaryColor}1a`,
+                color: branding.primaryColor,
+              }}
+            >
               Permission Request
             </div>
             <h1 className="text-2xl font-semibold text-zinc-100 mt-3">
-              Review access for {client.displayName}
+              {isWhiteLabel 
+                ? `Sign in to ${branding.displayName}`
+                : `Review access for ${client.displayName}`}
             </h1>
             <p className="text-sm text-zinc-400 mt-2 max-w-xl">
-              Approve this only if you trust this application and expect to return
-              to <span className="text-zinc-200">{redirectHost}</span>.
+              {isWhiteLabel 
+                ? `${client.displayName} is requesting access to your account.`
+                : `Approve this only if you trust this application and expect to return to `}
+              {!isWhiteLabel && <span className="text-zinc-200">{redirectHost}</span>}
+              {!isWhiteLabel && "."}
             </p>
           </div>
         </div>
@@ -263,9 +289,17 @@ export default async function ConsentPage({
                 className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4"
               >
                 <div className="flex items-start gap-3">
-                  <div className="w-9 h-9 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
+                  <div 
+                    className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                    style={{
+                      backgroundColor: `${branding.primaryColor}1a`,
+                      borderWidth: 1,
+                      borderColor: `${branding.primaryColor}33`,
+                    }}
+                  >
                     <svg
-                      className="w-4 h-4 text-emerald-400"
+                      className="w-4 h-4"
+                      style={{ color: branding.primaryColor }}
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -347,12 +381,21 @@ export default async function ConsentPage({
           </div>
         )}
 
-        <ConsentForm uid={uid} />
+        <ConsentForm uid={uid} branding={branding} />
 
         <p className="text-xs text-zinc-500 text-center mt-4">
           By authorizing, you let {client.displayName} access only the permissions
           listed above.
         </p>
+
+        {isWhiteLabel && (
+          <p className="text-xs text-zinc-600 text-center mt-3">
+            Identity powered by{" "}
+            <span className="text-zinc-500">
+              <span className="text-emerald-500">pymt</span>house
+            </span>
+          </p>
+        )}
       </div>
     </main>
   );

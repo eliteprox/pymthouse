@@ -240,6 +240,21 @@ export function runMigrations(sqlite: Database) {
     "ALTER TABLE oidc_clients ADD COLUMN client_uri TEXT;",
     "ALTER TABLE users ADD COLUMN wallet_address TEXT;",
     "ALTER TABLE users ADD COLUMN privy_did TEXT;",
+    // White-label identity hosting columns for developer_apps
+    "ALTER TABLE developer_apps ADD COLUMN branding_mode TEXT NOT NULL DEFAULT 'blackLabel';",
+    "ALTER TABLE developer_apps ADD COLUMN custom_login_enabled INTEGER NOT NULL DEFAULT 0;",
+    "ALTER TABLE developer_apps ADD COLUMN custom_login_domain TEXT;",
+    "ALTER TABLE developer_apps ADD COLUMN custom_domain_verified_at TEXT;",
+    "ALTER TABLE developer_apps ADD COLUMN custom_domain_verification_token TEXT;",
+    "ALTER TABLE developer_apps ADD COLUMN custom_issuer_enabled INTEGER NOT NULL DEFAULT 0;",
+    "ALTER TABLE developer_apps ADD COLUMN custom_issuer_url TEXT;",
+    "ALTER TABLE developer_apps ADD COLUMN branding_primary_color TEXT;",
+    "ALTER TABLE developer_apps ADD COLUMN branding_logo_url TEXT;",
+    "ALTER TABLE developer_apps ADD COLUMN branding_support_email TEXT;",
+    // Enhanced domain tracking for app_allowed_domains
+    "ALTER TABLE app_allowed_domains ADD COLUMN purpose TEXT NOT NULL DEFAULT 'cors';",
+    "ALTER TABLE app_allowed_domains ADD COLUMN verification_token TEXT;",
+    "ALTER TABLE app_allowed_domains ADD COLUMN verified_at TEXT;",
   ];
 
   // Unique index for privy_did (idempotent)

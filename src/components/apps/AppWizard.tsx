@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import AppInfoStep from "./steps/AppInfoStep";
 import AuthAndDomainsStep from "./steps/AuthAndDomainsStep";
+import IdentityBrandingStep from "./steps/IdentityBrandingStep";
 import TestingStep from "./steps/TestingStep";
 import ReviewSubmitStep from "./steps/ReviewSubmitStep";
 import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
@@ -10,6 +11,7 @@ import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
 const STEPS = [
   { label: "App Info", key: "info" },
   { label: "Auth & Scopes", key: "auth" },
+  { label: "Identity & Branding", key: "branding" },
   { label: "Domains & Testing", key: "testing" },
   { label: "Submit", key: "submit" },
 ] as const;
@@ -23,11 +25,20 @@ export interface AppFormData {
   developerName: string;
   websiteUrl: string;
 
-  // Step 2: Auth & Domains
+  // Step 2: Auth & Scopes
   tokenEndpointAuthMethod: "none" | "client_secret_post" | "client_secret_basic";
   redirectUris: string[];
   allowedScopes: string;
   grantTypes: string[];
+
+  // Step 3: Identity & Branding
+  brandingMode: "blackLabel" | "whiteLabel";
+  brandingLogoUrl?: string;
+  brandingPrimaryColor?: string;
+  brandingSupportEmail?: string;
+  customLoginDomain?: string;
+  customDomainVerificationToken?: string;
+  customDomainVerifiedAt?: string;
 
   // Step 5: Review & Submit
   supportUrl: string;
@@ -56,6 +67,13 @@ const defaultFormData: AppFormData = {
   redirectUris: [],
   allowedScopes: DEFAULT_OIDC_SCOPES,
   grantTypes: ["authorization_code", "refresh_token"],
+  brandingMode: "blackLabel",
+  brandingLogoUrl: undefined,
+  brandingPrimaryColor: undefined,
+  brandingSupportEmail: undefined,
+  customLoginDomain: undefined,
+  customDomainVerificationToken: undefined,
+  customDomainVerifiedAt: undefined,
   supportUrl: "",
   privacyPolicyUrl: "",
   tosUrl: "",
@@ -205,12 +223,16 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
           <AppInfoStep data={formData} onChange={updateFormData} />
         )}
         {step === 1 && (
-          <AuthAndDomainsStep
-            data={formData}
-            onChange={updateFormData}
-          />
+          <AuthAndDomainsStep data={formData} onChange={updateFormData} />
         )}
         {step === 2 && (
+          <IdentityBrandingStep
+            data={formData}
+            onChange={updateFormData}
+            appId={appState.id}
+          />
+        )}
+        {step === 3 && (
           <TestingStep
             appId={appState.id}
             clientId={appState.clientId}
@@ -226,7 +248,7 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
             }
           />
         )}
-        {step === 3 && (
+        {step === 4 && (
           <ReviewSubmitStep
             data={formData}
             appState={appState}

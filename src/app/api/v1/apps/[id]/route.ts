@@ -84,6 +84,21 @@ export async function GET(
       ? app.pendingGrantTypes
       : clientInfo?.grantTypes ?? "authorization_code,refresh_token";
 
+  // Build white-label configuration object
+  const whiteLabelConfig = {
+    brandingMode: app.brandingMode || "blackLabel",
+    customLoginEnabled: !!app.customLoginEnabled,
+    customLoginDomain: app.customLoginDomain,
+    customDomainVerified: !!app.customDomainVerifiedAt,
+    customDomainVerifiedAt: app.customDomainVerifiedAt,
+    brandingPrimaryColor: app.brandingPrimaryColor,
+    brandingLogoUrl: app.brandingLogoUrl,
+    brandingSupportEmail: app.brandingSupportEmail,
+    // Future multi-issuer support (disabled in phase 1)
+    customIssuerEnabled: false,
+    customIssuerUrl: null,
+  };
+
   return NextResponse.json({
     ...app,
     oidcClient: clientInfo
@@ -95,6 +110,7 @@ export async function GET(
         }
       : null,
     domains,
+    whiteLabelConfig,
   });
 }
 
@@ -128,6 +144,30 @@ export async function PUT(
 
   if (body.linksToPurchases !== undefined) {
     appUpdates.linksToPurchases = body.linksToPurchases ? 1 : 0;
+  }
+
+  // White-label branding fields (only allowed when not using custom login domain OR domain is verified)
+  const brandingFields = [
+    "brandingPrimaryColor",
+    "brandingLogoUrl",
+    "brandingSupportEmail",
+  ] as const;
+
+  for (const field of brandingFields) {
+    if (body[field] !== undefined) {
+      appUpdates[field] = body[field] || null;
+    }
+  }
+
+  // Branding mode can only be changed to whiteLabel if custom domain is verified OR no custom domain is configured
+  if (body.brandingMode !== undefined) {
+    const requestedMode = body.brandingMode;
+    if (requestedMode === "whiteLabel") {
+      // Allow whiteLabel even without custom domain (branding still applies to consent/login pages)
+      appUpdates.brandingMode = "whiteLabel";
+    } else {
+      appUpdates.brandingMode = "blackLabel";
+    }
   }
 
   // Approved apps: scope/grant changes go to pending (draft) only; OIDC stays unchanged until revision is approved.

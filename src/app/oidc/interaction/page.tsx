@@ -6,6 +6,8 @@ import { Socket } from "net";
 import { authOptions } from "@/lib/next-auth-options";
 import { getProvider } from "@/lib/oidc/provider";
 import { getPublicOrigin } from "@/lib/oidc/tokens";
+import { resolveAppBrandingByClientId, shouldUseWhiteLabelBranding } from "@/lib/oidc/branding";
+import { resolveHostContext } from "@/lib/oidc/host-resolution";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -60,8 +62,26 @@ export default async function OidcInteractionPage({
   }
 
   const session = await getServerSession(authOptions);
+  
+  // Try to get interaction details early to extract client_id for branded login redirect
+  let clientId: string | null = null;
+  try {
+    const requestHeaders = await headers();
+    const preflightReq = buildNodeRequest("GET", uid, requestHeaders);
+    const provider = await getProvider();
+    const preflightDetails = await provider.interactionDetails(preflightReq.req, preflightReq.res);
+    clientId = preflightDetails.params.client_id as string || null;
+  } catch {
+    // Interaction may be invalid/expired; we'll handle this after session check
+  }
+
   if (!session?.user) {
-    redirect(`/login?callbackUrl=${encodeURIComponent(`/oidc/interaction?uid=${uid}`)}`);
+    const loginUrl = new URL("/login", getPublicOrigin());
+    loginUrl.searchParams.set("callbackUrl", `/oidc/interaction?uid=${uid}`);
+    if (clientId) {
+      loginUrl.searchParams.set("client_id", clientId);
+    }
+    redirect(loginUrl.pathname + loginUrl.search);
   }
 
   const requestHeaders = await headers();
