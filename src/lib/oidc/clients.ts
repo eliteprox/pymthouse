@@ -279,7 +279,7 @@ export function seedNaapClient(): void {
       "https://*.naap.dev/api/v1/auth/providers/*/callback",
       "https://*.vercel.app/api/v1/auth/providers/*/callback",
     ],
-    allowedScopes: "openid profile plan entitlements",
+    allowedScopes: "openid profile email",
     grantTypes: ["authorization_code", "refresh_token"],
     tokenEndpointAuthMethod: "none", // Public client (SPA/redirect flow)
   });

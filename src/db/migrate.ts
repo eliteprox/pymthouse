@@ -448,6 +448,46 @@ export function runMigrations(sqlite: Database) {
       AND (allowed_scopes NOT LIKE '%gateway%' OR allowed_scopes NOT LIKE '%offline_access%');
   `);
 
+  // Add billing pattern + JWKS URI to developer_apps, appId to transactions,
+  // externalUserId to end_users.
+  try {
+    const hasBillingPattern = sqlite
+      .prepare("SELECT COUNT(*) as count FROM pragma_table_info('developer_apps') WHERE name='billing_pattern'")
+      .get() as { count: number };
+    if (hasBillingPattern.count === 0) {
+      sqlite.exec("ALTER TABLE developer_apps ADD COLUMN billing_pattern TEXT NOT NULL DEFAULT 'app_level';");
+    }
+  } catch {}
+
+  try {
+    const hasJwksUri = sqlite
+      .prepare("SELECT COUNT(*) as count FROM pragma_table_info('developer_apps') WHERE name='jwks_uri'")
+      .get() as { count: number };
+    if (hasJwksUri.count === 0) {
+      sqlite.exec("ALTER TABLE developer_apps ADD COLUMN jwks_uri TEXT;");
+    }
+  } catch {}
+
+  try {
+    const hasTxAppId = sqlite
+      .prepare("SELECT COUNT(*) as count FROM pragma_table_info('transactions') WHERE name='app_id'")
+      .get() as { count: number };
+    if (hasTxAppId.count === 0) {
+      sqlite.exec("ALTER TABLE transactions ADD COLUMN app_id TEXT;");
+      sqlite.exec("CREATE INDEX IF NOT EXISTS idx_transactions_app_id ON transactions(app_id);");
+    }
+  } catch {}
+
+  try {
+    const hasExternalUserId = sqlite
+      .prepare("SELECT COUNT(*) as count FROM pragma_table_info('end_users') WHERE name='external_user_id'")
+      .get() as { count: number };
+    if (hasExternalUserId.count === 0) {
+      sqlite.exec("ALTER TABLE end_users ADD COLUMN external_user_id TEXT;");
+      sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_end_users_app_external ON end_users(app_id, external_user_id) WHERE app_id IS NOT NULL AND external_user_id IS NOT NULL;");
+    }
+  } catch {}
+
   // Seed singleton signer config if it doesn't exist
   const existing = sqlite
     .prepare("SELECT id FROM signer_config WHERE id = 'default'")

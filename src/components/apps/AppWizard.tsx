@@ -1,20 +1,20 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import AppInfoStep from "./steps/AppInfoStep";
-import AuthAndDomainsStep from "./steps/AuthAndDomainsStep";
+import AppModeStep from "./steps/AppModeStep";
 import IdentityBrandingStep from "./steps/IdentityBrandingStep";
 import TestingStep from "./steps/TestingStep";
 import ReviewSubmitStep from "./steps/ReviewSubmitStep";
 import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
 
-const STEPS = [
-  { label: "App Info", key: "info" },
-  { label: "Auth & Scopes", key: "auth" },
-  { label: "Identity & Branding", key: "branding" },
-  { label: "Domains & Testing", key: "testing" },
-  { label: "Submit", key: "submit" },
-] as const;
+const ALL_STEPS = [
+  { label: "App Info", key: "info" as const, alwaysVisible: true },
+  { label: "App Mode", key: "mode" as const, alwaysVisible: true },
+  { label: "Identity & Branding", key: "branding" as const, alwaysVisible: false },
+  { label: "Domains & Testing", key: "testing" as const, alwaysVisible: true },
+  { label: "Submit", key: "submit" as const, alwaysVisible: true },
+];
 
 export interface AppFormData {
   // Step 1: App Info
@@ -31,7 +31,11 @@ export interface AppFormData {
   allowedScopes: string;
   grantTypes: string[];
 
-  // Step 3: Identity & Branding
+  // Step 3: Billing Pattern
+  billingPattern: "app_level" | "per_user";
+  jwksUri?: string;
+
+  // Step 4: Identity & Branding
   brandingMode: "blackLabel" | "whiteLabel";
   brandingLogoUrl?: string;
   brandingPrimaryColor?: string;
@@ -40,7 +44,7 @@ export interface AppFormData {
   customDomainVerificationToken?: string;
   customDomainVerifiedAt?: string;
 
-  // Step 5: Review & Submit
+  // Step 6: Review & Submit
   supportUrl: string;
   privacyPolicyUrl: string;
   tosUrl: string;
@@ -67,6 +71,8 @@ const defaultFormData: AppFormData = {
   redirectUris: [],
   allowedScopes: DEFAULT_OIDC_SCOPES,
   grantTypes: ["authorization_code", "refresh_token"],
+  billingPattern: "app_level",
+  jwksUri: undefined,
   brandingMode: "blackLabel",
   brandingLogoUrl: undefined,
   brandingPrimaryColor: undefined,
@@ -101,6 +107,15 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isM2MMode =
+    formData.tokenEndpointAuthMethod !== "none" &&
+    formData.grantTypes.includes("client_credentials");
+
+  const visibleSteps = useMemo(
+    () => ALL_STEPS.filter((s) => s.alwaysVisible || !isM2MMode),
+    [isM2MMode]
+  );
 
   const updateFormData = useCallback(
     (updates: Partial<AppFormData>) => {
@@ -154,11 +169,11 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
   const handleNext = useCallback(async () => {
     try {
       await saveApp();
-      setStep((s) => Math.min(s + 1, STEPS.length - 1));
+      setStep((s) => Math.min(s + 1, visibleSteps.length - 1));
     } catch {
       // error already set
     }
-  }, [saveApp]);
+  }, [saveApp, visibleSteps.length]);
 
   const handleBack = useCallback(() => {
     setStep((s) => Math.max(s - 1, 0));
@@ -168,7 +183,7 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
     <div className="max-w-3xl mx-auto">
       {/* Progress Stepper */}
       <div className="flex items-center justify-between mb-8">
-        {STEPS.map((s, i) => (
+        {visibleSteps.map((s, i) => (
           <div key={s.key} className="flex items-center flex-1">
             <button
               onClick={() => appState.id && setStep(i)}
@@ -200,7 +215,7 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
                 {s.label}
               </span>
             </button>
-            {i < STEPS.length - 1 && (
+            {i < visibleSteps.length - 1 && (
               <div
                 className={`flex-1 h-px mx-2 ${
                   i < step ? "bg-emerald-500/30" : "bg-zinc-800"
@@ -219,20 +234,20 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
 
       {/* Step Content */}
       <div className="border border-zinc-800 bg-zinc-900/40 rounded-xl p-6">
-        {step === 0 && (
+        {visibleSteps[step]?.key === "info" && (
           <AppInfoStep data={formData} onChange={updateFormData} />
         )}
-        {step === 1 && (
-          <AuthAndDomainsStep data={formData} onChange={updateFormData} />
+        {visibleSteps[step]?.key === "mode" && (
+          <AppModeStep data={formData} onChange={updateFormData} />
         )}
-        {step === 2 && (
+        {visibleSteps[step]?.key === "branding" && (
           <IdentityBrandingStep
             data={formData}
             onChange={updateFormData}
             appId={appState.id}
           />
         )}
-        {step === 3 && (
+        {visibleSteps[step]?.key === "testing" && (
           <TestingStep
             appId={appState.id}
             clientId={appState.clientId}
@@ -248,7 +263,7 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
             }
           />
         )}
-        {step === 4 && (
+        {visibleSteps[step]?.key === "submit" && (
           <ReviewSubmitStep
             data={formData}
             appState={appState}
@@ -272,7 +287,7 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
         >
           Back
         </button>
-        {step < STEPS.length - 1 && (
+        {step < visibleSteps.length - 1 && (
           <button
             onClick={handleNext}
             disabled={saving || (!formData.name && step === 0)}

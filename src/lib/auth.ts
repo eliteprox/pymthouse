@@ -241,6 +241,56 @@ export function requireAuth(
   return auth;
 }
 
+/**
+ * Authenticate a request using client credentials (Basic auth or JSON body).
+ * Returns the OIDC client_id and the developerApps row ID if valid.
+ */
+export function authenticateAppClient(request: NextRequest): {
+  clientId: string;
+  appId: string;
+} | null {
+  const { validateClientSecret } = require("@/lib/oidc/clients");
+  const { oidcClients, developerApps } = require("@/db/schema");
+  const { eq } = require("drizzle-orm");
+
+  let clientId: string | null = null;
+  let clientSecret: string | null = null;
+
+  const authHeader = request.headers.get("authorization") || "";
+  if (authHeader.startsWith("Basic ")) {
+    const decoded = Buffer.from(authHeader.slice(6), "base64").toString("utf-8");
+    const colonIdx = decoded.indexOf(":");
+    if (colonIdx > 0) {
+      clientId = decoded.slice(0, colonIdx);
+      clientSecret = decoded.slice(colonIdx + 1);
+    }
+  }
+
+  if (!clientId || !clientSecret) {
+    return null;
+  }
+
+  if (!validateClientSecret(clientId, clientSecret)) {
+    return null;
+  }
+
+  const clientRow = db
+    .select()
+    .from(oidcClients)
+    .where(eq(oidcClients.clientId, clientId))
+    .get();
+  if (!clientRow) return null;
+
+  const app = db
+    .select()
+    .from(developerApps)
+    .where(eq(developerApps.oidcClientId, clientRow.id))
+    .get();
+  if (!app) return null;
+
+  return { clientId, appId: app.id };
+}
+
 export class AuthError extends Error {
   status: number;
   constructor(

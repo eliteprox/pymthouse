@@ -56,6 +56,8 @@ export default function AppSettingsPage() {
           customLoginDomain: wl.customLoginDomain || undefined,
           customDomainVerificationToken: wl.customDomainVerificationToken || undefined,
           customDomainVerifiedAt: wl.customDomainVerifiedAt || undefined,
+          billingPattern: data.billingPattern || "app_level",
+          jwksUri: data.jwksUri || undefined,
         });
       })
       .finally(() => setLoading(false));

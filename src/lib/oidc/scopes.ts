@@ -23,27 +23,12 @@ export const OIDC_SCOPES: ScopeDefinition[] = [
   {
     value: "profile",
     label: "Basic Profile",
-    description: "See your name and profile photo",
+    description: "See your name",
   },
   {
     value: "email",
     label: "Email Address",
     description: "See your email address",
-  },
-  {
-    value: "role",
-    label: "Account Role",
-    description: "See your account role in PymtHouse",
-  },
-  {
-    value: "plan",
-    label: "Subscription Plan",
-    description: "See your current PymtHouse plan tier",
-  },
-  {
-    value: "entitlements",
-    label: "Feature Access",
-    description: "See which PymtHouse features are enabled for your account",
   },
   {
     value: "gateway",
@@ -52,8 +37,8 @@ export const OIDC_SCOPES: ScopeDefinition[] = [
   },
   {
     value: "offline_access",
-    label: "Offline Access",
-    description: "Allow the app to refresh access without asking you to sign in again",
+    label: "Session Renewal",
+    description: "Enables refresh tokens so sessions can continue without re-signing in",
   },
 ];
 

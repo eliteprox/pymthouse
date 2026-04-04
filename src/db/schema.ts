@@ -58,7 +58,8 @@ export const signerConfig = sqliteTable("signer_config", {
 // End users -- the actual multi-user entities (Privy wallets, credits, usage)
 export const endUsers = sqliteTable("end_users", {
   id: text("id").primaryKey(),
-  appId: text("app_id"), // developer app this end user belongs to (nullable)
+  appId: text("app_id"),
+  externalUserId: text("external_user_id"), // platform's user sub claim for token exchange mapping
   name: text("name"),
   email: text("email"),
   privyDid: text("privy_did").unique(),
@@ -92,6 +93,7 @@ export const streamSessions = sqliteTable("stream_sessions", {
 export const transactions = sqliteTable("transactions", {
   id: text("id").primaryKey(),
   endUserId: text("end_user_id").references(() => endUsers.id),
+  appId: text("app_id"),
   streamSessionId: text("stream_session_id").references(() => streamSessions.id),
   type: text("type").notNull(), // prepay_credit | usage | payout | refund
   amountWei: text("amount_wei").notNull(),
@@ -236,6 +238,8 @@ export const developerApps = sqliteTable("developer_apps", {
   brandingPrimaryColor: text("branding_primary_color"), // hex color e.g., #10b981
   brandingLogoUrl: text("branding_logo_url"), // override logo for hosted login
   brandingSupportEmail: text("branding_support_email"), // custom support email for branded login
+  billingPattern: text("billing_pattern").notNull().default("app_level"), // app_level | per_user
+  jwksUri: text("jwks_uri"), // Platform's JWKS URL for RFC 8693 token exchange (Pattern B)
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),

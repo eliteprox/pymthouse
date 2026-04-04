@@ -15,6 +15,7 @@ import { getRegisteredRedirectOrigins } from "@/lib/oidc/clients";
 import { isVerifiedCustomDomain } from "@/lib/oidc/custom-domains";
 import { getSecureHeaders } from "@/lib/oidc/security";
 import { deriveExternalOriginFromHeaders, resolveRedirectLocation, getTrustedOidcOrigins } from "./utils";
+import { isTokenExchangeGrant, handleTokenExchange, TokenExchangeError } from "@/lib/oidc/token-exchange";
 
 const RESOURCE_REQUIRED_GRANTS = new Set([
   "urn:ietf:params:oauth:grant-type:device_code",
@@ -51,9 +52,48 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
   // Create a Node.js IncomingMessage from the NextRequest
   let body = request.body ? Buffer.from(await request.arrayBuffer()) : null;
 
+  // Intercept RFC 8693 token exchange before node-oidc-provider
+  const contentType = request.headers.get("content-type") || "";
+  if (
+    request.method === "POST" &&
+    path === "/token" &&
+    contentType.includes("application/x-www-form-urlencoded") &&
+    body &&
+    body.length > 0
+  ) {
+    const exchangeParams = new URLSearchParams(body.toString("utf-8"));
+    const grantType = exchangeParams.get("grant_type") || "";
+    if (isTokenExchangeGrant(grantType)) {
+      try {
+        const result = await handleTokenExchange({
+          clientId: exchangeParams.get("client_id") || "",
+          clientSecret: exchangeParams.get("client_secret") || "",
+          subjectToken: exchangeParams.get("subject_token") || "",
+          subjectTokenType: exchangeParams.get("subject_token_type") || "",
+          scope: exchangeParams.get("scope") || "gateway",
+          resource: exchangeParams.get("resource") || undefined,
+        });
+        return NextResponse.json(result, {
+          headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+        });
+      } catch (err) {
+        if (err instanceof TokenExchangeError) {
+          return NextResponse.json(
+            { error: err.code, error_description: err.message },
+            { status: 400 },
+          );
+        }
+        console.error("[OIDC] token exchange error:", err);
+        return NextResponse.json(
+          { error: "server_error", error_description: "Internal error during token exchange" },
+          { status: 500 },
+        );
+      }
+    }
+  }
+
   // RFC 8707 strict mode: ensure resource indicator is present on token-issuing
   // endpoints so access tokens are always audience-bound JWTs.
-  const contentType = request.headers.get("content-type") || "";
   if (
     request.method === "POST" &&
     contentType.includes("application/x-www-form-urlencoded") &&

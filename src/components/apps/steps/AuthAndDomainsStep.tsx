@@ -2,6 +2,7 @@
 
 import type { AppFormData } from "../AppWizard";
 import { OIDC_SCOPES } from "@/lib/oidc/scopes";
+import { useEffect } from "react";
 
 interface Props {
   data: AppFormData;
@@ -13,6 +14,66 @@ const isPublic = (method: string) => method === "none";
 export default function AuthAndDomainsStep({ data, onChange }: Props) {
   const scopes = data.allowedScopes.split(/\s+/).filter(Boolean);
   const clientIsPublic = isPublic(data.tokenEndpointAuthMethod);
+  const nonDerivedScopes = OIDC_SCOPES.filter((scope) => scope.value !== "offline_access");
+  const isM2MIntent = !clientIsPublic && data.grantTypes.includes("client_credentials");
+
+  const withOfflineAccessForRefresh = (grantTypes: string[]): string => {
+    const nextScopes = new Set(scopes);
+    if (grantTypes.includes("refresh_token")) {
+      nextScopes.add("offline_access");
+    } else {
+      nextScopes.delete("offline_access");
+    }
+    const preferredOrder = OIDC_SCOPES.map((scope) => scope.value);
+    const ordered = preferredOrder.filter((scope) => nextScopes.has(scope));
+    const customScopes = Array.from(nextScopes).filter((scope) => !preferredOrder.includes(scope));
+    return [...ordered, ...customScopes].join(" ");
+  };
+
+  const m2mOnlyScopes = new Set(["openid", "gateway"]);
+
+  useEffect(() => {
+    const expectedScopes = withOfflineAccessForRefresh(data.grantTypes);
+    if (expectedScopes !== data.allowedScopes) {
+      onChange({ allowedScopes: expectedScopes });
+    }
+    // Keep the derived refresh scope synced when loading older app configs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.grantTypes, data.allowedScopes]);
+
+  useEffect(() => {
+    if (!clientIsPublic || !data.grantTypes.includes("client_credentials")) return;
+    const nextGrantTypes = ["authorization_code", "refresh_token"];
+    onChange({
+      grantTypes: nextGrantTypes,
+      allowedScopes: withOfflineAccessForRefresh(nextGrantTypes),
+    });
+    // Public clients cannot use client_credentials.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientIsPublic, data.grantTypes]);
+
+  useEffect(() => {
+    if (!isM2MIntent) return;
+    const constrainedGrantTypes = ["client_credentials"];
+    const grantTypeNeedsUpdate = constrainedGrantTypes.some((grant) => !data.grantTypes.includes(grant))
+      || data.grantTypes.some((grant) => !constrainedGrantTypes.includes(grant));
+    const constrainedScopes = new Set(scopes.filter((scope) => m2mOnlyScopes.has(scope)));
+    constrainedScopes.add("openid");
+    constrainedScopes.add("gateway");
+    const preferredOrder = OIDC_SCOPES.map((scope) => scope.value);
+    const orderedConstrainedScopes = preferredOrder.filter((scope) => constrainedScopes.has(scope));
+    const constrainedAllowedScopes = orderedConstrainedScopes.join(" ");
+    const scopesNeedUpdate = constrainedAllowedScopes !== data.allowedScopes;
+
+    if (grantTypeNeedsUpdate || scopesNeedUpdate) {
+      onChange({
+        grantTypes: constrainedGrantTypes,
+        allowedScopes: constrainedAllowedScopes,
+      });
+    }
+    // Enforce an opinionated M2M shape for easier setup.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isM2MIntent, data.grantTypes, data.allowedScopes]);
 
   const toggleScope = (scope: string) => {
     if (scope === "openid") return;
@@ -20,6 +81,15 @@ export default function AuthAndDomainsStep({ data, onChange }: Props) {
       ? scopes.filter((s) => s !== scope)
       : [...scopes, scope];
     onChange({ allowedScopes: newScopes.join(" ") });
+  };
+
+  const applyConfidentialDefaults = () => {
+    const nextGrantTypes = ["client_credentials"];
+    onChange({
+      tokenEndpointAuthMethod: "client_secret_post",
+      grantTypes: nextGrantTypes,
+      allowedScopes: withOfflineAccessForRefresh(nextGrantTypes),
+    });
   };
 
   return (
@@ -70,7 +140,7 @@ export default function AuthAndDomainsStep({ data, onChange }: Props) {
 
           <button
             type="button"
-            onClick={() => onChange({ tokenEndpointAuthMethod: "client_secret_post" })}
+            onClick={applyConfidentialDefaults}
             className={`p-4 rounded-xl border text-left transition-all ${
               !clientIsPublic
                 ? "border-emerald-500/50 bg-emerald-500/5 ring-1 ring-emerald-500/20"
@@ -112,45 +182,6 @@ export default function AuthAndDomainsStep({ data, onChange }: Props) {
         </div>
       </div>
 
-      {/* Allowed Scopes */}
-      <div className="space-y-3">
-        <div>
-          <label className="block text-sm font-medium text-zinc-300">Allowed Scopes</label>
-          <p className="text-xs text-zinc-500 mt-0.5">
-            Select only the data your app needs. Users will see these permissions on the consent screen.
-          </p>
-        </div>
-        <div className="space-y-2">
-          {OIDC_SCOPES.map((scope) => (
-            <label
-              key={scope.value}
-              className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
-                scopes.includes(scope.value)
-                  ? "border-emerald-500/30 bg-emerald-500/5"
-                  : "border-zinc-800 bg-zinc-800/20"
-              } ${scope.required ? "opacity-70" : "cursor-pointer hover:border-zinc-600"}`}
-            >
-              <input
-                type="checkbox"
-                checked={scopes.includes(scope.value)}
-                onChange={() => toggleScope(scope.value)}
-                disabled={scope.required}
-                className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 shrink-0"
-              />
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-zinc-200">
-                  {scope.label}
-                  {scope.required && (
-                    <span className="ml-1.5 text-[10px] font-normal text-zinc-500 uppercase tracking-wide">(required)</span>
-                  )}
-                </p>
-                <p className="text-xs text-zinc-500">{scope.description}</p>
-              </div>
-            </label>
-          ))}
-        </div>
-      </div>
-
       {/* Grant Types */}
       <div className="space-y-3">
         <div>
@@ -160,31 +191,45 @@ export default function AuthAndDomainsStep({ data, onChange }: Props) {
           </p>
         </div>
         <div className="space-y-2">
-          <label className="flex items-center gap-3 p-3 rounded-lg border border-zinc-800 bg-zinc-800/20 opacity-70 cursor-not-allowed">
-            <input type="checkbox" checked readOnly disabled className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500" />
-            <div>
-              <p className="text-sm font-medium text-zinc-200">
-                Authorization Code
-                <span className="ml-1.5 text-[10px] font-normal text-zinc-500 uppercase tracking-wide">(required)</span>
-              </p>
-              <p className="text-xs text-zinc-500">Standard redirect-based OIDC login flow</p>
-            </div>
-          </label>
+          {!isM2MIntent && (
+            <label className="flex items-center gap-3 p-3 rounded-lg border border-zinc-800 bg-zinc-800/20 opacity-70 cursor-not-allowed">
+              <input type="checkbox" checked readOnly disabled className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500" />
+              <div>
+                <p className="text-sm font-medium text-zinc-200">
+                  Authorization Code
+                  <span className="ml-1.5 text-[10px] font-normal text-zinc-500 uppercase tracking-wide">(required)</span>
+                </p>
+                <p className="text-xs text-zinc-500">Standard redirect-based OIDC login flow</p>
+              </div>
+            </label>
+          )}
 
           {[
             {
+              grant: "client_credentials",
+              label: "Client Credentials (M2M)",
+              description: "For server-to-server auth. Your backend exchanges client_id + client_secret for an access token directly — no user interaction required.",
+              recommended: false,
+              requiresConfidential: true,
+            },
+            {
               grant: "refresh_token",
               label: "Refresh Token",
-              description: "Let the app silently renew access without re-prompting the user.",
+              description: "User sessions only: silently renew delegated user access. Includes the Session Renewal scope (`offline_access`) automatically.",
               recommended: true,
+              requiresConfidential: false,
             },
             {
               grant: "urn:ietf:params:oauth:grant-type:device_code",
               label: "Device Authorization Flow",
-              description: "For CLI tools, smart TVs, and IoT devices. User enters a code on a separate screen — no redirect URI needed.",
+              description: "User interactive flow for CLI tools, smart TVs, and IoT devices. User enters a code on a separate screen — no redirect URI needed.",
               recommended: false,
+              requiresConfidential: false,
             },
-          ].map(({ grant, label, description, recommended }) => {
+          ]
+          .filter(({ grant }) => !isM2MIntent || grant === "client_credentials")
+          .filter(({ requiresConfidential }) => !requiresConfidential || !clientIsPublic)
+          .map(({ grant, label, description, recommended }) => {
             const checked = data.grantTypes.includes(grant);
             return (
               <label
@@ -196,13 +241,19 @@ export default function AuthAndDomainsStep({ data, onChange }: Props) {
                 <input
                   type="checkbox"
                   checked={checked}
-                  onChange={() =>
+                  onChange={() => {
+                    const nextGrantTypes = checked
+                      ? (grant === "client_credentials"
+                        ? ["authorization_code", "refresh_token"]
+                        : data.grantTypes.filter((g) => g !== grant))
+                      : grant === "client_credentials"
+                        ? ["client_credentials"]
+                        : [...data.grantTypes, grant];
                     onChange({
-                      grantTypes: checked
-                        ? data.grantTypes.filter((g) => g !== grant)
-                        : [...data.grantTypes, grant],
-                    })
-                  }
+                      grantTypes: nextGrantTypes,
+                      allowedScopes: withOfflineAccessForRefresh(nextGrantTypes),
+                    });
+                  }}
                   className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 mt-0.5 shrink-0"
                 />
                 <div>
@@ -219,6 +270,47 @@ export default function AuthAndDomainsStep({ data, onChange }: Props) {
               </label>
             );
           })}
+        </div>
+      </div>
+
+      {/* Allowed Scopes */}
+      <div className="space-y-3">
+        <div>
+          <label className="block text-sm font-medium text-zinc-300">Allowed Scopes</label>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            Select only the data your app needs. Users will see these permissions on the consent screen.
+          </p>
+        </div>
+        <div className="space-y-2">
+          {nonDerivedScopes
+            .filter((scope) => !isM2MIntent || (scope.value !== "profile" && scope.value !== "email"))
+            .map((scope) => (
+            <label
+              key={scope.value}
+              className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                scopes.includes(scope.value)
+                  ? "border-emerald-500/30 bg-emerald-500/5"
+                  : "border-zinc-800 bg-zinc-800/20"
+              } ${scope.required ? "opacity-70" : "cursor-pointer hover:border-zinc-600"}`}
+            >
+              <input
+                type="checkbox"
+                checked={scopes.includes(scope.value)}
+                onChange={() => toggleScope(scope.value)}
+                disabled={scope.required || (isM2MIntent && scope.value === "gateway")}
+                className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 shrink-0"
+              />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-zinc-200">
+                  {scope.label}
+                  {scope.required && (
+                    <span className="ml-1.5 text-[10px] font-normal text-zinc-500 uppercase tracking-wide">(required)</span>
+                  )}
+                </p>
+                <p className="text-xs text-zinc-500">{scope.description}</p>
+              </div>
+            </label>
+          ))}
         </div>
       </div>
     </div>

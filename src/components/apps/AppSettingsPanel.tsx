@@ -18,6 +18,8 @@ interface AppSettingsData {
   customLoginDomain?: string;
   customDomainVerificationToken?: string;
   customDomainVerifiedAt?: string;
+  billingPattern?: string;
+  jwksUri?: string;
 }
 
 interface Props {
@@ -519,7 +521,81 @@ export default function AppSettingsPanel({ data }: Props) {
         </div>
       </div>
 
-      {/* Section 4: Identity & Branding */}
+      {/* Section 4: Billing & Usage */}
+      <div className="space-y-6 p-5 rounded-xl border border-zinc-800 bg-zinc-900/30">
+        <div>
+          <h3 className="text-sm font-semibold text-zinc-200">Billing & Usage</h3>
+          <p className="text-xs text-zinc-500 mt-1">
+            How PymtHouse tracks usage for your application.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+            data.billingPattern === "per_user"
+              ? "bg-violet-500/20 text-violet-400"
+              : "bg-emerald-500/20 text-emerald-400"
+          }`}>
+            {data.billingPattern === "per_user" ? "Per-User Attribution" : "App-Level Billing"}
+          </div>
+        </div>
+
+        {data.billingPattern === "per_user" && (
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-zinc-300">JWKS URL</label>
+            <p className="text-xs text-zinc-500">
+              PymtHouse fetches your JWKS to verify user JWTs during token exchange.
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-300 text-sm font-mono truncate">
+                {data.jwksUri || "Not configured"}
+              </code>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <label className="block text-sm font-medium text-zinc-300">API Examples</label>
+          {data.billingPattern === "per_user" ? (
+            <div className="p-3 bg-zinc-800/30 rounded-lg border border-zinc-800 space-y-2">
+              <p className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">Token Exchange (RFC 8693)</p>
+              <pre className="text-xs text-zinc-400 overflow-x-auto whitespace-pre">{`POST /api/v1/oidc/token
+grant_type=urn:ietf:params:oauth:grant-type:token-exchange
+&subject_token={platform_user_jwt}
+&subject_token_type=urn:ietf:params:oauth:token-type:jwt
+&client_id=${data.clientId}
+&client_secret=<your_secret>
+&scope=gateway`}</pre>
+            </div>
+          ) : (
+            <div className="p-3 bg-zinc-800/30 rounded-lg border border-zinc-800 space-y-2">
+              <p className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">Client Credentials (M2M)</p>
+              <pre className="text-xs text-zinc-400 overflow-x-auto whitespace-pre">{`POST /api/v1/oidc/token
+grant_type=client_credentials
+&client_id=${data.clientId}
+&client_secret=<your_secret>
+&scope=gateway`}</pre>
+            </div>
+          )}
+          <div className="p-3 bg-zinc-800/30 rounded-lg border border-zinc-800 space-y-2">
+            <p className="text-[10px] font-medium text-zinc-400 uppercase tracking-wider">Query Usage</p>
+            <pre className="text-xs text-zinc-400 overflow-x-auto whitespace-pre">{`GET /api/v1/apps/${data.appId}/usage${data.billingPattern === "per_user" ? "?groupBy=user" : ""}
+Authorization: Basic base64(client_id:client_secret)`}</pre>
+          </div>
+        </div>
+
+        <a
+          href={`/apps/${data.appId}/usage`}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+          View Usage Dashboard
+        </a>
+      </div>
+
+      {/* Section 5: Identity & Branding */}
       <div className="space-y-6 p-5 rounded-xl border border-zinc-800 bg-zinc-900/30">
         <div>
           <h3 className="text-sm font-semibold text-zinc-200">Identity & Branding</h3>

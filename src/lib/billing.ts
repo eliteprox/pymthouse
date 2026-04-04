@@ -1,6 +1,7 @@
 import { db } from "@/db/index";
 import { endUsers, transactions, streamSessions } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import { v4 as uuidv4 } from "uuid";
 
 export function hasEnoughCredits(
   endUserId: string,
@@ -52,6 +53,38 @@ export function addCredits(
     .set({ creditBalanceWei: newBalance.toString() })
     .where(eq(endUsers.id, endUserId))
     .run();
+}
+
+export function findOrCreateAppEndUser(
+  appId: string,
+  externalUserId: string,
+): { id: string; isNew: boolean } {
+  const existing = db
+    .select()
+    .from(endUsers)
+    .where(
+      and(
+        eq(endUsers.appId, appId),
+        eq(endUsers.externalUserId, externalUserId),
+      ),
+    )
+    .get();
+
+  if (existing) {
+    return { id: existing.id, isNew: false };
+  }
+
+  const id = uuidv4();
+  db.insert(endUsers)
+    .values({
+      id,
+      appId,
+      externalUserId,
+      creditBalanceWei: "0",
+    })
+    .run();
+
+  return { id, isNew: true };
 }
 
 export function getTransactions(

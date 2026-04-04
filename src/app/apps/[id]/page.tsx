@@ -53,6 +53,8 @@ export default function AppDetailPage() {
             ],
             tokenEndpointAuthMethod:
               data.oidcClient?.tokenEndpointAuthMethod || "none",
+            billingPattern: data.billingPattern || "app_level",
+            jwksUri: data.jwksUri || undefined,
           },
           state: {
             id: data.id,

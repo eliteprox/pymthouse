@@ -165,6 +165,7 @@ export async function proxyGenerateLivePayment(
         .values({
           id: uuidv4(),
           endUserId: auth.endUserId || null,
+          appId: auth.appId || null,
           bearerTokenHash: auth.tokenHash,
           manifestId,
           orchestratorAddress,
@@ -192,6 +193,7 @@ export async function proxyGenerateLivePayment(
         .values({
           id: uuidv4(),
           endUserId: auth.endUserId || null,
+          appId: auth.appId || null,
           type: "usage",
           amountWei: feeWei.toString(),
           platformCutPercent: signer.defaultCutPercent,

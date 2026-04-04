@@ -146,6 +146,13 @@ export async function PUT(
     appUpdates.linksToPurchases = body.linksToPurchases ? 1 : 0;
   }
 
+  if (body.billingPattern !== undefined) {
+    appUpdates.billingPattern = body.billingPattern === "per_user" ? "per_user" : "app_level";
+  }
+  if (body.jwksUri !== undefined) {
+    appUpdates.jwksUri = body.jwksUri || null;
+  }
+
   // White-label branding fields (only allowed when not using custom login domain OR domain is verified)
   const brandingFields = [
     "brandingPrimaryColor",

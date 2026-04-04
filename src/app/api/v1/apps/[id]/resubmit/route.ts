@@ -61,9 +61,18 @@ export async function POST(
     );
   }
 
-  if (!grantTypes.includes("authorization_code")) {
+  const grantTypeList = grantTypes.split(",").map((g) => g.trim()).filter(Boolean);
+  if (grantTypeList.length === 0) {
     return NextResponse.json(
-      { error: "authorization_code grant type is required" },
+      { error: "At least one grant type is required" },
+      { status: 400 }
+    );
+  }
+
+  const scopeList = allowedScopes.split(/\s+/).map((s) => s.trim()).filter(Boolean);
+  if (grantTypeList.includes("refresh_token") && !scopeList.includes("offline_access")) {
+    return NextResponse.json(
+      { error: "offline_access scope is required when refresh_token grant type is enabled" },
       { status: 400 }
     );
   }

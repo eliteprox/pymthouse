@@ -90,10 +90,10 @@ function loadClients(): ClientMetadata[] {
       client_name: row.displayName,
       redirect_uris: effectiveRedirectUris,
       grant_types: grantTypes,
-      response_types: ["code"],
       token_endpoint_auth_method: row.tokenEndpointAuthMethod as "none" | "client_secret_post" | "client_secret_basic",
       scope: row.allowedScopes,
     };
+    meta.response_types = grantTypes.includes("authorization_code") ? ["code"] : [];
 
     // White-label client metadata
     if (row.postLogoutRedirectUris) {
@@ -109,10 +109,11 @@ function loadClients(): ClientMetadata[] {
     if (row.clientUri) meta.client_uri = row.clientUri;
 
     if (row.clientSecretHash) {
-      // Store the SHA-256 hash in client_secret and patch comparison logic
-      // to hash incoming secrets before constant-time comparison.
       meta.client_secret = row.clientSecretHash;
       meta.client_secret_expires_at = 0;
+      if (!grantTypes.includes("client_credentials")) {
+        grantTypes.push("client_credentials");
+      }
     } else if (meta.token_endpoint_auth_method !== "none") {
       // Safety guard: clients without a secret cannot be confidential.
       meta.token_endpoint_auth_method = "none";
@@ -283,26 +284,18 @@ export async function getProvider(): Promise<Provider> {
       return false;
     },
 
-    // Custom scopes
     scopes: [
       "openid",
       "profile",
       "email",
-      "role",
-      "plan",
-      "entitlements",
       "gateway",
       "offline_access",
     ],
 
-    // Map scopes to claims
     claims: {
       openid: ["sub"],
       profile: ["name"],
       email: ["email"],
-      role: ["role"],
-      plan: ["plan"],
-      entitlements: ["entitlements"],
       gateway: ["gateway"],
     },
 
@@ -323,11 +316,12 @@ export async function getProvider(): Promise<Provider> {
     // Always issue refresh tokens when refresh_token grant is allowed
     issueRefreshToken: async (_ctx, client, code) => {
       if (!client.grantTypeAllowed("refresh_token")) return false;
-      return code.scopes.has("offline_access") || code.scopes.has("openid");
+      return code.scopes.has("offline_access");
     },
 
     features: {
       devInteractions: { enabled: false },
+      clientCredentials: { enabled: true },
       deviceFlow: {
         enabled: true,
         charset: "base-20",
@@ -367,7 +361,7 @@ export async function getProvider(): Promise<Provider> {
             throw new Error(`Unknown resource indicator: ${resourceIndicator}`);
           }
           return {
-            scope: "openid profile email role plan entitlements gateway offline_access",
+            scope: "openid profile email gateway offline_access",
             audience: issuer,
             accessTokenFormat: "jwt" as const,
             accessTokenTTL: 3600,
