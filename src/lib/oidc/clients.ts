@@ -3,7 +3,11 @@ import { oidcClients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { createHash, randomBytes } from "crypto";
-import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
+import {
+  DEFAULT_OIDC_SCOPES,
+  NAAP_SERVICE_OIDC_SCOPES,
+  NAAP_WEB_OIDC_SCOPES,
+} from "@/lib/oidc/scopes";
 
 export interface OidcClientConfig {
   clientId: string;
@@ -19,53 +23,52 @@ export function hashClientSecret(secret: string): string {
   return createHash("sha256").update(secret).digest("hex");
 }
 
-export function registerClient(config: OidcClientConfig): void {
-  const existing = db
+export async function registerClient(config: OidcClientConfig): Promise<void> {
+  const existingRows = await db
     .select()
     .from(oidcClients)
     .where(eq(oidcClients.clientId, config.clientId))
-    .get();
+    .limit(1);
+  const existing = existingRows[0];
 
   if (existing) {
-    db.update(oidcClients)
+    await db
+      .update(oidcClients)
       .set({
         displayName: config.displayName,
         redirectUris: JSON.stringify(config.redirectUris),
         allowedScopes: config.allowedScopes || DEFAULT_OIDC_SCOPES,
-        grantTypes: (config.grantTypes || ["authorization_code", "refresh_token"]).join(","),
+        grantTypes: (config.grantTypes || ["authorization_code", "refresh_token"]).join(
+          ",",
+        ),
         tokenEndpointAuthMethod: config.tokenEndpointAuthMethod || "none",
         clientSecretHash: config.clientSecret
           ? hashClientSecret(config.clientSecret)
           : null,
       })
-      .where(eq(oidcClients.clientId, config.clientId))
-      .run();
+      .where(eq(oidcClients.clientId, config.clientId));
     return;
   }
 
-  db.insert(oidcClients)
-    .values({
-      id: uuidv4(),
-      clientId: config.clientId,
-      clientSecretHash: config.clientSecret
-        ? hashClientSecret(config.clientSecret)
-        : null,
-      displayName: config.displayName,
-      redirectUris: JSON.stringify(config.redirectUris),
-      allowedScopes: config.allowedScopes || DEFAULT_OIDC_SCOPES,
-      grantTypes: (config.grantTypes || ["authorization_code", "refresh_token"]).join(","),
-      tokenEndpointAuthMethod: config.tokenEndpointAuthMethod || "none",
-    })
-    .run();
+  await db.insert(oidcClients).values({
+    id: uuidv4(),
+    clientId: config.clientId,
+    clientSecretHash: config.clientSecret
+      ? hashClientSecret(config.clientSecret)
+      : null,
+    displayName: config.displayName,
+    redirectUris: JSON.stringify(config.redirectUris),
+    allowedScopes: config.allowedScopes || DEFAULT_OIDC_SCOPES,
+    grantTypes: (config.grantTypes || ["authorization_code", "refresh_token"]).join(","),
+    tokenEndpointAuthMethod: config.tokenEndpointAuthMethod || "none",
+  });
 }
 
 /**
  * Return the set of allowed redirect URI origins for all registered clients.
- * Used for defense-in-depth origin validation when forwarding provider redirects.
- * Wildcard URIs (e.g. http://localhost:*) are expanded to common dev ports.
  */
-export function getRegisteredRedirectOrigins(): Set<string> {
-  const rows = db.select().from(oidcClients).all();
+export async function getRegisteredRedirectOrigins(): Promise<Set<string>> {
+  const rows = await db.select().from(oidcClients);
   const origins = new Set<string>();
   const commonPorts = [
     "3000", "3001", "3002", "3003", "3004", "3005",
@@ -77,7 +80,6 @@ export function getRegisteredRedirectOrigins(): Set<string> {
     const uris = JSON.parse(row.redirectUris) as string[];
     for (const uri of uris) {
       if (uri.includes("*")) {
-        // Expand wildcard patterns to the same set used when loading into the provider.
         for (const port of commonPorts) {
           try {
             origins.add(new URL(uri.replace(/:\*/, `:${port}`).replace(/\*/g, "")).origin);
@@ -98,7 +100,7 @@ export function getRegisteredRedirectOrigins(): Set<string> {
   return origins;
 }
 
-export function getClient(clientId: string): {
+export async function getClient(clientId: string): Promise<{
   id: string;
   clientId: string;
   displayName: string;
@@ -107,12 +109,13 @@ export function getClient(clientId: string): {
   grantTypes: string[];
   tokenEndpointAuthMethod: string;
   clientSecretHash: string | null;
-} | null {
-  const client = db
+} | null> {
+  const rows = await db
     .select()
     .from(oidcClients)
     .where(eq(oidcClients.clientId, clientId))
-    .get();
+    .limit(1);
+  const client = rows[0];
 
   if (!client) return null;
 
@@ -128,14 +131,17 @@ export function getClient(clientId: string): {
   };
 }
 
-export function validateRedirectUri(clientId: string, redirectUri: string): boolean {
-  const client = getClient(clientId);
+export async function validateRedirectUri(
+  clientId: string,
+  redirectUri: string,
+): Promise<boolean> {
+  const client = await getClient(clientId);
   if (!client) return false;
 
   return client.redirectUris.some((pattern) => {
     if (pattern.includes("*")) {
       const regex = new RegExp(
-        "^" + pattern.replace(/\*/g, ".*").replace(/\//g, "\\/") + "$"
+        "^" + pattern.replace(/\*/g, ".*").replace(/\//g, "\\/") + "$",
       );
       return regex.test(redirectUri);
     }
@@ -143,19 +149,22 @@ export function validateRedirectUri(clientId: string, redirectUri: string): bool
   });
 }
 
-export function validateClientSecret(
+export async function validateClientSecret(
   clientId: string,
-  clientSecret: string
-): boolean {
-  const client = getClient(clientId);
+  clientSecret: string,
+): Promise<boolean> {
+  const client = await getClient(clientId);
   if (!client || !client.clientSecretHash) return false;
 
   const providedHash = hashClientSecret(clientSecret);
   return providedHash === client.clientSecretHash;
 }
 
-export function validateScopes(clientId: string, requestedScopes: string[]): string[] {
-  const client = getClient(clientId);
+export async function validateScopes(
+  clientId: string,
+  requestedScopes: string[],
+): Promise<string[]> {
+  const client = await getClient(clientId);
   if (!client) return [];
 
   return requestedScopes.filter((scope) => client.allowedScopes.includes(scope));
@@ -173,25 +182,23 @@ export function generateClientSecret(): string {
  * Create an OIDC client for a developer app. Returns the DB row ID and
  * the generated client_id (no secret yet -- that comes from rotateClientSecret).
  */
-export function createAppClient(displayName: string): {
+export async function createAppClient(displayName: string): Promise<{
   id: string;
   clientId: string;
-} {
+}> {
   const id = uuidv4();
   const clientId = generateClientId();
 
-  db.insert(oidcClients)
-    .values({
-      id,
-      clientId,
-      clientSecretHash: null,
-      displayName,
-      redirectUris: JSON.stringify([]),
-      allowedScopes: DEFAULT_OIDC_SCOPES,
-      grantTypes: "authorization_code,refresh_token",
-      tokenEndpointAuthMethod: "none",
-    })
-    .run();
+  await db.insert(oidcClients).values({
+    id,
+    clientId,
+    clientSecretHash: null,
+    displayName,
+    redirectUris: JSON.stringify([]),
+    allowedScopes: DEFAULT_OIDC_SCOPES,
+    grantTypes: "authorization_code,refresh_token",
+    tokenEndpointAuthMethod: "none",
+  });
 
   return { id, clientId };
 }
@@ -200,30 +207,31 @@ export function createAppClient(displayName: string): {
  * Generate a new client secret (or rotate an existing one).
  * Returns the plaintext secret -- it is NOT stored and must be shown to the user once.
  */
-export function rotateClientSecret(clientId: string): string | null {
-  const client = db
+export async function rotateClientSecret(clientId: string): Promise<string | null> {
+  const rows = await db
     .select()
     .from(oidcClients)
     .where(eq(oidcClients.clientId, clientId))
-    .get();
+    .limit(1);
+  const client = rows[0];
 
   if (!client) return null;
 
   const secret = generateClientSecret();
   const secretHash = hashClientSecret(secret);
 
-  db.update(oidcClients)
+  await db
+    .update(oidcClients)
     .set({
       clientSecretHash: secretHash,
       tokenEndpointAuthMethod: "client_secret_post",
     })
-    .where(eq(oidcClients.clientId, clientId))
-    .run();
+    .where(eq(oidcClients.clientId, clientId));
 
   return secret;
 }
 
-export function updateClientConfig(
+export async function updateClientConfig(
   clientId: string,
   config: {
     displayName?: string;
@@ -237,13 +245,14 @@ export function updateClientConfig(
     policyUri?: string | null;
     tosUri?: string | null;
     clientUri?: string | null;
-  }
-): boolean {
-  const existing = db
+  },
+): Promise<boolean> {
+  const rows = await db
     .select()
     .from(oidcClients)
     .where(eq(oidcClients.clientId, clientId))
-    .get();
+    .limit(1);
+  const existing = rows[0];
 
   if (!existing) return false;
 
@@ -252,8 +261,12 @@ export function updateClientConfig(
   if (config.redirectUris !== undefined) updates.redirectUris = JSON.stringify(config.redirectUris);
   if (config.allowedScopes !== undefined) updates.allowedScopes = config.allowedScopes;
   if (config.grantTypes !== undefined) updates.grantTypes = config.grantTypes.join(",");
-  if (config.tokenEndpointAuthMethod !== undefined) updates.tokenEndpointAuthMethod = config.tokenEndpointAuthMethod;
-  if (config.postLogoutRedirectUris !== undefined) updates.postLogoutRedirectUris = JSON.stringify(config.postLogoutRedirectUris);
+  if (config.tokenEndpointAuthMethod !== undefined) {
+    updates.tokenEndpointAuthMethod = config.tokenEndpointAuthMethod;
+  }
+  if (config.postLogoutRedirectUris !== undefined) {
+    updates.postLogoutRedirectUris = JSON.stringify(config.postLogoutRedirectUris);
+  }
   if (config.initiateLoginUri !== undefined) updates.initiateLoginUri = config.initiateLoginUri;
   if (config.logoUri !== undefined) updates.logoUri = config.logoUri;
   if (config.policyUri !== undefined) updates.policyUri = config.policyUri;
@@ -262,39 +275,93 @@ export function updateClientConfig(
 
   if (Object.keys(updates).length === 0) return true;
 
-  db.update(oidcClients)
-    .set(updates)
-    .where(eq(oidcClients.clientId, clientId))
-    .run();
+  await db.update(oidcClients).set(updates).where(eq(oidcClients.clientId, clientId));
 
   return true;
 }
 
-export function seedNaapClient(): void {
-  registerClient({
-    clientId: "naap",
-    displayName: "NaaP Platform",
-    redirectUris: [
-      "http://localhost:*/api/v1/auth/providers/*/callback",
-      "https://*.naap.dev/api/v1/auth/providers/*/callback",
-      "https://*.vercel.app/api/v1/auth/providers/*/callback",
-    ],
-    allowedScopes: "openid profile email",
+const NAAP_WEB_REDIRECT_URIS = [
+  "http://localhost:*/api/v1/auth/providers/*/callback",
+  "https://*.naap.dev/api/v1/auth/providers/*/callback",
+  "https://*.vercel.app/api/v1/auth/providers/*/callback",
+] as const;
+
+/**
+ * Public NaaP web app: Authorization Code + PKCE (no client secret in the browser).
+ */
+export async function seedNaapWebClient(): Promise<void> {
+  await registerClient({
+    clientId: "naap-web",
+    displayName: "NaaP Platform (web)",
+    redirectUris: [...NAAP_WEB_REDIRECT_URIS],
+    allowedScopes: NAAP_WEB_OIDC_SCOPES,
     grantTypes: ["authorization_code", "refresh_token"],
-    tokenEndpointAuthMethod: "none", // Public client (SPA/redirect flow)
+    tokenEndpointAuthMethod: "none",
   });
 }
 
-export function seedSdkClient(): void {
-  registerClient({
+/**
+ * Confidential NaaP backend: `client_credentials` only.
+ * Set `NAAP_SERVICE_CLIENT_SECRET` to control the secret; on first create, if unset,
+ * a one-time secret is generated and printed to stdout.
+ */
+export async function seedNaapServiceClient(): Promise<void> {
+  const existing = await getClient("naap-service");
+  const envSecret = process.env.NAAP_SERVICE_CLIENT_SECRET?.trim();
+
+  if (existing) {
+    if (envSecret) {
+      await registerClient({
+        clientId: "naap-service",
+        clientSecret: envSecret,
+        displayName: "NaaP Platform (service)",
+        redirectUris: [],
+        allowedScopes: NAAP_SERVICE_OIDC_SCOPES,
+        grantTypes: ["client_credentials"],
+        tokenEndpointAuthMethod: "client_secret_post",
+      });
+      console.log(
+        "[oidc:seed] naap-service: updated client_secret from NAAP_SERVICE_CLIENT_SECRET",
+      );
+    }
+    return;
+  }
+
+  const secret = envSecret ?? generateClientSecret();
+  if (!envSecret) {
+    console.warn(
+      "[oidc:seed] NAAP_SERVICE_CLIENT_SECRET not set; generated secret for naap-service — save it:",
+    );
+    console.warn(`[oidc:seed]   ${secret}`);
+  }
+
+  await registerClient({
+    clientId: "naap-service",
+    clientSecret: secret,
+    displayName: "NaaP Platform (service)",
+    redirectUris: [],
+    allowedScopes: NAAP_SERVICE_OIDC_SCOPES,
+    grantTypes: ["client_credentials"],
+    tokenEndpointAuthMethod: "client_secret_post",
+  });
+}
+
+/** Seeds both NaaP OIDC clients (`naap-web` + `naap-service`). */
+export async function seedNaapOidcClients(): Promise<void> {
+  await seedNaapWebClient();
+  await seedNaapServiceClient();
+}
+
+export async function seedSdkClient(): Promise<void> {
+  await registerClient({
     clientId: "livepeer-sdk",
     displayName: "Livepeer Gateway SDK",
     redirectUris: [
       "http://localhost:*/callback",
       "http://127.0.0.1:*/callback",
     ],
-    allowedScopes: "openid profile email gateway",
-    grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"],
-    tokenEndpointAuthMethod: "none", // Public client (native app, PKCE required)
+    allowedScopes: "openid sign:job discover:orchestrators",
+    grantTypes: ["authorization_code", "refresh_token"],
+    tokenEndpointAuthMethod: "none",
   });
 }

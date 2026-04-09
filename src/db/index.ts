@@ -1,25 +1,26 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import * as schema from "./schema";
-import path from "path";
-import fs from "fs";
-import { runMigrations } from "./migrate";
 
-const dbPath = process.env.DATABASE_PATH || "./data/pymthouse.db";
-
-const dir = path.dirname(dbPath);
-if (!fs.existsSync(dir)) {
-  fs.mkdirSync(dir, { recursive: true });
+function requireDatabaseUrl(): string {
+  const url = process.env.DATABASE_URL;
+  if (!url?.trim()) {
+    throw new Error(
+      "DATABASE_URL is required. Set it to your PostgreSQL connection string (e.g. Neon).",
+    );
+  }
+  return url.trim();
 }
 
-const sqlite = new Database(dbPath);
+const globalForDb = globalThis as unknown as {
+  pymthousePostgres?: ReturnType<typeof postgres>;
+};
 
-sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = ON");
-sqlite.pragma("busy_timeout = 5000");
+function createClient() {
+  return postgres(requireDatabaseUrl(), { max: 10 });
+}
 
-// Ensure schema upgrades are applied before any query uses new columns.
-runMigrations(sqlite);
+export const postgresClient =
+  globalForDb.pymthousePostgres ??= createClient();
 
-export const db = drizzle(sqlite, { schema });
-export { sqlite };
+export const db = drizzle(postgresClient, { schema });

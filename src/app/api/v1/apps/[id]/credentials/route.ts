@@ -5,6 +5,7 @@ import { db } from "@/db/index";
 import { developerApps, oidcClients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { rotateClientSecret } from "@/lib/oidc/clients";
+import { getAuthorizedProviderApp } from "@/lib/provider-apps";
 
 export async function POST(
   _request: NextRequest,
@@ -16,18 +17,11 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const userId = (session.user as Record<string, unknown>).id as string;
-  const role = (session.user as Record<string, unknown>).role as string;
-
-  const app = db
-    .select()
-    .from(developerApps)
-    .where(eq(developerApps.id, id))
-    .get();
-
-  if (!app || (app.ownerId !== userId && role !== "admin")) {
+  const auth = await getAuthorizedProviderApp(id);
+  if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const { app } = auth;
 
   if (!app.oidcClientId) {
     return NextResponse.json(
@@ -36,11 +30,12 @@ export async function POST(
     );
   }
 
-  const client = db
+  const clientRows = await db
     .select()
     .from(oidcClients)
     .where(eq(oidcClients.id, app.oidcClientId))
-    .get();
+    .limit(1);
+  const client = clientRows[0];
 
   if (!client) {
     return NextResponse.json(
@@ -49,7 +44,7 @@ export async function POST(
     );
   }
 
-  const secret = rotateClientSecret(client.clientId);
+  const secret = await rotateClientSecret(client.clientId);
   if (!secret) {
     return NextResponse.json(
       { error: "Failed to generate secret" },

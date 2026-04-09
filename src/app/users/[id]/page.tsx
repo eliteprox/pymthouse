@@ -24,25 +24,24 @@ export default async function UserDetailPage({
 }) {
   const { id } = await params;
 
-  const user = db
+  const userRows = await db
     .select()
     .from(endUsers)
     .where(eq(endUsers.id, id))
-    .get();
+    .limit(1);
+  const user = userRows[0];
 
   if (!user) notFound();
 
-  const userStreams = db
+  const userStreams = await db
     .select()
     .from(streamSessions)
-    .where(eq(streamSessions.endUserId, id))
-    .all();
+    .where(eq(streamSessions.endUserId, id));
 
-  const userTxns = db
+  const userTxns = await db
     .select()
     .from(transactions)
-    .where(eq(transactions.endUserId, id))
-    .all();
+    .where(eq(transactions.endUserId, id));
 
   let totalUsage = 0n;
   for (const txn of userTxns) {

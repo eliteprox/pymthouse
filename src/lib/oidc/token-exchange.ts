@@ -47,24 +47,26 @@ export async function handleTokenExchange(params: {
     );
   }
 
-  if (!validateClientSecret(clientId, clientSecret)) {
+  if (!(await validateClientSecret(clientId, clientSecret))) {
     throw new TokenExchangeError("invalid_client", "Invalid client credentials");
   }
 
-  const clientRow = db
+  const clientRows = await db
     .select()
     .from(oidcClients)
     .where(eq(oidcClients.clientId, clientId))
-    .get();
+    .limit(1);
+  const clientRow = clientRows[0];
   if (!clientRow) {
     throw new TokenExchangeError("invalid_client", "Client not found");
   }
 
-  const app = db
+  const appRows = await db
     .select()
     .from(developerApps)
     .where(eq(developerApps.oidcClientId, clientRow.id))
-    .get();
+    .limit(1);
+  const app = appRows[0];
   if (!app || app.status !== "approved") {
     throw new TokenExchangeError(
       "invalid_client",
@@ -116,7 +118,7 @@ export async function handleTokenExchange(params: {
     );
   }
 
-  const { id: endUserId } = findOrCreateAppEndUser(clientId, externalSub);
+  const { id: endUserId } = await findOrCreateAppEndUser(clientId, externalSub);
 
   const requestedScopes = scope
     .split(/\s+/)

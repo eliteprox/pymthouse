@@ -5,11 +5,12 @@ import { eq } from "drizzle-orm";
 
 export async function GET() {
   try {
-    const signer = db
+    const signerRows = await db
       .select()
       .from(signerConfig)
       .where(eq(signerConfig.id, "default"))
-      .get();
+      .limit(1);
+    const signer = signerRows[0];
 
     const signerUrl =
       process.env.SIGNER_INTERNAL_URL || "http://localhost:8935";

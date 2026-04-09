@@ -9,17 +9,17 @@ export interface SecurityContext {
   isCanonicalOrigin: boolean;
 }
 
-export function buildSecurityContext(requestHost: string): SecurityContext {
+export async function buildSecurityContext(requestHost: string): Promise<SecurityContext> {
   const canonicalOrigin = getPublicOrigin();
   const canonicalIssuer = getIssuer();
   const canonicalHost = new URL(canonicalOrigin).host;
-  
+
   const normalizedRequestHost = normalizeDomain(requestHost);
   const normalizedCanonicalHost = normalizeDomain(canonicalHost);
-  
+
   const isCanonicalOrigin = normalizedRequestHost === normalizedCanonicalHost;
-  const trustedHosts = getTrustedLoginHosts();
-  const isTrustedOrigin = trustedHosts.some(h => normalizeDomain(h) === normalizedRequestHost);
+  const trustedHosts = await getTrustedLoginHosts();
+  const isTrustedOrigin = trustedHosts.some((h) => normalizeDomain(h) === normalizedRequestHost);
 
   const isLocalhost = requestHost.includes("localhost") || requestHost.startsWith("127.");
   const requestOrigin = isLocalhost ? `http://${requestHost}` : `https://${requestHost}`;
@@ -143,11 +143,11 @@ export function validateCorsOrigin(
   return false;
 }
 
-export function assertTrustedHost(host: string): void {
-  const trustedHosts = getTrustedLoginHosts();
+export async function assertTrustedHost(host: string): Promise<void> {
+  const trustedHosts = await getTrustedLoginHosts();
   const normalized = normalizeDomain(host);
-  
-  if (!trustedHosts.some(h => normalizeDomain(h) === normalized)) {
+
+  if (!trustedHosts.some((h) => normalizeDomain(h) === normalized)) {
     throw new Error(`Untrusted host: ${host}`);
   }
 }

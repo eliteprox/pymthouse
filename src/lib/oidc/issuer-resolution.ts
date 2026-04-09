@@ -1,7 +1,7 @@
 import { getIssuer as getCanonicalIssuer, getPublicOrigin } from "./tokens";
 import { db } from "@/db/index";
 import { developerApps } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 export interface IssuerConfig {
   issuer: string;
@@ -24,12 +24,13 @@ export function resolveIssuer(host?: string): IssuerConfig {
   };
 }
 
-export function resolveIssuerForApp(appId: string): IssuerConfig {
-  const app = db
+export async function resolveIssuerForApp(appId: string): Promise<IssuerConfig> {
+  const appRows = await db
     .select()
     .from(developerApps)
     .where(eq(developerApps.id, appId))
-    .get();
+    .limit(1);
+  const app = appRows[0];
 
   const canonicalIssuer = getCanonicalIssuer();
   const canonicalOrigin = getPublicOrigin();

@@ -4,8 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface SignerConfigFormProps {
+  appId?: string;
   config: {
     name: string;
+    signerUrl?: string | null;
+    signerApiKey?: string | null;
     network: string;
     ethRpcUrl: string;
     ethAcctAddr: string | null;
@@ -19,13 +22,15 @@ interface SignerConfigFormProps {
   };
 }
 
-export default function SignerConfigForm({ config }: SignerConfigFormProps) {
+export default function SignerConfigForm({ appId, config }: SignerConfigFormProps) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: config.name,
+    signerUrl: config.signerUrl || "",
+    signerApiKey: config.signerApiKey || "",
     network: config.network,
     ethRpcUrl: config.ethRpcUrl,
     ethAcctAddr: config.ethAcctAddr || "",
@@ -45,7 +50,8 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
     setError(null);
 
     try {
-      const res = await fetch("/api/v1/signer", {
+      const endpoint = appId ? `/api/v1/apps/${appId}/signer` : "/api/v1/signer";
+      const res = await fetch(endpoint, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -100,6 +106,20 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
         </div>
         <div>
           <label className="block text-xs text-zinc-500 mb-1.5">
+            Signer Base URL
+          </label>
+          <input
+            type="url"
+            value={formData.signerUrl}
+            onChange={(e) =>
+              setFormData({ ...formData, signerUrl: e.target.value })
+            }
+            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50"
+            placeholder="https://signer.example.com"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-zinc-500 mb-1.5">
             Signer Port (httpAddr)
           </label>
           <input
@@ -140,6 +160,20 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
             }
             className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-none focus:border-emerald-500/50 font-mono text-xs"
             placeholder="https://arb1.arbitrum.io/rpc"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="block text-xs text-zinc-500 mb-1.5">
+            Signer API Key
+          </label>
+          <input
+            type="text"
+            value={formData.signerApiKey}
+            onChange={(e) =>
+              setFormData({ ...formData, signerApiKey: e.target.value })
+            }
+            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-none focus:border-emerald-500/50 font-mono text-xs"
+            placeholder="Optional shared secret for the remote signer"
           />
         </div>
         <div className="sm:col-span-2">

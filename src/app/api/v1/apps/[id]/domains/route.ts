@@ -1,45 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
-import { developerApps, appAllowedDomains } from "@/db/schema";
+import { appAllowedDomains } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { normalizeDomainWhitelist } from "@/lib/domain-whitelist";
-
-async function getOwnerApp(appId: string) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return null;
-
-  const userId = (session.user as Record<string, unknown>).id as string;
-  const role = (session.user as Record<string, unknown>).role as string;
-  if (!userId) return null;
-
-  const app = db
-    .select()
-    .from(developerApps)
-    .where(eq(developerApps.id, appId))
-    .get();
-
-  if (!app || (app.ownerId !== userId && role !== "admin")) return null;
-  return app;
-}
+import { getAuthorizedProviderApp } from "@/lib/provider-apps";
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const app = await getOwnerApp(id);
+  const auth = await getAuthorizedProviderApp(id);
+  const app = auth?.app ?? null;
   if (!app) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const domains = db
+  const domains = await db
     .select()
     .from(appAllowedDomains)
-    .where(eq(appAllowedDomains.appId, id))
-    .all();
+    .where(eq(appAllowedDomains.appId, id));
 
   return NextResponse.json({ domains });
 }
@@ -49,7 +30,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const app = await getOwnerApp(id);
+  const auth = await getAuthorizedProviderApp(id);
+  const app = auth?.app ?? null;
   if (!app) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -76,11 +58,10 @@ export async function POST(
   const normalizedDomain = result.normalized;
 
   // Check for duplicates
-  const existingDomains = db
+  const existingDomains = await db
     .select()
     .from(appAllowedDomains)
-    .where(eq(appAllowedDomains.appId, id))
-    .all();
+    .where(eq(appAllowedDomains.appId, id));
 
   const isDuplicate = existingDomains.some(
     (d) => d.domain.toLowerCase() === normalizedDomain.toLowerCase()
@@ -94,13 +75,11 @@ export async function POST(
   }
 
   const domainId = uuidv4();
-  db.insert(appAllowedDomains)
-    .values({
-      id: domainId,
-      appId: id,
-      domain: normalizedDomain,
-    })
-    .run();
+  await db.insert(appAllowedDomains).values({
+    id: domainId,
+    appId: id,
+    domain: normalizedDomain,
+  });
 
   return NextResponse.json({ id: domainId, domain: normalizedDomain }, { status: 201 });
 }
@@ -110,7 +89,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const app = await getOwnerApp(id);
+  const auth = await getAuthorizedProviderApp(id);
+  const app = auth?.app ?? null;
   if (!app) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -125,14 +105,12 @@ export async function DELETE(
     );
   }
 
-  db.delete(appAllowedDomains)
-    .where(
-      and(
-        eq(appAllowedDomains.id, domainId),
-        eq(appAllowedDomains.appId, id)
-      )
-    )
-    .run();
+  await db.delete(appAllowedDomains).where(
+    and(
+      eq(appAllowedDomains.id, domainId),
+      eq(appAllowedDomains.appId, id),
+    ),
+  );
 
   return NextResponse.json({ success: true });
 }

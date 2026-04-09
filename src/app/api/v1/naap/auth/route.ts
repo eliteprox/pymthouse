@@ -57,12 +57,17 @@ async function getAuthenticatedAdminUserId(
     }
   }
 
-  const auth = authenticateRequest(request);
+  const auth = await authenticateRequest(request);
   if (!auth || !hasScope(auth.scopes, "admin") || !auth.userId) {
     return null;
   }
 
-  const user = db.select().from(users).where(eq(users.id, auth.userId)).get();
+  const userRows = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, auth.userId))
+    .limit(1);
+  const user = userRows[0];
   return user?.id || null;
 }
 
@@ -101,7 +106,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { token } = createShortLivedSession({
+  const { token } = await createShortLivedSession({
     userId,
     scopes: "gateway",
     label: "naap_link_bootstrap",

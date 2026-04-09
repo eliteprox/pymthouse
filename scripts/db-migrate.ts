@@ -1,21 +1,54 @@
-import Database from "better-sqlite3";
-import fs from "fs";
-import path from "path";
-import { runMigrations } from "../src/db/migrate";
+/**
+ * Apply Drizzle SQL migrations to PostgreSQL (DATABASE_URL).
+ */
+import "./load-env-first";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
+import * as schema from "../src/db/schema";
 
-const dbPath = process.env.DATABASE_PATH || "./data/pymthouse.db";
-const dir = path.dirname(dbPath);
+const { signerConfig } = schema;
 
-if (!fs.existsSync(dir)) {
-  fs.mkdirSync(dir, { recursive: true });
+async function seedDefaultSigner(dbUrl: string) {
+  const client = postgres(dbUrl, { max: 1 });
+  const db = drizzle(client, { schema });
+  const now = new Date().toISOString();
+  await db
+    .insert(signerConfig)
+    .values({
+      id: "default",
+      name: "pymthouse signer",
+      network: "arbitrum-one-mainnet",
+      ethRpcUrl: "https://arb1.arbitrum.io/rpc",
+      signerPort: 8081,
+      status: "stopped",
+      defaultCutPercent: 15.0,
+      billingMode: "delegated",
+      createdAt: now,
+    })
+    .onConflictDoNothing({ target: signerConfig.id });
+  await client.end({ timeout: 5 });
 }
 
-const sqlite = new Database(dbPath);
-sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = ON");
-sqlite.pragma("busy_timeout = 5000");
+async function main() {
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (!databaseUrl) {
+    console.error("[db:migrate] DATABASE_URL is not set.");
+    process.exit(1);
+  }
 
-runMigrations(sqlite);
-sqlite.close();
+  const migrationClient = postgres(databaseUrl, { max: 1 });
+  await migrate(drizzle(migrationClient, { schema }), {
+    migrationsFolder: "./drizzle",
+  });
+  await migrationClient.end({ timeout: 5 });
 
-console.log(`[db:migrate] schema ready at ${dbPath}`);
+  await seedDefaultSigner(databaseUrl);
+
+  console.log("[db:migrate] PostgreSQL migrations applied.");
+}
+
+main().catch((err) => {
+  console.error("[db:migrate] Error:", err);
+  process.exit(1);
+});

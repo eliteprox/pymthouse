@@ -1,5 +1,5 @@
 import { headers } from "next/headers";
-import { getAppByCustomDomain, isVerifiedCustomDomain, getTrustedLoginHosts, normalizeDomain } from "./custom-domains";
+import { getAppByCustomDomain, getTrustedLoginHosts, normalizeDomain } from "./custom-domains";
 import { resolveAppBrandingByAppId, getDefaultBranding, AppBranding } from "./branding";
 import { getPublicOrigin } from "./tokens";
 
@@ -17,16 +17,18 @@ export async function resolveHostContext(): Promise<HostContext> {
   const forwardedHost = requestHeaders.get("x-forwarded-host");
   const hostHeader = requestHeaders.get("host");
   const requestHost = forwardedHost || hostHeader || "localhost";
-  
+
   const canonicalOrigin = getPublicOrigin();
   const canonicalHost = new URL(canonicalOrigin).host;
-  
+
   const normalizedRequestHost = normalizeDomain(requestHost);
   const normalizedCanonicalHost = normalizeDomain(canonicalHost);
-  
+
   const isCanonicalHost = normalizedRequestHost === normalizedCanonicalHost;
-  const trustedHosts = getTrustedLoginHosts();
-  const isTrustedHost = trustedHosts.some(h => normalizeDomain(h) === normalizedRequestHost);
+  const trustedHosts = await getTrustedLoginHosts();
+  const isTrustedHost = trustedHosts.some(
+    (h) => normalizeDomain(h) === normalizedRequestHost,
+  );
 
   if (isCanonicalHost) {
     return {
@@ -39,15 +41,15 @@ export async function resolveHostContext(): Promise<HostContext> {
     };
   }
 
-  const app = getAppByCustomDomain(requestHost);
-  
+  const app = await getAppByCustomDomain(requestHost);
+
   if (app) {
     return {
       requestHost,
       isCustomDomain: true,
       isTrustedHost: true,
       appId: app.id,
-      branding: resolveAppBrandingByAppId(app.id),
+      branding: await resolveAppBrandingByAppId(app.id),
       canonicalOrigin,
     };
   }
@@ -65,12 +67,12 @@ export async function resolveHostContext(): Promise<HostContext> {
 export function buildUrlForHost(
   path: string,
   hostContext: HostContext,
-  useCanonical: boolean = false
+  useCanonical: boolean = false,
 ): string {
   const origin = useCanonical ? hostContext.canonicalOrigin : `https://${hostContext.requestHost}`;
   return `${origin}${path}`;
 }
 
-export function shouldForceCanonicalIssuer(hostContext: HostContext): boolean {
+export function shouldForceCanonicalIssuer(_hostContext: HostContext): boolean {
   return true;
 }

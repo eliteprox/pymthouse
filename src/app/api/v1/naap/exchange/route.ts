@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
   }
 
   const bootstrapToken = authHeader.slice("Bearer ".length);
-  const auth = validateBearerToken(bootstrapToken);
+  const auth = await validateBearerToken(bootstrapToken);
   if (!auth || !auth.userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { token } = createSession({
+  const { token } = await createSession({
     userId: auth.userId,
     scopes: "gateway",
     label: "naap_linked",

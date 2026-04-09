@@ -69,10 +69,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   if (action === "lookup") {
     const clientId = deviceCode.clientId || deviceCode.params?.client_id;
-    const client = typeof clientId === "string" ? getClient(clientId) : null;
-    const branding = typeof clientId === "string" 
-      ? resolveAppBrandingByClientId(clientId) 
-      : null;
+    const client =
+      typeof clientId === "string" ? await getClient(clientId) : null;
+    const branding =
+      typeof clientId === "string"
+        ? await resolveAppBrandingByClientId(clientId)
+        : null;
     const scope =
       typeof deviceCode.scope === "string"
         ? deviceCode.scope

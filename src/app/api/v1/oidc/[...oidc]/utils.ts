@@ -1,6 +1,5 @@
 import { PROVIDER_ENDPOINT_PATHS } from "@/lib/oidc/routes";
 import { OIDC_MOUNT_PATH, getPublicOrigin } from "@/lib/oidc/tokens";
-import { getTrustedLoginHosts, isVerifiedCustomDomain } from "@/lib/oidc/custom-domains";
 
 export function deriveExternalOriginFromHeaders(headers: Headers): string {
   const publicFallback = getPublicOrigin();
@@ -19,13 +18,14 @@ export function deriveExternalOriginFromHeaders(headers: Headers): string {
   return `${proto}://${host}`;
 }
 
-export function getTrustedOidcOrigins(): Set<string> {
+export async function getTrustedOidcOrigins(): Promise<Set<string>> {
   const publicOrigin = getPublicOrigin();
-  const trustedHosts = getTrustedLoginHosts();
-  
+  const { getTrustedLoginHosts } = await import("@/lib/oidc/custom-domains");
+  const trustedHosts = await getTrustedLoginHosts();
+
   const origins = new Set<string>();
   origins.add(new URL(publicOrigin).origin);
-  
+
   for (const host of trustedHosts) {
     if (host.includes("localhost") || host.startsWith("127.")) {
       origins.add(`http://${host}`);
@@ -33,7 +33,7 @@ export function getTrustedOidcOrigins(): Set<string> {
       origins.add(`https://${host}`);
     }
   }
-  
+
   return origins;
 }
 
@@ -50,7 +50,6 @@ export function resolveRedirectLocation(
     return redirectUrl;
   }
 
-  // When provider emits relative paths, ensure they remain under our mount.
   if (
     location.startsWith("/") &&
     !location.startsWith(OIDC_MOUNT_PATH) &&

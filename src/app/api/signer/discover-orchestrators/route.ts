@@ -12,9 +12,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!hasScope(auth.scopes, "gateway")) {
+    if (!hasScope(auth.scopes, "discover:orchestrators")) {
       return NextResponse.json(
-        { error: "Forbidden: requires 'gateway' scope" },
+        {
+          error: "insufficient_scope",
+          error_description: "discover:orchestrators scope is required",
+        },
         { status: 403 }
       );
     }

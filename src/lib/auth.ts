@@ -1,10 +1,11 @@
 import { db } from "@/db/index";
-import { sessions, users } from "@/db/schema";
+import { sessions, oidcClients, developerApps } from "@/db/schema";
 import { eq, and, gt } from "drizzle-orm";
 import { createHash, randomBytes } from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import type { NextRequest } from "next/server";
 import { verifyAccessToken } from "@/lib/oidc/tokens";
+import { validateClientSecret } from "@/lib/oidc/clients";
 
 const TOKEN_PREFIX = "pmth_";
 const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
@@ -22,14 +23,14 @@ export function generateBearerToken(): { token: string; hash: string } {
 /**
  * Create a bearer token. Can be scoped to an admin user, an end user, or both.
  */
-export function createSession(opts: {
+export async function createSession(opts: {
   userId?: string;
   endUserId?: string;
   appId?: string;
   label?: string;
   scopes?: string;
   expiresInDays?: number;
-}): { sessionId: string; token: string } {
+}): Promise<{ sessionId: string; token: string }> {
   const {
     userId,
     endUserId,
@@ -49,14 +50,14 @@ export function createSession(opts: {
   });
 }
 
-export function createShortLivedSession(opts: {
+export async function createShortLivedSession(opts: {
   userId?: string;
   endUserId?: string;
   appId?: string;
   label?: string;
   scopes?: string;
   expiresInMinutes: number;
-}): { sessionId: string; token: string } {
+}): Promise<{ sessionId: string; token: string }> {
   const {
     userId,
     endUserId,
@@ -76,14 +77,14 @@ export function createShortLivedSession(opts: {
   });
 }
 
-function createSessionWithExpiryMs(opts: {
+async function createSessionWithExpiryMs(opts: {
   userId?: string;
   endUserId?: string;
   appId?: string;
   label?: string;
   scopes: string;
   expiresInMs: number;
-}): { sessionId: string; token: string } {
+}): Promise<{ sessionId: string; token: string }> {
   const { userId, endUserId, appId, label, scopes, expiresInMs } = opts;
   const safeExpiresInMs = Math.max(1, Math.floor(expiresInMs));
 
@@ -91,25 +92,26 @@ function createSessionWithExpiryMs(opts: {
   const sessionId = uuidv4();
   const expiresAt = new Date(Date.now() + safeExpiresInMs).toISOString();
 
-  db.insert(sessions)
-    .values({
-      id: sessionId,
-      userId: userId || null,
-      endUserId: endUserId || null,
-      appId: appId || null,
-      label: label || null,
-      tokenHash: hash,
-      scopes,
-      expiresAt,
-    })
-    .run();
+  await db.insert(sessions).values({
+    id: sessionId,
+    userId: userId || null,
+    endUserId: endUserId || null,
+    appId: appId || null,
+    label: label || null,
+    tokenHash: hash,
+    scopes,
+    expiresAt,
+  });
 
   return { sessionId, token };
 }
 
-export function revokeSession(sessionId: string): boolean {
-  const result = db.delete(sessions).where(eq(sessions.id, sessionId)).run();
-  return result.changes > 0;
+export async function revokeSession(sessionId: string): Promise<boolean> {
+  const deleted = await db
+    .delete(sessions)
+    .where(eq(sessions.id, sessionId))
+    .returning({ id: sessions.id });
+  return deleted.length > 0;
 }
 
 export interface AuthResult {
@@ -117,6 +119,7 @@ export interface AuthResult {
   endUserId: string | null;
   appId: string | null;
   sessionId: string;
+  label?: string | null;
   scopes: string;
   tokenHash: string;
 }
@@ -125,17 +128,18 @@ export interface AuthResult {
  * Validate a bearer token. Returns auth info including which end user
  * (if any) the token is scoped to.
  */
-export function validateBearerToken(token: string): AuthResult | null {
+export async function validateBearerToken(token: string): Promise<AuthResult | null> {
   if (!token.startsWith(TOKEN_PREFIX)) return null;
 
   const hash = hashToken(token);
   const now = new Date().toISOString();
 
-  const session = db
+  const rows = await db
     .select()
     .from(sessions)
     .where(and(eq(sessions.tokenHash, hash), gt(sessions.expiresAt, now)))
-    .get();
+    .limit(1);
+  const session = rows[0];
 
   if (!session) return null;
 
@@ -144,48 +148,44 @@ export function validateBearerToken(token: string): AuthResult | null {
     endUserId: session.endUserId,
     appId: session.appId || null,
     sessionId: session.id,
+    label: session.label || null,
     scopes: session.scopes,
     tokenHash: hash,
   };
 }
 
 export function hasScope(scopes: string, required: string): boolean {
+  if (!scopes) return false;
   if (scopes === "admin") return true;
   return scopes
-    .split(",")
+    .split(/[,\s]+/)
     .map((s) => s.trim())
+    .filter(Boolean)
     .includes(required);
 }
 
-export function authenticateRequest(request: NextRequest): AuthResult | null {
+export async function authenticateRequest(request: NextRequest): Promise<AuthResult | null> {
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) return null;
   const token = authHeader.slice(7);
 
-  // Try pmth_ session token first
-  const sessionResult = validateBearerToken(token);
+  const sessionResult = await validateBearerToken(token);
   if (sessionResult) return sessionResult;
 
-  // Fall back to OIDC JWT verification (async, but we return a promise-compatible shim)
-  // Note: callers that need OIDC support should use authenticateRequestAsync()
   return null;
 }
 
 /**
  * Authenticate a request, supporting both pmth_ session tokens and OIDC JWTs.
- * Use this in API routes that should accept OIDC access tokens from SDK clients.
  */
-
 export async function authenticateRequestAsync(request: NextRequest): Promise<AuthResult | null> {
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) return null;
   const token = authHeader.slice(7);
 
-  // Try pmth_ session token first (fast, synchronous)
-  const sessionResult = validateBearerToken(token);
+  const sessionResult = await validateBearerToken(token);
   if (sessionResult) return sessionResult;
 
-  // Verify OIDC JWT access token (stateless, audience-bound per RFC 8707)
   const jwtPayload = await verifyAccessToken(token);
   if (!jwtPayload) {
     if (DEBUG_OIDC_LOGS) {
@@ -217,25 +217,30 @@ export async function authenticateRequestAsync(request: NextRequest): Promise<Au
   return {
     userId: typeof jwtPayload.sub === "string" ? jwtPayload.sub : null,
     endUserId: null,
-    appId: typeof jwtPayload.client_id === "string" ? jwtPayload.client_id : null,
+    appId:
+      typeof (jwtPayload as Record<string, unknown>).app_id === "string"
+        ? ((jwtPayload as Record<string, unknown>).app_id as string)
+        : typeof jwtPayload.client_id === "string"
+          ? jwtPayload.client_id
+          : null,
     sessionId: typeof jwtPayload.jti === "string" ? jwtPayload.jti : `jwt_${Date.now()}`,
     scopes: effectiveScopes,
     tokenHash: "",
   };
 }
 
-export function requireAuth(
+export async function requireAuth(
   request: NextRequest,
-  requiredScope: string
-): AuthResult {
-  const auth = authenticateRequest(request);
+  requiredScope: string,
+): Promise<AuthResult> {
+  const auth = await authenticateRequest(request);
   if (!auth) {
     throw new AuthError("Unauthorized: invalid or expired token", 401);
   }
   if (!hasScope(auth.scopes, requiredScope)) {
     throw new AuthError(
       `Forbidden: requires '${requiredScope}' scope`,
-      403
+      403,
     );
   }
   return auth;
@@ -243,16 +248,12 @@ export function requireAuth(
 
 /**
  * Authenticate a request using client credentials (Basic auth or JSON body).
- * Returns the OIDC client_id and the developerApps row ID if valid.
  */
-export function authenticateAppClient(request: NextRequest): {
+export async function authenticateAppClient(request: NextRequest): Promise<{
   clientId: string;
   appId: string;
-} | null {
-  const { validateClientSecret } = require("@/lib/oidc/clients");
-  const { oidcClients, developerApps } = require("@/db/schema");
-  const { eq } = require("drizzle-orm");
-
+  scopes: string;
+} | null> {
   let clientId: string | null = null;
   let clientSecret: string | null = null;
 
@@ -270,32 +271,34 @@ export function authenticateAppClient(request: NextRequest): {
     return null;
   }
 
-  if (!validateClientSecret(clientId, clientSecret)) {
+  if (!(await validateClientSecret(clientId, clientSecret))) {
     return null;
   }
 
-  const clientRow = db
+  const clientRows = await db
     .select()
     .from(oidcClients)
     .where(eq(oidcClients.clientId, clientId))
-    .get();
+    .limit(1);
+  const clientRow = clientRows[0];
   if (!clientRow) return null;
 
-  const app = db
+  const appRows = await db
     .select()
     .from(developerApps)
     .where(eq(developerApps.oidcClientId, clientRow.id))
-    .get();
+    .limit(1);
+  const app = appRows[0];
   if (!app) return null;
 
-  return { clientId, appId: app.id };
+  return { clientId, appId: app.id, scopes: clientRow.allowedScopes };
 }
 
 export class AuthError extends Error {
   status: number;
   constructor(
     message: string,
-    status: number
+    status: number,
   ) {
     super(message);
     this.status = status;

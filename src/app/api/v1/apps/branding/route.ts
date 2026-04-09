@@ -11,7 +11,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const branding = resolveAppBrandingByClientId(clientId);
+  const branding = await resolveAppBrandingByClientId(clientId);
 
   return NextResponse.json(
     { 

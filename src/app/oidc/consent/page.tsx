@@ -115,7 +115,7 @@ export default async function ConsentPage({
   const redirectUri = interactionDetails.params.redirect_uri as string;
   const scope = interactionDetails.params.scope as string;
 
-  const client = getClient(clientId);
+  const client = await getClient(clientId);
   if (!client) {
     return (
       <main className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-6">
@@ -131,10 +131,10 @@ export default async function ConsentPage({
     );
   }
 
-  const branding = resolveAppBrandingByClientId(clientId);
+  const branding = await resolveAppBrandingByClientId(clientId);
   const isWhiteLabel = shouldUseWhiteLabelBranding(branding);
 
-  const developerApp = db
+  const developerAppRows = await db
     .select({
       name: developerApps.name,
       developerName: developerApps.developerName,
@@ -145,14 +145,16 @@ export default async function ConsentPage({
     })
     .from(developerApps)
     .where(eq(developerApps.oidcClientId, client.id))
-    .get();
+    .limit(1);
+  const developerApp = developerAppRows[0];
 
   // Fetch logo_uri from OIDC client metadata (synced from app settings)
-  const oidcClientRow = db
+  const oidcClientRows = await db
     .select({ logoUri: oidcClients.logoUri })
     .from(oidcClients)
     .where(eq(oidcClients.clientId, clientId))
-    .get();
+    .limit(1);
+  const oidcClientRow = oidcClientRows[0];
   const logoUrl = isWhiteLabel 
     ? (branding.logoUrl || oidcClientRow?.logoUri || developerApp?.logoLightUrl || null)
     : (oidcClientRow?.logoUri || developerApp?.logoLightUrl || null);

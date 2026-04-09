@@ -1,5 +1,4 @@
 import * as jose from "jose";
-import { getPublicJWKS } from "./jwks";
 
 export const OIDC_MOUNT_PATH = "/api/v1/oidc";
 
@@ -58,6 +57,7 @@ export async function verifyAccessToken(
 ): Promise<jose.JWTPayload | null> {
   try {
     const issuer = getCanonicalIssuer();
+    const { getPublicJWKS } = await import("./jwks");
     const jwks = await getPublicJWKS();
     const keySet = jose.createLocalJWKSet(jwks);
 
@@ -82,11 +82,12 @@ export async function verifyAccessTokenWithIssuer(
 ): Promise<jose.JWTPayload | null> {
   try {
     const canonicalIssuer = getCanonicalIssuer();
-    
+
     if (expectedIssuer !== canonicalIssuer) {
       return null;
     }
-    
+
+    const { getPublicJWKS } = await import("./jwks");
     const jwks = await getPublicJWKS();
     const keySet = jose.createLocalJWKSet(jwks);
 

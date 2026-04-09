@@ -29,11 +29,12 @@ export default async function SignerPage() {
     redirect("/");
   }
 
-  const signer = db
+  const signerRows = await db
     .select()
     .from(signerConfig)
     .where(eq(signerConfig.id, "default"))
-    .get();
+    .limit(1);
+  const signer = signerRows[0];
 
   if (!signer) {
     return (
@@ -45,14 +46,13 @@ export default async function SignerPage() {
     );
   }
 
-  const activeSessions = db
+  const activeSessions = await db
     .select()
     .from(streamSessions)
-    .where(eq(streamSessions.status, "active"))
-    .all();
+    .where(eq(streamSessions.status, "active"));
 
-  const allSessions = db.select().from(streamSessions).all();
-  const allTxns = db.select().from(transactions).all();
+  const allSessions = await db.select().from(streamSessions);
+  const allTxns = await db.select().from(transactions);
 
   let totalFeeWei = 0n;
   for (const s of allSessions) {
