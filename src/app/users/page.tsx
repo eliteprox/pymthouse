@@ -16,37 +16,36 @@ function formatWei(wei: string): string {
   return `${eth.toFixed(6)} ETH`;
 }
 
-export default function UsersPage() {
-  const adminUsers = db.select().from(users).all();
-  const allEndUsers = db.select().from(endUsers).all();
+export default async function UsersPage() {
+  const adminUsers = await db.select().from(users);
+  const allEndUsers = await db.select().from(endUsers);
 
   // Enrich end users with token count and usage
-  const enriched = allEndUsers.map((user) => {
-    const tokenCount = db
-      .select()
-      .from(sessions)
-      .where(eq(sessions.endUserId, user.id))
-      .all().length;
+  const enriched = await Promise.all(
+    allEndUsers.map(async (user) => {
+      const userSessionRows = await db
+        .select()
+        .from(sessions)
+        .where(eq(sessions.endUserId, user.id));
 
-    const userStreams = db
-      .select()
-      .from(streamSessions)
-      .where(eq(streamSessions.endUserId, user.id))
-      .all();
+      const userStreams = await db
+        .select()
+        .from(streamSessions)
+        .where(eq(streamSessions.endUserId, user.id));
 
-    const userTxns = db
-      .select()
-      .from(transactions)
-      .where(eq(transactions.endUserId, user.id))
-      .all();
+      const userTxns = await db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.endUserId, user.id));
 
-    return {
-      ...user,
-      tokenCount,
-      streamCount: userStreams.length,
-      transactionCount: userTxns.length,
-    };
-  });
+      return {
+        ...user,
+        tokenCount: userSessionRows.length,
+        streamCount: userStreams.length,
+        transactionCount: userTxns.length,
+      };
+    }),
+  );
 
   return (
     <DashboardLayout>

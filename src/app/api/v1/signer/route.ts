@@ -37,11 +37,12 @@ export async function GET(request: NextRequest) {
   // Sync live status from go-livepeer container
   const liveStatus = await syncSignerStatus();
 
-  const signer = db
+  const signerRows = await db
     .select()
     .from(signerConfig)
     .where(eq(signerConfig.id, "default"))
-    .get();
+    .limit(1);
+  const signer = signerRows[0];
 
   return NextResponse.json({
     signer,
@@ -64,11 +65,12 @@ export async function PATCH(request: NextRequest) {
 
   const body = await request.json();
   const updates: Record<string, unknown> = {};
-  const current = db
+  const currentRows = await db
     .select()
     .from(signerConfig)
     .where(eq(signerConfig.id, "default"))
-    .get();
+    .limit(1);
+  const current = currentRows[0];
 
   if (body.name !== undefined) updates.name = body.name;
   if (body.signerPort !== undefined) {
@@ -146,16 +148,17 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  db.update(signerConfig)
+  await db
+    .update(signerConfig)
     .set(updates)
-    .where(eq(signerConfig.id, "default"))
-    .run();
+    .where(eq(signerConfig.id, "default"));
 
-  const updated = db
+  const updatedRows = await db
     .select()
     .from(signerConfig)
     .where(eq(signerConfig.id, "default"))
-    .get();
+    .limit(1);
+  const updated = updatedRows[0];
 
   return NextResponse.json({
     signer: updated,
@@ -168,19 +171,25 @@ async function getAdminUser(request: NextRequest) {
   if (oauthSession?.user) {
     const sessionUser = oauthSession.user as Record<string, unknown>;
     if (sessionUser.id) {
-      const user = db
+      const rows = await db
         .select()
         .from(users)
         .where(eq(users.id, sessionUser.id as string))
-        .get();
+        .limit(1);
+      const user = rows[0];
       if (user?.role !== "admin") return null;
       return user;
     }
   }
 
-  const auth = authenticateRequest(request);
+  const auth = await authenticateRequest(request);
   if (auth && hasScope(auth.scopes, "admin") && auth.userId) {
-    const user = db.select().from(users).where(eq(users.id, auth.userId)).get();
+    const rows = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, auth.userId))
+      .limit(1);
+    const user = rows[0];
     if (user?.role !== "admin") return null;
     return user;
   }

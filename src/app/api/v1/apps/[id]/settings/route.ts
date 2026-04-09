@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
 import { developerApps, oidcClients, appAllowedDomains } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -8,26 +6,7 @@ import { updateClientConfig } from "@/lib/oidc/clients";
 import { resetProvider } from "@/lib/oidc/provider";
 import { normalizeDomainWhitelist } from "@/lib/domain-whitelist";
 import { v4 as uuidv4 } from "uuid";
-
-async function getAuthenticatedOwner(appId: string) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return null;
-
-  const userId = (session.user as Record<string, unknown>).id as string;
-  const role = (session.user as Record<string, unknown>).role as string;
-  if (!userId) return null;
-
-  const app = db
-    .select()
-    .from(developerApps)
-    .where(eq(developerApps.id, appId))
-    .get();
-
-  if (!app) return null;
-  if (app.ownerId !== userId && role !== "admin") return null;
-
-  return { app, userId, role };
-}
+import { getAuthorizedProviderApp } from "@/lib/provider-apps";
 
 function extractOrigins(uris: string[]): string[] {
   const origins = new Set<string>();
@@ -47,7 +26,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const auth = await getAuthenticatedOwner(id);
+  const auth = await getAuthorizedProviderApp(id);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -60,11 +39,12 @@ export async function PUT(
     );
   }
 
-  const client = db
+  const clientRows = await db
     .select()
     .from(oidcClients)
     .where(eq(oidcClients.id, app.oidcClientId))
-    .get();
+    .limit(1);
+  const client = clientRows[0];
 
   if (!client) {
     return NextResponse.json(
@@ -97,7 +77,7 @@ export async function PUT(
   clientUpdates.policyUri = app.privacyPolicyUrl || null;
   clientUpdates.tosUri = app.tosUrl || null;
 
-  updateClientConfig(client.clientId, clientUpdates);
+  await updateClientConfig(client.clientId, clientUpdates);
 
   // Auto-populate domain whitelist from redirect URI origins
   const allRedirects = [
@@ -106,11 +86,10 @@ export async function PUT(
   ];
   const origins = extractOrigins(allRedirects);
 
-  const existingDomains = db
+  const existingDomains = await db
     .select()
     .from(appAllowedDomains)
-    .where(eq(appAllowedDomains.appId, app.id))
-    .all();
+    .where(eq(appAllowedDomains.appId, app.id));
   const existingSet = new Set(existingDomains.map((d) => d.domain.toLowerCase()));
 
   for (const origin of origins) {
@@ -118,9 +97,11 @@ export async function PUT(
     if (!result.success) continue;
     const normalized = result.normalized.toLowerCase();
     if (!existingSet.has(normalized)) {
-      db.insert(appAllowedDomains)
-        .values({ id: uuidv4(), appId: app.id, domain: result.normalized })
-        .run();
+      await db.insert(appAllowedDomains).values({
+        id: uuidv4(),
+        appId: app.id,
+        domain: result.normalized,
+      });
       existingSet.add(normalized);
     }
   }

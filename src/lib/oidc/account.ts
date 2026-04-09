@@ -1,8 +1,5 @@
 /**
  * findAccount — resolve a user by `sub` and return claims based on granted scopes.
- *
- * Checks both the `users` table (admin/operator/developer) and the `endUsers`
- * table (app-users authenticated via OIDC public clients).
  */
 
 import type { Account, FindAccount } from "oidc-provider";
@@ -11,7 +8,12 @@ import { users, endUsers } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 export const findAccount: FindAccount = async (_ctx, sub) => {
-  const user = db.select().from(users).where(eq(users.id, sub)).get();
+  const userRows = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, sub))
+    .limit(1);
+  const user = userRows[0];
 
   if (user) {
     const account: Account = {
@@ -40,7 +42,12 @@ export const findAccount: FindAccount = async (_ctx, sub) => {
     return account;
   }
 
-  const endUser = db.select().from(endUsers).where(eq(endUsers.id, sub)).get();
+  const endUserRows = await db
+    .select()
+    .from(endUsers)
+    .where(eq(endUsers.id, sub))
+    .limit(1);
+  const endUser = endUserRows[0];
 
   if (endUser) {
     const account: Account = {

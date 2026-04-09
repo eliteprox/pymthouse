@@ -15,30 +15,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!hasScope(auth.scopes, "gateway")) {
+    if (!hasScope(auth.scopes, "sign:job")) {
       return NextResponse.json(
-        { error: "Forbidden: requires 'gateway' scope" },
+        {
+          error: "insufficient_scope",
+          error_description: "sign:job scope is required",
+        },
         { status: 403 }
       );
-    }
-
-    // If the token is scoped to a developer app, verify it is approved.
-    // auth.appId is the OIDC clientId string (app_XXXX), not the developer_apps UUID,
-    // so we join through oidc_clients to look up the correct row.
-    if (auth.appId) {
-      const app = db
-        .select({ status: developerApps.status })
-        .from(developerApps)
-        .innerJoin(oidcClients, eq(oidcClients.id, developerApps.oidcClientId))
-        .where(eq(oidcClients.clientId, auth.appId))
-        .get();
-
-      if (!app || app.status !== "approved") {
-        return NextResponse.json(
-          { error: "Forbidden: app is not approved for signer access" },
-          { status: 403 }
-        );
-      }
     }
 
     const body = await request.json();

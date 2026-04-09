@@ -1,29 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/next-auth-options";
-import { authenticateAppClient } from "@/lib/auth";
+import { and, eq } from "drizzle-orm";
+import { v4 as uuidv4 } from "uuid";
+import { authenticateAppClient, authenticateRequestAsync, hasScope } from "@/lib/auth";
 import { db } from "@/db/index";
-import { developerApps, oidcClients, endUsers, transactions } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { appUsers } from "@/db/schema";
+import { getAuthorizedProviderApp } from "@/lib/provider-apps";
+import { createCorrelationId, writeAuditLog } from "@/lib/audit";
 
-async function resolveApp(
-  request: NextRequest,
-  appUuid: string,
-): Promise<typeof developerApps.$inferSelect | null> {
-  const clientAuth = authenticateAppClient(request);
-  if (clientAuth && clientAuth.appId === appUuid) {
-    return db.select().from(developerApps).where(eq(developerApps.id, appUuid)).get() ?? null;
+async function canAccessUsers(request: NextRequest, appId: string, requiredScope: string) {
+  const providerAuth = await getAuthorizedProviderApp(appId);
+  if (providerAuth) {
+    return { app: providerAuth.app, actorUserId: providerAuth.userId, clientId: providerAuth.app.id };
   }
 
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return null;
+  const bearer = await authenticateRequestAsync(request);
+  if (bearer?.appId === appId && hasScope(bearer.scopes, requiredScope)) {
+    return { app: { id: appId }, actorUserId: bearer.userId, clientId: appId };
+  }
 
-  const userId = (session.user as Record<string, unknown>).id as string;
-  const role = (session.user as Record<string, unknown>).role as string;
-  const app = db.select().from(developerApps).where(eq(developerApps.id, appUuid)).get();
-  if (!app) return null;
-  if (app.ownerId !== userId && role !== "admin") return null;
-  return app;
+  const clientAuth = await authenticateAppClient(request);
+  if (clientAuth?.appId === appId) {
+    const required = requiredScope === "users:read" ? "users:read" : "users:write";
+    const allowed = hasScope(clientAuth.scopes, required);
+    if (allowed) {
+      return { app: { id: appId }, actorUserId: null, clientId: appId };
+    }
+  }
+
+  return null;
 }
 
 export async function GET(
@@ -31,51 +35,180 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const app = await resolveApp(request, id);
-  if (!app) {
+  const access = await canAccessUsers(request, id, "users:read");
+  if (!access) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  if (!app.oidcClientId) {
-    return NextResponse.json({ error: "App has no OIDC client" }, { status: 400 });
+  const users = await db.select().from(appUsers).where(eq(appUsers.clientId, id));
+  return NextResponse.json({ users });
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const access = await canAccessUsers(request, id, "users:write");
+  if (!access) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const client = db.select().from(oidcClients).where(eq(oidcClients.id, app.oidcClientId)).get();
-  if (!client) {
-    return NextResponse.json({ error: "OIDC client not found" }, { status: 500 });
+  const body = await request.json();
+  const externalUserId = String(body.externalUserId || "").trim();
+  const email = typeof body.email === "string" ? body.email.trim() : null;
+  if (!externalUserId) {
+    return NextResponse.json({ error: "externalUserId is required" }, { status: 400 });
   }
 
-  const appEndUsers = db
+  const existingRows = await db
     .select()
-    .from(endUsers)
-    .where(eq(endUsers.appId, client.clientId))
-    .all();
+    .from(appUsers)
+    .where(
+      and(
+        eq(appUsers.clientId, id),
+        eq(appUsers.externalUserId, externalUserId),
+      ),
+    )
+    .limit(1);
+  const existing = existingRows[0];
 
-  const allTxns = db
-    .select()
-    .from(transactions)
-    .where(eq(transactions.appId, client.clientId))
-    .all();
+  if (existing) {
+    await db
+      .update(appUsers)
+      .set({
+        email,
+        status: typeof body.status === "string" ? body.status : existing.status,
+        role: "user",
+      })
+      .where(eq(appUsers.id, existing.id));
 
-  const txnsByUser = new Map<string, { feeWei: bigint; count: number }>();
-  for (const txn of allTxns) {
-    if (!txn.endUserId) continue;
-    const existing = txnsByUser.get(txn.endUserId) || { feeWei: 0n, count: 0 };
-    existing.feeWei += BigInt(txn.amountWei);
-    existing.count += 1;
-    txnsByUser.set(txn.endUserId, existing);
+    return NextResponse.json({
+      ...existing,
+      email,
+      status: typeof body.status === "string" ? body.status : existing.status,
+      role: "user",
+    });
   }
 
-  const users = appEndUsers.map((u) => {
-    const usage = txnsByUser.get(u.id) || { feeWei: 0n, count: 0 };
-    return {
-      endUserId: u.id,
-      externalUserId: u.externalUserId,
-      totalFeeWei: usage.feeWei.toString(),
-      transactionCount: usage.count,
-      createdAt: u.createdAt,
-    };
+  const user = {
+    id: uuidv4(),
+    clientId: id,
+    externalUserId,
+    email,
+    status: typeof body.status === "string" ? body.status : "active",
+    role: "user",
+    createdAt: new Date().toISOString(),
+  };
+
+  await db.insert(appUsers).values(user);
+
+  await writeAuditLog({
+    clientId: id,
+    actorUserId: access.actorUserId,
+    action: "app_user_upserted",
+    status: "success",
+    metadata: { externalUserId },
   });
 
-  return NextResponse.json({ users });
+  return NextResponse.json(user, { status: 201 });
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const access = await canAccessUsers(request, id, "users:write");
+  if (!access) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const body = await request.json();
+  const externalUserId = String(body.externalUserId || "").trim();
+  if (!externalUserId) {
+    return NextResponse.json({ error: "externalUserId is required" }, { status: 400 });
+  }
+
+  const existingPutRows = await db
+    .select()
+    .from(appUsers)
+    .where(
+      and(
+        eq(appUsers.clientId, id),
+        eq(appUsers.externalUserId, externalUserId),
+      ),
+    )
+    .limit(1);
+  const existing = existingPutRows[0];
+
+  if (!existing) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  await db
+    .update(appUsers)
+    .set({
+      email: typeof body.email === "string" ? body.email.trim() : existing.email,
+      status: typeof body.status === "string" ? body.status : existing.status,
+      role: "user",
+    })
+    .where(eq(appUsers.id, existing.id));
+
+  await writeAuditLog({
+    clientId: id,
+    actorUserId: access.actorUserId,
+    action: "app_user_updated",
+    status: "success",
+    metadata: { externalUserId },
+  });
+
+  return NextResponse.json({ success: true });
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const access = await canAccessUsers(request, id, "users:write");
+  if (!access) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const externalUserId = searchParams.get("externalUserId");
+  if (!externalUserId) {
+    return NextResponse.json({ error: "externalUserId is required" }, { status: 400 });
+  }
+
+  const existingDelRows = await db
+    .select()
+    .from(appUsers)
+    .where(
+      and(
+        eq(appUsers.clientId, id),
+        eq(appUsers.externalUserId, externalUserId),
+      ),
+    )
+    .limit(1);
+  const existing = existingDelRows[0];
+
+  if (!existing) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  await db.update(appUsers).set({ status: "inactive" }).where(eq(appUsers.id, existing.id));
+
+  const correlationId = createCorrelationId();
+  await writeAuditLog({
+    clientId: id,
+    actorUserId: access.actorUserId,
+    action: "app_user_deactivated",
+    status: "success",
+    correlationId,
+    metadata: { externalUserId },
+  });
+
+  return NextResponse.json({ success: true, correlation_id: correlationId });
 }

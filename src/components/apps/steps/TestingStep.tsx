@@ -34,24 +34,55 @@ export default function TestingStep({
   const [secret, setSecret] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-  const [deviceTestLoading, setDeviceTestLoading] = useState(false);
-  const [deviceTestResult, setDeviceTestResult] = useState<{
-    user_code: string;
-    verification_uri: string;
-    verification_uri_complete: string;
-    device_code: string;
-    expires_in: number;
-  } | null>(null);
+  const [redirectPersistError, setRedirectPersistError] = useState<string | null>(null);
+  const [redirectSaving, setRedirectSaving] = useState(false);
 
   const hasAuthCodeFlow = grantTypes.includes("authorization_code");
-  const hasDeviceFlow = grantTypes.includes("urn:ietf:params:oauth:grant-type:device_code");
-  const isM2MOnly = grantTypes.includes("client_credentials") && !hasAuthCodeFlow && !hasDeviceFlow;
+  const isM2MOnly = grantTypes.includes("client_credentials") && !hasAuthCodeFlow;
+
+  const persistRedirectUris = async (nextUris: string[]) => {
+    if (!appId) return true;
+    setRedirectSaving(true);
+    setRedirectPersistError(null);
+    try {
+      const res = await fetch(`/api/v1/apps/${appId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ redirectUris: nextUris }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        let message = `Failed to save redirect URIs (${res.status})`;
+        try {
+          const data = text ? JSON.parse(text) : {};
+          if (data.error) message = data.error;
+        } catch {
+          /* keep generic */
+        }
+        setRedirectPersistError(message);
+        return false;
+      }
+      return true;
+    } finally {
+      setRedirectSaving(false);
+    }
+  };
 
   const addRedirectUri = async () => {
     const uri = newUri.trim();
     if (!uri || redirectUris.includes(uri)) return;
-    onRedirectUrisChange([...redirectUris, uri]);
+    const previous = redirectUris;
+    const next = [...redirectUris, uri];
+    onRedirectUrisChange(next);
     setNewUri("");
+
+    if (appId) {
+      const ok = await persistRedirectUris(next);
+      if (!ok) {
+        onRedirectUrisChange(previous);
+        return;
+      }
+    }
 
     // Auto-add the domain to the whitelist if not already present
     if (appId) {
@@ -74,8 +105,14 @@ export default function TestingStep({
     }
   };
 
-  const removeRedirectUri = (uri: string) => {
-    onRedirectUrisChange(redirectUris.filter((u) => u !== uri));
+  const removeRedirectUri = async (uri: string) => {
+    const previous = redirectUris;
+    const next = redirectUris.filter((u) => u !== uri);
+    onRedirectUrisChange(next);
+    if (appId) {
+      const ok = await persistRedirectUris(next);
+      if (!ok) onRedirectUrisChange(previous);
+    }
   };
 
   const addDomain = async () => {
@@ -170,7 +207,7 @@ export default function TestingStep({
         <p className="text-sm text-zinc-500">
           {isM2MOnly
             ? "Generate your client secret, then test your M2M token request."
-            : "Configure redirect URIs and allowed domains, then test your OIDC integration."}
+            : "Your app is available for development as soon as it is created—no separate approval step. Configure redirect URIs and allowed domains, then test your OIDC integration."}
         </p>
       </div>
 
@@ -219,7 +256,13 @@ export default function TestingStep({
             </label>
             <p className="text-xs text-zinc-500">
               URIs where PymtHouse can redirect after authorization. Wildcards (*) are supported.
+              {appId
+                ? " Each add or remove is saved immediately so you can test the authorization flow."
+                : " Save the app on earlier steps first, then add URIs here."}
             </p>
+            {redirectPersistError && (
+              <p className="text-xs text-red-400">{redirectPersistError}</p>
+            )}
             <div className="flex gap-2 mb-2">
               <input
                 type="text"
@@ -230,11 +273,11 @@ export default function TestingStep({
                 className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
               />
               <button
-                onClick={addRedirectUri}
-                disabled={!newUri.trim()}
+                onClick={() => void addRedirectUri()}
+                disabled={!newUri.trim() || redirectSaving}
                 className="px-3 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 disabled:opacity-40 transition-colors"
               >
-                Add
+                {redirectSaving ? "Saving..." : "Add"}
               </button>
             </div>
             {redirectUris.length > 0 && (
@@ -246,8 +289,10 @@ export default function TestingStep({
                   >
                     <code className="text-xs text-zinc-300 truncate">{uri}</code>
                     <button
-                      onClick={() => removeRedirectUri(uri)}
-                      className="text-zinc-500 hover:text-red-400 ml-2 shrink-0"
+                      type="button"
+                      onClick={() => void removeRedirectUri(uri)}
+                      disabled={redirectSaving}
+                      className="text-zinc-500 hover:text-red-400 ml-2 shrink-0 disabled:opacity-40"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -341,97 +386,6 @@ export default function TestingStep({
               </>
             )}
           </div>
-        </div>
-      )}
-
-      {/* Device Authorization Flow Section */}
-      {hasDeviceFlow && (
-        <div className="space-y-4 p-5 rounded-xl border border-zinc-800 bg-zinc-900/30">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-violet-500" />
-            <h3 className="text-sm font-semibold text-zinc-200">Device Authorization Flow</h3>
-          </div>
-          <p className="text-xs text-zinc-500">
-            For CLI tools, smart TVs, and IoT devices. No redirect URIs or domain whitelisting required.
-          </p>
-
-          {clientId ? (
-            <>
-              {!deviceTestResult ? (
-                <div>
-                  <button
-                    onClick={async () => {
-                      setDeviceTestLoading(true);
-                      try {
-                        const res = await fetch("/api/v1/oidc/device_authorization", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                          body: new URLSearchParams({
-                            client_id: clientId,
-                            scope: allowedScopes,
-                          }),
-                        });
-                        if (res.ok) {
-                          setDeviceTestResult(await res.json());
-                        }
-                      } finally {
-                        setDeviceTestLoading(false);
-                      }
-                    }}
-                    disabled={deviceTestLoading}
-                    className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-500 disabled:opacity-40 transition-colors"
-                  >
-                    {deviceTestLoading ? "Requesting..." : "Start Device Flow Test"}
-                  </button>
-                  <p className="text-xs text-zinc-500 mt-1.5">
-                    Simulates a CLI/device client requesting authorization. You&apos;ll get a user code to enter on the verification page.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3 p-4 bg-zinc-800/50 rounded-lg border border-violet-500/20">
-                  <div>
-                    <p className="text-xs text-zinc-500 mb-1">User Code</p>
-                    <div className="flex items-center gap-2">
-                      <code className="text-2xl font-bold tracking-widest text-violet-400">
-                        {deviceTestResult.user_code}
-                      </code>
-                      <button
-                        onClick={() => copyToClipboard(deviceTestResult.user_code, "userCode")}
-                        className="px-2 py-1 bg-zinc-700 text-zinc-200 rounded text-xs hover:bg-zinc-600 transition-colors"
-                      >
-                        {copied === "userCode" ? "Copied!" : "Copy"}
-                      </button>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-xs text-zinc-500 mb-1">Verification URL</p>
-                    <div className="flex items-center gap-2">
-                      <code className="text-sm text-zinc-300 break-all">
-                        {deviceTestResult.verification_uri}
-                      </code>
-                      <button
-                        onClick={() => window.open(deviceTestResult.verification_uri_complete, "_blank")}
-                        className="px-2 py-1 bg-violet-600 text-white rounded text-xs hover:bg-violet-500 transition-colors shrink-0"
-                      >
-                        Open
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-xs text-zinc-500">
-                    Expires in {Math.floor(deviceTestResult.expires_in / 60)} minutes. Open the verification URL and enter the code to approve.
-                  </p>
-                  <button
-                    onClick={() => setDeviceTestResult(null)}
-                    className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-                  >
-                    Reset
-                  </button>
-                </div>
-              )}
-            </>
-          ) : (
-            <p className="text-sm text-zinc-500">Create app first to test the device flow.</p>
-          )}
         </div>
       )}
 
@@ -531,14 +485,7 @@ export default function TestingStep({
                   "Token exchange works (authorization_code grant)",
                 ]
               : []),
-            ...(hasDeviceFlow
-              ? [
-                  "Device authorization flow returns user code",
-                  "User can approve device code on verification page",
-                  "Token exchange works (device_code grant)",
-                ]
-              : []),
-            "UserInfo endpoint returns expected claims",
+            "User token issuance works for a provisioned app user",
             "Refresh token flow works (if enabled)",
           ].map((item) => (
             <div key={item} className="flex items-center gap-2">

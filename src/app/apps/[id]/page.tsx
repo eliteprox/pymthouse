@@ -3,10 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import DashboardLayout from "@/components/DashboardLayout";
-import AppWizard, {
-  type AppFormData,
-  type AppState,
-} from "@/components/apps/AppWizard";
+import AppSettingsScreen from "@/components/apps/AppSettingsScreen";
+import type { AppFormData, AppState } from "@/components/apps/AppWizard";
 import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -25,7 +23,8 @@ export default function AppDetailPage() {
     formData: Partial<AppFormData>;
     state: AppState;
     domains: { id: string; domain: string }[];
-    reviewerNotes?: string;
+    postLogoutRedirectUris: string[];
+    initiateLoginUri: string | null;
   } | null>(null);
 
   useEffect(() => {
@@ -35,16 +34,9 @@ export default function AppDetailPage() {
         setAppData({
           formData: {
             name: data.name || "",
-            subtitle: data.subtitle || "",
             description: data.description || "",
-            category: data.category || "",
             developerName: data.developerName || "",
             websiteUrl: data.websiteUrl || "",
-            supportUrl: data.supportUrl || "",
-            privacyPolicyUrl: data.privacyPolicyUrl || "",
-            tosUrl: data.tosUrl || "",
-            demoRecordingUrl: data.demoRecordingUrl || "",
-            linksToPurchases: !!data.linksToPurchases,
             redirectUris: data.oidcClient?.redirectUris || [],
             allowedScopes: data.oidcClient?.allowedScopes || DEFAULT_OIDC_SCOPES,
             grantTypes: data.oidcClient?.grantTypes?.split(",").filter(Boolean) || [
@@ -53,23 +45,21 @@ export default function AppDetailPage() {
             ],
             tokenEndpointAuthMethod:
               data.oidcClient?.tokenEndpointAuthMethod || "none",
-            billingPattern: data.billingPattern || "app_level",
-            jwksUri: data.jwksUri || undefined,
           },
           state: {
             id: data.id,
             clientId: data.oidcClient?.clientId || null,
             status: data.status,
             hasSecret: data.oidcClient?.hasSecret || false,
-            pendingRevisionSubmittedAt: data.pendingRevisionSubmittedAt ?? null,
           },
           domains: (data.domains || []).map(
             (d: { id: string; domain: string }) => ({
               id: d.id,
               domain: d.domain,
-            })
+            }),
           ),
-          reviewerNotes: data.reviewerNotes,
+          postLogoutRedirectUris: data.oidcClient?.postLogoutRedirectUris || [],
+          initiateLoginUri: data.oidcClient?.initiateLoginUri ?? null,
         });
       })
       .finally(() => setLoading(false));
@@ -79,7 +69,7 @@ export default function AppDetailPage() {
     return (
       <DashboardLayout>
         <div className="text-zinc-500 text-center py-12 animate-pulse">
-          Loading app...
+          Loading app…
         </div>
       </DashboardLayout>
     );
@@ -99,11 +89,11 @@ export default function AppDetailPage() {
 
   return (
     <DashboardLayout>
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-bold text-zinc-100">
-              {appData.formData.name}
+              {appData.formData.name || "App"}
             </h1>
             <span
               className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusInfo.color}`}
@@ -112,36 +102,44 @@ export default function AppDetailPage() {
             </span>
           </div>
           <p className="text-sm text-zinc-500 mt-1">
-            Manage your application settings and OIDC configuration
+            Edit integration settings, credentials, and run OIDC tests. The create
+            wizard is only used when you add a new app.
           </p>
         </div>
         {appData.state.clientId && (
-          <button
-            onClick={() => router.push(`/apps/${id}/settings`)}
-            className="px-4 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 transition-colors flex items-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            Settings
-          </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => router.push(`/apps/${id}/usage`)}
+              className="px-4 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 transition-colors"
+            >
+              Usage
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push(`/apps/${id}/plans`)}
+              className="px-4 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 transition-colors"
+            >
+              Plans
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push(`/apps/${id}/signer`)}
+              className="px-4 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 transition-colors"
+            >
+              Signer
+            </button>
+          </div>
         )}
       </div>
 
-      {appData.reviewerNotes && appData.state.status === "rejected" && (
-        <div className="mb-6 p-4 rounded-lg border border-red-500/20 bg-red-500/5">
-          <p className="text-sm font-medium text-red-300 mb-1">
-            Reviewer Notes
-          </p>
-          <p className="text-sm text-zinc-400">{appData.reviewerNotes}</p>
-        </div>
-      )}
-
-      <AppWizard
+      <AppSettingsScreen
+        appId={id}
         initialData={appData.formData}
         initialState={appData.state}
         initialDomains={appData.domains}
+        initialPostLogoutRedirectUris={appData.postLogoutRedirectUris}
+        initialInitiateLoginUri={appData.initiateLoginUri}
       />
     </DashboardLayout>
   );

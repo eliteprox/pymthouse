@@ -45,11 +45,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Docker Compose control actions
-    const signer = db
+    const signerRows = await db
       .select()
       .from(signerConfig)
       .where(eq(signerConfig.id, "default"))
-      .get();
+      .limit(1);
+    const signer = signerRows[0];
     const composeCmd = getComposeCommand(action);
     const composeEnv = buildSignerComposeEnv(signer);
     const { stdout, stderr } = await execAsync(composeCmd, {
@@ -61,15 +62,15 @@ export async function POST(request: NextRequest) {
     // Update status based on action
     const now = new Date().toISOString();
     if (action === "stop") {
-      db.update(signerConfig)
+      await db
+        .update(signerConfig)
         .set({ status: "stopped" })
-        .where(eq(signerConfig.id, "default"))
-        .run();
+        .where(eq(signerConfig.id, "default"));
     } else {
-      db.update(signerConfig)
+      await db
+        .update(signerConfig)
         .set({ status: "running", lastStartedAt: now, lastError: null })
-        .where(eq(signerConfig.id, "default"))
-        .run();
+        .where(eq(signerConfig.id, "default"));
 
       // Wait a moment then sync to get the eth address
       setTimeout(async () => {
@@ -87,10 +88,10 @@ export async function POST(request: NextRequest) {
       error instanceof Error ? error.message : "Unknown error";
     console.error(`[signer-control] ${action} failed:`, message);
 
-    db.update(signerConfig)
+    await db
+      .update(signerConfig)
       .set({ status: "error", lastError: message })
-      .where(eq(signerConfig.id, "default"))
-      .run();
+      .where(eq(signerConfig.id, "default"));
 
     return NextResponse.json(
       { action, success: false, error: message },
@@ -147,19 +148,25 @@ async function getAdminUser(request: NextRequest) {
   if (oauthSession?.user) {
     const sessionUser = oauthSession.user as Record<string, unknown>;
     if (sessionUser.id) {
-      const user = db
+      const rows = await db
         .select()
         .from(users)
         .where(eq(users.id, sessionUser.id as string))
-        .get();
+        .limit(1);
+      const user = rows[0];
       if (user?.role !== "admin") return null;
       return user;
     }
   }
 
-  const auth = authenticateRequest(request);
+  const auth = await authenticateRequest(request);
   if (auth && hasScope(auth.scopes, "admin") && auth.userId) {
-    const user = db.select().from(users).where(eq(users.id, auth.userId)).get();
+    const rows = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, auth.userId))
+      .limit(1);
+    const user = rows[0];
     if (user?.role !== "admin") return null;
     return user;
   }

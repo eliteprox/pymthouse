@@ -13,9 +13,9 @@ function formatWei(wei: string): string {
   return `${eth.toFixed(6)} ETH`;
 }
 
-export default function BillingPage() {
-  const allTxns = db.select().from(transactions).all();
-  const allEndUsers = db.select().from(endUsers).all();
+export default async function BillingPage() {
+  const allTxns = await db.select().from(transactions);
+  const allEndUsers = await db.select().from(endUsers);
 
   let totalVolume = 0n;
   let totalPlatformCut = 0n;

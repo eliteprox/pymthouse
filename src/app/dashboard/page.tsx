@@ -30,21 +30,21 @@ export default async function DashboardPage() {
   return <DeveloperDashboard />;
 }
 
-function AdminDashboard() {
-  const signer = db
+async function AdminDashboard() {
+  const signerRows = await db
     .select()
     .from(signerConfig)
     .where(eq(signerConfig.id, "default"))
-    .get();
+    .limit(1);
+  const signer = signerRows[0];
 
-  const activeSessions = db
+  const activeSessions = await db
     .select()
     .from(streamSessions)
-    .where(eq(streamSessions.status, "active"))
-    .all();
+    .where(eq(streamSessions.status, "active"));
 
-  const allTransactions = db.select().from(transactions).all();
-  const allEndUsers = db.select().from(endUsers).all();
+  const allTransactions = await db.select().from(transactions);
+  const allEndUsers = await db.select().from(endUsers);
 
   let totalFeeWei = 0n;
   let totalPlatformCutWei = 0n;

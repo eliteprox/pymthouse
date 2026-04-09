@@ -16,6 +16,7 @@ import { isVerifiedCustomDomain } from "@/lib/oidc/custom-domains";
 import { getSecureHeaders } from "@/lib/oidc/security";
 import { deriveExternalOriginFromHeaders, resolveRedirectLocation, getTrustedOidcOrigins } from "./utils";
 import { isTokenExchangeGrant, handleTokenExchange, TokenExchangeError } from "@/lib/oidc/token-exchange";
+import { rotateProgrammaticRefreshToken } from "@/lib/oidc/programmatic-tokens";
 
 const RESOURCE_REQUIRED_GRANTS = new Set([
   "urn:ietf:params:oauth:grant-type:device_code",
@@ -32,6 +33,8 @@ const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
  */
 async function handleOIDC(request: NextRequest): Promise<NextResponse> {
   const provider = await getProvider();
+  const registeredRedirectOriginsList = await getRegisteredRedirectOrigins();
+  const trustedOidcOriginsSet = await getTrustedOidcOrigins();
 
   // Build the path relative to the OIDC mount point.
   // The provider is mounted at /api/v1/oidc, so strip that prefix.
@@ -63,6 +66,17 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
   ) {
     const exchangeParams = new URLSearchParams(body.toString("utf-8"));
     const grantType = exchangeParams.get("grant_type") || "";
+
+    if (grantType === "refresh_token") {
+      const refreshToken = exchangeParams.get("refresh_token") || "";
+      const refreshed = await rotateProgrammaticRefreshToken(refreshToken);
+      if (refreshed) {
+        return NextResponse.json(refreshed, {
+          headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+        });
+      }
+    }
+
     if (isTokenExchangeGrant(grantType)) {
       try {
         const result = await handleTokenExchange({
@@ -155,7 +169,7 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
   } as any;
 
   return new Promise<NextResponse>((resolve) => {
-    res.end = function (chunk?: any, ...args: any[]) {
+    res.end = async function (chunk?: any, ...args: any[]) {
       if (chunk) {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
@@ -182,11 +196,10 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
       if ([301, 302, 303, 307, 308].includes(statusCode)) {
         const location = headers.get("location");
         if (location) {
-          const trustedOrigins = getTrustedOidcOrigins();
           const allowedOrigins = new Set([
             new URL(externalOrigin).origin,
-            ...getRegisteredRedirectOrigins(),
-            ...trustedOrigins,
+            ...registeredRedirectOriginsList,
+            ...trustedOidcOriginsSet,
           ]);
           const redirectResponse = NextResponse.redirect(
             resolveRedirectLocation(location, externalOrigin, allowedOrigins),
@@ -237,7 +250,7 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
       // Determine if this is a custom domain request
       const requestHost = req.headers["x-forwarded-host"] || req.headers.host || "";
       const hostStr = Array.isArray(requestHost) ? requestHost[0] : requestHost;
-      const isCustomDomain = isVerifiedCustomDomain(hostStr);
+      const isCustomDomain = await isVerifiedCustomDomain(hostStr);
       
       // Add security headers
       const secureHeaders = getSecureHeaders(isCustomDomain);

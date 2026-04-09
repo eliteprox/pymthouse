@@ -3,4 +3,4 @@ export * from "./tokens";
 export * from "./clients";
 export * from "./account";
 export { getProvider } from "./provider";
-export { SqliteAdapter } from "./adapter";
+export { PostgresOidcAdapter, SqliteAdapter } from "./adapter";

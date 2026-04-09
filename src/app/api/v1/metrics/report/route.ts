@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const payload = collectMetrics();
+  const payload = await collectMetrics();
   return NextResponse.json({
     metricsEnabled: isMetricsEnabled(),
     preview: payload,
@@ -42,17 +42,23 @@ async function getAdminUser(request: NextRequest) {
   if (oauthSession?.user) {
     const sessionUser = oauthSession.user as Record<string, unknown>;
     if (sessionUser.id) {
-      return db
+      const rows = await db
         .select()
         .from(users)
         .where(eq(users.id, sessionUser.id as string))
-        .get();
+        .limit(1);
+      return rows[0];
     }
   }
 
-  const auth = authenticateRequest(request);
+  const auth = await authenticateRequest(request);
   if (auth && hasScope(auth.scopes, "admin") && auth.userId) {
-    return db.select().from(users).where(eq(users.id, auth.userId)).get();
+    const rows = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, auth.userId))
+      .limit(1);
+    return rows[0];
   }
 
   return null;

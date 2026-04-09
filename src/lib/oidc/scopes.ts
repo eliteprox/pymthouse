@@ -11,7 +11,14 @@ export interface ScopeDefinition {
   required?: boolean;
 }
 
-export const DEFAULT_OIDC_SCOPES = "openid profile email";
+export const DEFAULT_OIDC_SCOPES = "openid sign:job discover:orchestrators";
+
+/** Browser / Authorization Code + PKCE flows for the NaaP platform. */
+export const NAAP_WEB_OIDC_SCOPES = "openid sign:job discover:orchestrators";
+
+/** Server-side `client_credentials` for NaaP services (no interactive login). */
+export const NAAP_SERVICE_OIDC_SCOPES =
+  "sign:job discover:orchestrators users:read users:write users:token";
 
 export const OIDC_SCOPES: ScopeDefinition[] = [
   {
@@ -21,24 +28,34 @@ export const OIDC_SCOPES: ScopeDefinition[] = [
     required: true,
   },
   {
-    value: "profile",
-    label: "Basic Profile",
-    description: "See your name",
+    value: "sign:job",
+    label: "Sign Jobs",
+    description: "Request payment signatures from the configured remote signer",
   },
   {
-    value: "email",
-    label: "Email Address",
-    description: "See your email address",
+    value: "discover:orchestrators",
+    label: "Discover Orchestrators",
+    description: "Query the provider signer for allowed orchestrator candidates",
   },
   {
-    value: "gateway",
-    label: "Gateway Access",
-    description: "Use Livepeer gateway signing and payment operations on your behalf",
+    value: "users:read",
+    label: "Read Users",
+    description: "Read provisioned provider-managed application users",
   },
   {
-    value: "offline_access",
-    label: "Session Renewal",
-    description: "Enables refresh tokens so sessions can continue without re-signing in",
+    value: "users:write",
+    label: "Write Users",
+    description: "Create, update, and deactivate provisioned application users",
+  },
+  {
+    value: "users:token",
+    label: "Issue User Tokens",
+    description: "Issue app-user access tokens for provider-managed backends",
+  },
+  {
+    value: "admin",
+    label: "Admin",
+    description: "Administrative access to provider configuration surfaces",
   },
 ];
 

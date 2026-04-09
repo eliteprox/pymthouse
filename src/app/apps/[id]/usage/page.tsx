@@ -6,18 +6,16 @@ import DashboardLayout from "@/components/DashboardLayout";
 
 interface UsageData {
   appId: string;
-  billingPattern: string;
   period: { start: string | null; end: string | null };
   totals: {
-    transactionCount: number;
+    requestCount: number;
     totalFeeWei: string;
-    platformCutWei: string;
   };
   byUser?: {
     endUserId: string;
     externalUserId: string | null;
     feeWei: string;
-    transactionCount: number;
+    requestCount: number;
   }[];
 }
 
@@ -72,13 +70,13 @@ export default function UsageDashboardPage() {
     <DashboardLayout>
       <div className="mb-8">
         <button
-          onClick={() => router.push(`/apps/${id}/settings`)}
+          onClick={() => router.push(`/apps/${id}`)}
           className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors mb-3 flex items-center gap-1"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
-          Back to Settings
+          Back to app
         </button>
         <h1 className="text-2xl font-bold text-zinc-100">Usage Dashboard</h1>
         <p className="text-sm text-zinc-500 mt-1">
@@ -87,34 +85,19 @@ export default function UsageDashboardPage() {
       </div>
 
       {/* Totals */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-2 gap-4 mb-8">
         <div className="p-5 rounded-xl border border-zinc-800 bg-zinc-900/40">
-          <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Transactions</p>
-          <p className="text-2xl font-bold text-zinc-100">{usage.totals.transactionCount}</p>
+          <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Requests</p>
+          <p className="text-2xl font-bold text-zinc-100">{usage.totals.requestCount}</p>
         </div>
         <div className="p-5 rounded-xl border border-zinc-800 bg-zinc-900/40">
           <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Total Fees</p>
           <p className="text-2xl font-bold text-zinc-100">{formatWei(usage.totals.totalFeeWei)}</p>
         </div>
-        <div className="p-5 rounded-xl border border-zinc-800 bg-zinc-900/40">
-          <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Platform Cut</p>
-          <p className="text-2xl font-bold text-zinc-100">{formatWei(usage.totals.platformCutWei)}</p>
-        </div>
-      </div>
-
-      {/* Billing Pattern Badge */}
-      <div className="mb-6">
-        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-          usage.billingPattern === "per_user"
-            ? "bg-violet-500/20 text-violet-400"
-            : "bg-emerald-500/20 text-emerald-400"
-        }`}>
-          {usage.billingPattern === "per_user" ? "Per-User Attribution" : "App-Level Billing"}
-        </span>
       </div>
 
       {/* Per-User Breakdown */}
-      {usage.billingPattern === "per_user" && usage.byUser && usage.byUser.length > 0 && (
+      {usage.byUser && usage.byUser.length > 0 && (
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 overflow-hidden">
           <div className="px-5 py-3 border-b border-zinc-800">
             <h3 className="text-sm font-semibold text-zinc-200">Per-User Breakdown</h3>
@@ -125,7 +108,7 @@ export default function UsageDashboardPage() {
                 <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
                   <th className="text-left px-5 py-3 font-medium">External User ID</th>
                   <th className="text-left px-5 py-3 font-medium">PymtHouse ID</th>
-                  <th className="text-right px-5 py-3 font-medium">Transactions</th>
+                  <th className="text-right px-5 py-3 font-medium">Requests</th>
                   <th className="text-right px-5 py-3 font-medium">Total Fees</th>
                 </tr>
               </thead>
@@ -138,7 +121,7 @@ export default function UsageDashboardPage() {
                     <td className="px-5 py-3">
                       <code className="text-xs text-zinc-500">{user.endUserId.slice(0, 8)}...</code>
                     </td>
-                    <td className="px-5 py-3 text-right text-zinc-300">{user.transactionCount}</td>
+                    <td className="px-5 py-3 text-right text-zinc-300">{user.requestCount}</td>
                     <td className="px-5 py-3 text-right text-zinc-300">{formatWei(user.feeWei)}</td>
                   </tr>
                 ))}
@@ -148,18 +131,10 @@ export default function UsageDashboardPage() {
         </div>
       )}
 
-      {usage.billingPattern === "app_level" && (
+      {(!usage.byUser || usage.byUser.length === 0) && (
         <div className="p-5 rounded-xl border border-zinc-800 bg-zinc-900/40 text-center">
           <p className="text-sm text-zinc-500">
-            App-level billing does not track per-user usage. All usage is attributed to the app.
-          </p>
-        </div>
-      )}
-
-      {usage.billingPattern === "per_user" && (!usage.byUser || usage.byUser.length === 0) && (
-        <div className="p-5 rounded-xl border border-zinc-800 bg-zinc-900/40 text-center">
-          <p className="text-sm text-zinc-500">
-            No per-user usage data yet. Usage will appear after your platform exchanges user tokens.
+            No per-user usage data yet. Usage appears after provider-managed users begin making runtime requests.
           </p>
         </div>
       )}

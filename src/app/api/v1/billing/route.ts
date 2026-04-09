@@ -18,10 +18,10 @@ export async function GET(request: NextRequest) {
   const limit = parseInt(url.searchParams.get("limit") || "50");
   const offset = parseInt(url.searchParams.get("offset") || "0");
 
-  const recentTransactions = getTransactions(
+  const recentTransactions = await getTransactions(
     endUserId || undefined,
     limit,
-    offset
+    offset,
   );
 
   return NextResponse.json({
@@ -35,17 +35,23 @@ async function getAdminUser(request: NextRequest) {
   if (oauthSession?.user) {
     const sessionUser = oauthSession.user as Record<string, unknown>;
     if (sessionUser.id) {
-      return db
+      const rows = await db
         .select()
         .from(users)
         .where(eq(users.id, sessionUser.id as string))
-        .get();
+        .limit(1);
+      return rows[0];
     }
   }
 
-  const auth = authenticateRequest(request);
+  const auth = await authenticateRequest(request);
   if (auth && hasScope(auth.scopes, "read") && auth.userId) {
-    return db.select().from(users).where(eq(users.id, auth.userId)).get();
+    const rows = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, auth.userId))
+      .limit(1);
+    return rows[0];
   }
 
   return null;
