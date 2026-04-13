@@ -8,6 +8,7 @@ type AppMode = "user_login" | "m2m";
 interface Props {
   data: AppFormData;
   onChange: (updates: Partial<AppFormData>) => void;
+  readOnly?: boolean;
 }
 
 function deriveMode(data: AppFormData): AppMode {
@@ -17,7 +18,7 @@ function deriveMode(data: AppFormData): AppMode {
   return isM2M ? "m2m" : "user_login";
 }
 
-const M2M_SCOPES = "users:read users:write users:token";
+const M2M_SCOPES = "users:read users:write users:token gateway sign:job discover:orchestrators";
 const USER_LOGIN_SCOPES = "openid sign:job discover:orchestrators";
 
 const MODE_CARDS: {
@@ -51,17 +52,18 @@ const MODE_CARDS: {
   },
 ];
 
-export default function AppModeStep({ data, onChange }: Props) {
+export default function AppModeStep({ data, onChange, readOnly = false }: Props) {
   const mode = deriveMode(data);
   const scopes = data.allowedScopes.split(/\s+/).filter(Boolean);
   const interactiveScopes = OIDC_SCOPES.filter((scope) =>
     ["openid", "sign:job", "discover:orchestrators", "admin"].includes(scope.value),
   );
   const machineScopes = OIDC_SCOPES.filter((scope) =>
-    ["users:read", "users:write", "users:token"].includes(scope.value),
+    ["users:read", "users:write", "users:token", "gateway", "sign:job", "discover:orchestrators"].includes(scope.value),
   );
 
   const applyMode = (nextMode: AppMode) => {
+    if (readOnly) return;
     if (nextMode === "user_login") {
       onChange({
         tokenEndpointAuthMethod: "none",
@@ -79,6 +81,7 @@ export default function AppModeStep({ data, onChange }: Props) {
   };
 
   const toggleGrant = (grant: string) => {
+    if (readOnly) return;
     const has = data.grantTypes.includes(grant);
     onChange({
       grantTypes: has
@@ -88,6 +91,7 @@ export default function AppModeStep({ data, onChange }: Props) {
   };
 
   const toggleScope = (scope: string) => {
+    if (readOnly) return;
     if (scope === "openid") return;
     const nextScopes = scopes.includes(scope)
       ? scopes.filter((value) => value !== scope)
@@ -118,11 +122,12 @@ export default function AppModeStep({ data, onChange }: Props) {
             key={key}
             type="button"
             onClick={() => applyMode(key)}
+            disabled={readOnly}
             className={`p-4 rounded-xl border text-left transition-all ${
               mode === key
                 ? "border-emerald-500/50 bg-emerald-500/5 ring-1 ring-emerald-500/20"
                 : "border-zinc-700 bg-zinc-800/30 hover:border-zinc-600"
-            }`}
+            } ${readOnly ? "opacity-60 cursor-not-allowed" : ""}`}
           >
             <div className="flex items-start justify-between mb-2">
               {icon}
@@ -167,7 +172,8 @@ export default function AppModeStep({ data, onChange }: Props) {
                   type="checkbox"
                   checked={data.grantTypes.includes("refresh_token")}
                   onChange={() => toggleGrant("refresh_token")}
-                  className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 mt-0.5 shrink-0"
+                  disabled={readOnly}
+                  className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 mt-0.5 shrink-0 disabled:opacity-50"
                 />
                 <div>
                   <p className="text-sm font-medium text-zinc-200">Refresh Token</p>
@@ -194,13 +200,13 @@ export default function AppModeStep({ data, onChange }: Props) {
                     scopes.includes(scope.value)
                       ? "border-emerald-500/30 bg-emerald-500/5"
                       : "border-zinc-800 bg-zinc-800/20"
-                  } ${scope.required ? "opacity-70" : "cursor-pointer hover:border-zinc-600"}`}
+                  } ${scope.required || readOnly ? "opacity-70" : "cursor-pointer hover:border-zinc-600"}`}
                 >
                   <input
                     type="checkbox"
                     checked={scopes.includes(scope.value)}
                     onChange={() => toggleScope(scope.value)}
-                    disabled={scope.required}
+                    disabled={scope.required || readOnly}
                     className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 shrink-0"
                   />
                   <div>
@@ -231,7 +237,7 @@ export default function AppModeStep({ data, onChange }: Props) {
             <div>
               <label className="block text-sm font-medium text-zinc-300">Scopes</label>
               <p className="text-xs text-zinc-500 mt-0.5">
-                These scopes control which provider-management APIs your backend can call.
+                These scopes control which provider-management APIs your backend can call, and which scopes may be included in user-scoped tokens you issue.
               </p>
             </div>
             <div className="space-y-2">
@@ -242,12 +248,13 @@ export default function AppModeStep({ data, onChange }: Props) {
                     scopes.includes(scope.value)
                       ? "border-cyan-500/30 bg-cyan-500/5"
                       : "border-zinc-800 bg-zinc-800/20"
-                  } cursor-pointer hover:border-zinc-600`}
+                  } ${readOnly ? "opacity-70" : "cursor-pointer hover:border-zinc-600"}`}
                 >
                   <input
                     type="checkbox"
                     checked={scopes.includes(scope.value)}
                     onChange={() => toggleScope(scope.value)}
+                    disabled={readOnly}
                     className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-cyan-500 focus:ring-cyan-500/40 shrink-0"
                   />
                   <div>
@@ -263,7 +270,7 @@ export default function AppModeStep({ data, onChange }: Props) {
             <ol className="text-xs text-zinc-500 space-y-1 list-decimal list-inside">
               <li>Your backend authenticates with client credentials.</li>
               <li>You provision users via the app user management API.</li>
-              <li>You request a short-lived token for a provisioned app user.</li>
+              <li>You request a short-lived token for a provisioned app user (include <code className="font-mono">sign:job discover:orchestrators</code> for gateway access).</li>
               <li>The SDK uses that user-bound token for discovery and signing.</li>
             </ol>
           </div>

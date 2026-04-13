@@ -7,7 +7,11 @@ import { db } from "@/db/index";
 import { apiKeys, subscriptions } from "@/db/schema";
 import { hashToken } from "@/lib/auth";
 import { generateApiKeyValue } from "@/lib/oidc/programmatic-tokens";
-import { getAuthorizedProviderApp } from "@/lib/provider-apps";
+import {
+  canEditProviderApp,
+  getAuthorizedProviderApp,
+  appEditForbiddenResponse,
+} from "@/lib/provider-apps";
 
 export async function GET(
   _request: NextRequest,
@@ -31,6 +35,10 @@ export async function POST(
   const auth = await getAuthorizedProviderApp(id);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (!(await canEditProviderApp(auth))) {
+    return appEditForbiddenResponse();
   }
 
   const session = await getServerSession(authOptions);
@@ -88,6 +96,10 @@ export async function DELETE(
   const auth = await getAuthorizedProviderApp(id);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (!(await canEditProviderApp(auth))) {
+    return appEditForbiddenResponse();
   }
 
   const { searchParams } = new URL(request.url);

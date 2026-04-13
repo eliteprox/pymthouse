@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface SignerConfigFormProps {
-  appId?: string;
   config: {
     name: string;
     signerUrl?: string | null;
@@ -22,7 +21,7 @@ interface SignerConfigFormProps {
   };
 }
 
-export default function SignerConfigForm({ appId, config }: SignerConfigFormProps) {
+export default function SignerConfigForm({ config }: SignerConfigFormProps) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -50,8 +49,7 @@ export default function SignerConfigForm({ appId, config }: SignerConfigFormProp
     setError(null);
 
     try {
-      const endpoint = appId ? `/api/v1/apps/${appId}/signer` : "/api/v1/signer";
-      const res = await fetch(endpoint, {
+      const res = await fetch("/api/v1/signer", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -89,7 +87,7 @@ export default function SignerConfigForm({ appId, config }: SignerConfigFormProp
     <form onSubmit={handleSubmit} className="space-y-4">
       <h3 className="font-semibold text-zinc-200">Configuration</h3>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <fieldset className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-0 p-0 m-0 min-w-0">
         <div>
           <label className="block text-xs text-zinc-500 mb-1.5">
             Signer Name
@@ -296,7 +294,7 @@ export default function SignerConfigForm({ appId, config }: SignerConfigFormProp
             placeholder="Leave empty to disable metrics reporting"
           />
         </div>
-      </div>
+      </fieldset>
 
       <div className="flex items-center gap-3">
         <button

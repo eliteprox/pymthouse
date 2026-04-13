@@ -28,6 +28,7 @@ export default function AppPlansPage() {
   const [plans, setPlans] = useState<PlanRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [canEdit, setCanEdit] = useState(true);
   const [form, setForm] = useState({
     name: "",
     type: "free",
@@ -46,6 +47,7 @@ export default function AppPlansPage() {
     ])
       .then(([app, payload]) => {
         setAppName(app.name || "App");
+        setCanEdit(app.canEdit !== false);
         setPlans(payload.plans || []);
       })
       .finally(() => setLoading(false));
@@ -56,7 +58,7 @@ export default function AppPlansPage() {
   }, [id]);
 
   const createPlan = async () => {
-    if (!form.name.trim()) return;
+    if (!canEdit || !form.name.trim()) return;
     setSaving(true);
     await fetch(`/api/v1/apps/${id}/plans`, {
       method: "POST",
@@ -92,6 +94,7 @@ export default function AppPlansPage() {
   };
 
   const deletePlan = async (planId: string) => {
+    if (!canEdit) return;
     await fetch(`/api/v1/apps/${id}/plans?planId=${encodeURIComponent(planId)}`, {
       method: "DELETE",
     });
@@ -114,6 +117,12 @@ export default function AppPlansPage() {
         <p className="text-sm text-zinc-500 mt-1">
           Define minimal provider plans. NaaP data can be layered in later; manual entry works now.
         </p>
+        {!canEdit && (
+          <p className="text-sm text-amber-400/90 mt-2">
+            View only — only platform or app administrators can create or delete
+            plans.
+          </p>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
@@ -123,13 +132,15 @@ export default function AppPlansPage() {
             value={form.name}
             onChange={(event) => setForm({ ...form, name: event.target.value })}
             placeholder="Clinical Pro"
-            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100"
+            disabled={!canEdit}
+            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <div className="grid grid-cols-2 gap-3">
             <select
               value={form.type}
               onChange={(event) => setForm({ ...form, type: event.target.value })}
-              className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100"
+              disabled={!canEdit}
+              className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50"
             >
               <option value="free">Free</option>
               <option value="subscription">Subscription</option>
@@ -139,7 +150,8 @@ export default function AppPlansPage() {
               value={form.priceAmount}
               onChange={(event) => setForm({ ...form, priceAmount: event.target.value })}
               placeholder="0"
-              className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100"
+              disabled={!canEdit}
+              className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -147,24 +159,27 @@ export default function AppPlansPage() {
               value={form.modelId}
               onChange={(event) => setForm({ ...form, modelId: event.target.value })}
               placeholder="livepeer/model-id"
-              className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100"
+              disabled={!canEdit}
+              className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50"
             />
             <input
               value={form.pipeline}
               onChange={(event) => setForm({ ...form, pipeline: event.target.value })}
               placeholder="video"
-              className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100"
+              disabled={!canEdit}
+              className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50"
             />
           </div>
           <input
             value={form.slaTargetP95Ms}
             onChange={(event) => setForm({ ...form, slaTargetP95Ms: event.target.value })}
             placeholder="p95 latency ms"
-            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100"
+            disabled={!canEdit}
+            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50"
           />
           <button
             onClick={createPlan}
-            disabled={saving}
+            disabled={!canEdit || saving}
             className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-500 disabled:opacity-50"
           >
             {saving ? "Saving..." : "Create Plan"}
@@ -198,7 +213,8 @@ export default function AppPlansPage() {
                     </div>
                     <button
                       onClick={() => deletePlan(plan.id)}
-                      className="text-xs text-zinc-500 hover:text-red-400"
+                      disabled={!canEdit}
+                      className="text-xs text-zinc-500 hover:text-red-400 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       Delete
                     </button>

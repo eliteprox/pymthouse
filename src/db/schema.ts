@@ -39,7 +39,8 @@ export const sessions = pgTable("sessions", {
     .$defaultFn(() => new Date().toISOString()),
 });
 
-// Per-provider (and legacy default row) go-livepeer remote signer
+// Single shared go-livepeer remote signer for the clearinghouse (`id === "default"`).
+// `client_id` is legacy (per-app signer rows); unused — scale with multiple replicas behind one URL.
 export const signerConfig = pgTable("signer_config", {
   id: text("id").primaryKey().default("default"),
   clientId: text("client_id").references(() => developerApps.id),

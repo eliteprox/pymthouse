@@ -309,6 +309,7 @@ export async function getProvider(): Promise<Provider> {
 
     scopes: [
       "openid",
+      "gateway",
       "sign:job",
       "discover:orchestrators",
       "users:read",
@@ -319,6 +320,7 @@ export async function getProvider(): Promise<Provider> {
 
     claims: {
       openid: ["sub"],
+      gateway: ["sub"],
       "sign:job": ["app_id"],
       "discover:orchestrators": ["app_id"],
       "users:read": ["app_id"],

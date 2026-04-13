@@ -5,7 +5,11 @@ import { db } from "@/db/index";
 import { developerApps, oidcClients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { rotateClientSecret } from "@/lib/oidc/clients";
-import { getAuthorizedProviderApp } from "@/lib/provider-apps";
+import {
+  canEditProviderApp,
+  getAuthorizedProviderApp,
+  appEditForbiddenResponse,
+} from "@/lib/provider-apps";
 
 export async function POST(
   _request: NextRequest,
@@ -21,6 +25,11 @@ export async function POST(
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+
+  if (!(await canEditProviderApp(auth))) {
+    return appEditForbiddenResponse();
+  }
+
   const { app } = auth;
 
   if (!app.oidcClientId) {

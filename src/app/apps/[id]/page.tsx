@@ -25,6 +25,7 @@ export default function AppDetailPage() {
     domains: { id: string; domain: string }[];
     postLogoutRedirectUris: string[];
     initiateLoginUri: string | null;
+    canEdit: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -60,6 +61,7 @@ export default function AppDetailPage() {
           ),
           postLogoutRedirectUris: data.oidcClient?.postLogoutRedirectUris || [],
           initiateLoginUri: data.oidcClient?.initiateLoginUri ?? null,
+          canEdit: data.canEdit !== false,
         });
       })
       .finally(() => setLoading(false));
@@ -122,13 +124,6 @@ export default function AppDetailPage() {
             >
               Plans
             </button>
-            <button
-              type="button"
-              onClick={() => router.push(`/apps/${id}/signer`)}
-              className="px-4 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 transition-colors"
-            >
-              Signer
-            </button>
           </div>
         )}
       </div>
@@ -140,6 +135,7 @@ export default function AppDetailPage() {
         initialDomains={appData.domains}
         initialPostLogoutRedirectUris={appData.postLogoutRedirectUris}
         initialInitiateLoginUri={appData.initiateLoginUri}
+        canEdit={appData.canEdit}
       />
     </DashboardLayout>
   );

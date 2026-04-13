@@ -16,6 +16,10 @@ import { isVerifiedCustomDomain } from "@/lib/oidc/custom-domains";
 import { getSecureHeaders } from "@/lib/oidc/security";
 import { deriveExternalOriginFromHeaders, resolveRedirectLocation, getTrustedOidcOrigins } from "./utils";
 import { isTokenExchangeGrant, handleTokenExchange, TokenExchangeError } from "@/lib/oidc/token-exchange";
+import {
+  handleNaapGatewayTokenExchange,
+  isNaapGatewayTokenExchangeRequest,
+} from "@/lib/oidc/naap-gateway-token-exchange";
 import { rotateProgrammaticRefreshToken } from "@/lib/oidc/programmatic-tokens";
 
 const RESOURCE_REQUIRED_GRANTS = new Set([
@@ -78,12 +82,32 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
     }
 
     if (isTokenExchangeGrant(grantType)) {
+      const clientId = exchangeParams.get("client_id") || "";
+      const subjectTokenType = exchangeParams.get("subject_token_type") || "";
       try {
+        if (
+          isNaapGatewayTokenExchangeRequest({
+            grantType,
+            clientId,
+            subjectTokenType,
+          })
+        ) {
+          const result = await handleNaapGatewayTokenExchange({
+            clientId,
+            clientSecret: exchangeParams.get("client_secret") || "",
+            subjectToken: exchangeParams.get("subject_token") || "",
+            subjectTokenType,
+          });
+          return NextResponse.json(result, {
+            headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+          });
+        }
+
         const result = await handleTokenExchange({
-          clientId: exchangeParams.get("client_id") || "",
+          clientId,
           clientSecret: exchangeParams.get("client_secret") || "",
           subjectToken: exchangeParams.get("subject_token") || "",
-          subjectTokenType: exchangeParams.get("subject_token_type") || "",
+          subjectTokenType,
           scope: exchangeParams.get("scope") || "gateway",
           resource: exchangeParams.get("resource") || undefined,
         });
