@@ -4,7 +4,11 @@ import { appAllowedDomains } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { normalizeDomainWhitelist } from "@/lib/domain-whitelist";
-import { getAuthorizedProviderApp } from "@/lib/provider-apps";
+import {
+  canEditProviderApp,
+  getAuthorizedProviderApp,
+  appEditForbiddenResponse,
+} from "@/lib/provider-apps";
 
 export async function GET(
   _request: NextRequest,
@@ -32,8 +36,12 @@ export async function POST(
   const { id } = await params;
   const auth = await getAuthorizedProviderApp(id);
   const app = auth?.app ?? null;
-  if (!app) {
+  if (!auth || !app) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (!(await canEditProviderApp(auth))) {
+    return appEditForbiddenResponse();
   }
 
   const body = await request.json();
@@ -91,8 +99,12 @@ export async function DELETE(
   const { id } = await params;
   const auth = await getAuthorizedProviderApp(id);
   const app = auth?.app ?? null;
-  if (!app) {
+  if (!auth || !app) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (!(await canEditProviderApp(auth))) {
+    return appEditForbiddenResponse();
   }
 
   const { searchParams } = new URL(request.url);

@@ -1,4 +1,5 @@
 import { getServerSession } from "next-auth";
+import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/index";
 import { authOptions } from "@/lib/next-auth-options";
@@ -75,4 +76,44 @@ export async function getAuthorizedProviderApp(appId: string) {
   }
 
   return null;
+}
+
+export type AuthorizedProviderApp = NonNullable<
+  Awaited<ReturnType<typeof getAuthorizedProviderApp>>
+>;
+
+/**
+ * Whether the session user may change app configuration (metadata, OIDC, domains,
+ * credentials, plans, signer, team admins, etc.). Platform `users.role === "admin"`,
+ * the app owner, and provider team members with role `owner` or `admin` may edit.
+ */
+export async function canEditProviderApp(
+  auth: AuthorizedProviderApp,
+): Promise<boolean> {
+  if (auth.role === "admin") return true;
+  if (auth.app.ownerId === auth.userId) return true;
+
+  const rows = await db
+    .select({ role: providerAdmins.role })
+    .from(providerAdmins)
+    .where(
+      and(
+        eq(providerAdmins.userId, auth.userId),
+        eq(providerAdmins.clientId, auth.app.id),
+      ),
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) return false;
+  return row.role === "owner" || row.role === "admin";
+}
+
+export function appEditForbiddenResponse() {
+  return NextResponse.json(
+    {
+      error:
+        "Only platform or app administrators can modify this app.",
+    },
+    { status: 403 },
+  );
 }

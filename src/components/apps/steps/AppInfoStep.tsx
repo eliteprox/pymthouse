@@ -5,9 +5,10 @@ import type { AppFormData } from "../AppWizard";
 interface Props {
   data: AppFormData;
   onChange: (updates: Partial<AppFormData>) => void;
+  readOnly?: boolean;
 }
 
-export default function AppInfoStep({ data, onChange }: Props) {
+export default function AppInfoStep({ data, onChange, readOnly = false }: Props) {
   return (
     <div className="space-y-6">
       <div>
@@ -25,7 +26,8 @@ export default function AppInfoStep({ data, onChange }: Props) {
           value={data.name}
           onChange={(e) => onChange({ name: e.target.value })}
           placeholder="My Awesome App"
-          className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/40"
+          disabled={readOnly}
+          className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/40 disabled:opacity-60 disabled:cursor-not-allowed"
         />
       </div>
 
@@ -41,6 +43,7 @@ export default function AppInfoStep({ data, onChange }: Props) {
           onChange={(e) => onChange({ description: e.target.value })}
           rows={4}
           placeholder="Describe your app..."
+          disabled={readOnly}
           className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/40 resize-none disabled:opacity-60 disabled:cursor-not-allowed"
         />
       </div>
@@ -55,6 +58,7 @@ export default function AppInfoStep({ data, onChange }: Props) {
             value={data.developerName}
             onChange={(e) => onChange({ developerName: e.target.value })}
             placeholder="Acme Inc."
+            disabled={readOnly}
             className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/40 disabled:opacity-60 disabled:cursor-not-allowed"
           />
         </div>
@@ -67,6 +71,7 @@ export default function AppInfoStep({ data, onChange }: Props) {
             value={data.websiteUrl}
             onChange={(e) => onChange({ websiteUrl: e.target.value })}
             placeholder="https://example.com"
+            disabled={readOnly}
             className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/40 disabled:opacity-60 disabled:cursor-not-allowed"
           />
         </div>

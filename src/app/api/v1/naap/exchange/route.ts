@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createSession, hasScope, validateBearerToken } from "@/lib/auth";
+import { authenticateRequestAsync, createSession, hasScope } from "@/lib/auth";
 
 const LEGACY_ENABLED = process.env.LEGACY_NAAP_LINK_ENABLED !== "false";
 
@@ -26,8 +26,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const bootstrapToken = authHeader.slice("Bearer ".length);
-  const auth = await validateBearerToken(bootstrapToken);
+  const auth = await authenticateRequestAsync(request);
   if (!auth || !auth.userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

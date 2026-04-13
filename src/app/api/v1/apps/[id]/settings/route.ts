@@ -6,7 +6,11 @@ import { updateClientConfig } from "@/lib/oidc/clients";
 import { resetProvider } from "@/lib/oidc/provider";
 import { normalizeDomainWhitelist } from "@/lib/domain-whitelist";
 import { v4 as uuidv4 } from "uuid";
-import { getAuthorizedProviderApp } from "@/lib/provider-apps";
+import {
+  canEditProviderApp,
+  getAuthorizedProviderApp,
+  appEditForbiddenResponse,
+} from "@/lib/provider-apps";
 
 function extractOrigins(uris: string[]): string[] {
   const origins = new Set<string>();
@@ -29,6 +33,10 @@ export async function PUT(
   const auth = await getAuthorizedProviderApp(id);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (!(await canEditProviderApp(auth))) {
+    return appEditForbiddenResponse();
   }
 
   const { app } = auth;

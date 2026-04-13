@@ -14,11 +14,15 @@ export interface ScopeDefinition {
 export const DEFAULT_OIDC_SCOPES = "openid sign:job discover:orchestrators";
 
 /** Browser / Authorization Code + PKCE flows for the NaaP platform. */
-export const NAAP_WEB_OIDC_SCOPES = "openid sign:job discover:orchestrators";
+export const NAAP_WEB_OIDC_SCOPES = "openid gateway sign:job discover:orchestrators";
 
-/** Server-side `client_credentials` for NaaP services (no interactive login). */
+/**
+ * Server-side `client_credentials` for NaaP services (no interactive login).
+ * `gateway` is included so naap-service JWT tokens work with the
+ * POST /api/v1/naap/link-user endpoint and gateway-scoped operations.
+ */
 export const NAAP_SERVICE_OIDC_SCOPES =
-  "sign:job discover:orchestrators users:read users:write users:token";
+  "gateway sign:job discover:orchestrators users:read users:write users:token";
 
 export const OIDC_SCOPES: ScopeDefinition[] = [
   {
@@ -26,6 +30,11 @@ export const OIDC_SCOPES: ScopeDefinition[] = [
     label: "OpenID",
     description: "Confirm which PymtHouse account you are signed in with",
     required: true,
+  },
+  {
+    value: "gateway",
+    label: "Gateway Access",
+    description: "Access gateway endpoints for signing jobs and orchestrator operations",
   },
   {
     value: "sign:job",

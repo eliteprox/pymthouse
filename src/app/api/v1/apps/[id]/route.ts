@@ -6,7 +6,11 @@ import { developerApps, oidcClients, appAllowedDomains } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { updateClientConfig } from "@/lib/oidc/clients";
 import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
-import { getAuthorizedProviderApp } from "@/lib/provider-apps";
+import {
+  canEditProviderApp,
+  getAuthorizedProviderApp,
+  appEditForbiddenResponse,
+} from "@/lib/provider-apps";
 
 export async function GET(
   _request: NextRequest,
@@ -56,6 +60,7 @@ export async function GET(
 
   return NextResponse.json({
     ...app,
+    canEdit: await canEditProviderApp(auth),
     oidcClient: clientInfo
       ? {
           ...clientInfo,
@@ -74,6 +79,10 @@ export async function PUT(
   const auth = await getAuthorizedProviderApp(id);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (!(await canEditProviderApp(auth))) {
+    return appEditForbiddenResponse();
   }
 
   const { app } = auth;

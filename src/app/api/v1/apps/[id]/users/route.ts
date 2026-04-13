@@ -4,7 +4,11 @@ import { v4 as uuidv4 } from "uuid";
 import { authenticateAppClient, authenticateRequestAsync, hasScope } from "@/lib/auth";
 import { db } from "@/db/index";
 import { appUsers } from "@/db/schema";
-import { getAuthorizedProviderApp } from "@/lib/provider-apps";
+import {
+  canEditProviderApp,
+  getAuthorizedProviderApp,
+  appEditForbiddenResponse,
+} from "@/lib/provider-apps";
 import { createCorrelationId, writeAuditLog } from "@/lib/audit";
 
 async function canAccessUsers(request: NextRequest, appId: string, requiredScope: string) {
@@ -49,6 +53,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  const providerAuth = await getAuthorizedProviderApp(id);
+  if (providerAuth && !(await canEditProviderApp(providerAuth))) {
+    return appEditForbiddenResponse();
+  }
+
   const access = await canAccessUsers(request, id, "users:write");
   if (!access) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -119,6 +128,11 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  const providerAuthPut = await getAuthorizedProviderApp(id);
+  if (providerAuthPut && !(await canEditProviderApp(providerAuthPut))) {
+    return appEditForbiddenResponse();
+  }
+
   const access = await canAccessUsers(request, id, "users:write");
   if (!access) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -171,6 +185,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  const providerAuthDel = await getAuthorizedProviderApp(id);
+  if (providerAuthDel && !(await canEditProviderApp(providerAuthDel))) {
+    return appEditForbiddenResponse();
+  }
+
   const access = await canAccessUsers(request, id, "users:write");
   if (!access) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

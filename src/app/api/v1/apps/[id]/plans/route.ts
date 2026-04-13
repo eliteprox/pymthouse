@@ -3,7 +3,11 @@ import { and, eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { db } from "@/db/index";
 import { planCapabilityBundles, plans } from "@/db/schema";
-import { getAuthorizedProviderApp } from "@/lib/provider-apps";
+import {
+  canEditProviderApp,
+  getAuthorizedProviderApp,
+  appEditForbiddenResponse,
+} from "@/lib/provider-apps";
 import { publishProviderAndPlans } from "@/lib/naap-marketplace";
 
 export async function GET(
@@ -38,6 +42,10 @@ export async function POST(
   const auth = await getAuthorizedProviderApp(id);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (!(await canEditProviderApp(auth))) {
+    return appEditForbiddenResponse();
   }
 
   const body = await request.json();
@@ -88,6 +96,10 @@ export async function PUT(
   const auth = await getAuthorizedProviderApp(id);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (!(await canEditProviderApp(auth))) {
+    return appEditForbiddenResponse();
   }
 
   const body = await request.json();
@@ -150,6 +162,10 @@ export async function DELETE(
   const auth = await getAuthorizedProviderApp(id);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (!(await canEditProviderApp(auth))) {
+    return appEditForbiddenResponse();
   }
 
   const { searchParams } = new URL(request.url);

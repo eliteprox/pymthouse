@@ -23,38 +23,49 @@ export interface ProxyResult {
   body: unknown;
 }
 
-export async function getSignerConfig(appClientId?: string | null) {
-  if (appClientId) {
-    const appRows = await db
-      .select({
-        id: developerApps.id,
-      })
-      .from(developerApps)
-      .innerJoin(oidcClients, eq(oidcClients.id, developerApps.oidcClientId))
-      .where(eq(oidcClients.clientId, appClientId))
-      .limit(1);
-    const app = appRows[0];
-
-    if (app) {
-      const scopedRows = await db
-        .select()
-        .from(signerConfig)
-        .where(eq(signerConfig.clientId, app.id))
-        .limit(1);
-      const scopedSigner = scopedRows[0];
-      if (scopedSigner) {
-        return { signer: scopedSigner, providerAppId: app.id };
-      }
-    }
-  }
-
+/**
+ * Single shared clearinghouse signer (`id === "default"`).
+ * Scale horizontally with multiple replicas behind one URL / load balancer — routing stays here.
+ */
+export async function getDefaultSigner() {
   const signerRows = await db
     .select()
     .from(signerConfig)
     .where(eq(signerConfig.id, "default"))
     .limit(1);
-  const signer = signerRows[0];
-  return { signer, providerAppId: null };
+  return signerRows[0] ?? null;
+}
+
+/**
+ * Resolve `developer_apps.id` from JWT/session `appId` (OIDC `client_id`, optional `app_id` claim,
+ * or developer app UUID when already stored that way).
+ */
+export async function resolveDeveloperAppIdFromAuthAppId(
+  authAppId: string | null | undefined,
+): Promise<string | null> {
+  if (!authAppId?.trim()) return null;
+  const trimmed = authAppId.trim();
+
+  const byPk = await db
+    .select({ id: developerApps.id })
+    .from(developerApps)
+    .where(eq(developerApps.id, trimmed))
+    .limit(1);
+  if (byPk[0]) return byPk[0].id;
+
+  const byOidc = await db
+    .select({ id: developerApps.id })
+    .from(developerApps)
+    .innerJoin(oidcClients, eq(developerApps.oidcClientId, oidcClients.id))
+    .where(eq(oidcClients.clientId, trimmed))
+    .limit(1);
+  return byOidc[0]?.id ?? null;
+}
+
+export async function getSignerRoutingContext(authAppId?: string | null) {
+  const signer = await getDefaultSigner();
+  const providerAppId = await resolveDeveloperAppIdFromAuthAppId(authAppId);
+  return { signer, providerAppId };
 }
 
 /**
@@ -88,7 +99,7 @@ export async function proxySignOrchestratorInfo(
   requestBody: unknown,
   auth: AuthResult
 ): Promise<ProxyResult> {
-  const { signer } = await getSignerConfig(auth.appId);
+  const { signer } = await getSignerRoutingContext(auth.appId);
   if (!signer || signer.status !== "running") {
     return { status: 503, body: { error: "Signer is not running" } };
   }
@@ -122,7 +133,7 @@ export async function proxyGenerateLivePayment(
   requestBody: Record<string, unknown>,
   auth: AuthResult
 ): Promise<ProxyResult> {
-  const { signer, providerAppId } = await getSignerConfig(auth.appId);
+  const { signer, providerAppId } = await getSignerRoutingContext(auth.appId);
   if (!signer || signer.status !== "running") {
     return { status: 503, body: { error: "Signer is not running" } };
   }
@@ -197,7 +208,7 @@ export async function proxyGenerateLivePayment(
       await db.insert(streamSessions).values({
         id: uuidv4(),
         endUserId: auth.endUserId || null,
-        appId: auth.appId || providerAppId,
+        appId: providerAppId ?? auth.appId ?? null,
         bearerTokenHash: auth.tokenHash,
         manifestId,
         orchestratorAddress,
@@ -230,7 +241,7 @@ export async function proxyGenerateLivePayment(
       await db.insert(transactions).values({
         id: uuidv4(),
         endUserId: auth.endUserId || null,
-        appId: auth.appId || null,
+        appId: providerAppId ?? auth.appId ?? null,
         clientId: providerAppId,
         type: "usage",
         amountWei: feeWei.toString(),
@@ -282,7 +293,7 @@ export async function proxySignByocJob(
   requestBody: unknown,
   auth: AuthResult
 ): Promise<ProxyResult> {
-  const { signer } = await getSignerConfig(auth.appId);
+  const { signer } = await getSignerRoutingContext(auth.appId);
   if (!signer || signer.status !== "running") {
     return { status: 503, body: { error: "Signer is not running" } };
   }
@@ -314,7 +325,7 @@ export async function proxySignByocJob(
 export async function proxyDiscoverOrchestrators(
   auth: AuthResult
 ): Promise<ProxyResult> {
-  const { signer } = await getSignerConfig(auth.appId);
+  const { signer } = await getSignerRoutingContext(auth.appId);
   if (!signer || signer.status !== "running") {
     return { status: 503, body: { error: "Signer is not running" } };
   }
@@ -352,7 +363,8 @@ export async function syncSignerStatus(): Promise<{
   let ethAddress: string | undefined;
 
   try {
-    const response = await fetch(`${getSignerUrl()}/status`, {
+    const defaultSigner = await getDefaultSigner();
+    const response = await fetch(`${getSignerUrl(defaultSigner)}/status`, {
       signal: AbortSignal.timeout(3000),
     });
     if (response.ok) {

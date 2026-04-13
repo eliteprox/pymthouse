@@ -14,6 +14,7 @@ interface Props {
   onDomainsChange: (domains: { id: string; domain: string }[]) => void;
   hasSecret: boolean;
   onSecretGenerated: () => void;
+  readOnly?: boolean;
 }
 
 export default function TestingStep({
@@ -27,6 +28,7 @@ export default function TestingStep({
   onDomainsChange,
   hasSecret,
   onSecretGenerated,
+  readOnly = false,
 }: Props) {
   const [newUri, setNewUri] = useState("");
   const [newDomain, setNewDomain] = useState("");
@@ -41,6 +43,7 @@ export default function TestingStep({
   const isM2MOnly = grantTypes.includes("client_credentials") && !hasAuthCodeFlow;
 
   const persistRedirectUris = async (nextUris: string[]) => {
+    if (readOnly) return false;
     if (!appId) return true;
     setRedirectSaving(true);
     setRedirectPersistError(null);
@@ -69,6 +72,7 @@ export default function TestingStep({
   };
 
   const addRedirectUri = async () => {
+    if (readOnly) return;
     const uri = newUri.trim();
     if (!uri || redirectUris.includes(uri)) return;
     const previous = redirectUris;
@@ -106,6 +110,7 @@ export default function TestingStep({
   };
 
   const removeRedirectUri = async (uri: string) => {
+    if (readOnly) return;
     const previous = redirectUris;
     const next = redirectUris.filter((u) => u !== uri);
     onRedirectUrisChange(next);
@@ -116,7 +121,7 @@ export default function TestingStep({
   };
 
   const addDomain = async () => {
-    if (!appId || !newDomain.trim()) return;
+    if (readOnly || !appId || !newDomain.trim()) return;
     setAdding(true);
     try {
       const res = await fetch(`/api/v1/apps/${appId}/domains`, {
@@ -135,7 +140,7 @@ export default function TestingStep({
   };
 
   const removeDomain = async (domainId: string) => {
-    if (!appId) return;
+    if (readOnly || !appId) return;
     await fetch(`/api/v1/apps/${appId}/domains?domainId=${domainId}`, {
       method: "DELETE",
     });
@@ -148,7 +153,7 @@ export default function TestingStep({
       : "";
 
   const generateSecret = useCallback(async () => {
-    if (!appId) return;
+    if (readOnly || !appId) return;
     setGenerating(true);
     try {
       const res = await fetch(`/api/v1/apps/${appId}/credentials`, {
@@ -162,7 +167,7 @@ export default function TestingStep({
     } finally {
       setGenerating(false);
     }
-  }, [appId, onSecretGenerated]);
+  }, [appId, onSecretGenerated, readOnly]);
 
   const copyToClipboard = useCallback(
     async (text: string, label: string) => {
@@ -270,11 +275,12 @@ export default function TestingStep({
                 onChange={(e) => setNewUri(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addRedirectUri())}
                 placeholder="https://myapp.com/callback"
-                className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                disabled={readOnly}
+                className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <button
                 onClick={() => void addRedirectUri()}
-                disabled={!newUri.trim() || redirectSaving}
+                disabled={readOnly || !newUri.trim() || redirectSaving}
                 className="px-3 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 disabled:opacity-40 transition-colors"
               >
                 {redirectSaving ? "Saving..." : "Add"}
@@ -291,7 +297,7 @@ export default function TestingStep({
                     <button
                       type="button"
                       onClick={() => void removeRedirectUri(uri)}
-                      disabled={redirectSaving}
+                      disabled={readOnly || redirectSaving}
                       className="text-zinc-500 hover:text-red-400 ml-2 shrink-0 disabled:opacity-40"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -319,11 +325,12 @@ export default function TestingStep({
                 onChange={(e) => setNewDomain(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addDomain())}
                 placeholder="example.com"
-                className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                disabled={readOnly}
+                className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <button
                 onClick={addDomain}
-                disabled={adding || !newDomain.trim() || !appId}
+                disabled={readOnly || adding || !newDomain.trim() || !appId}
                 className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-500 disabled:opacity-40 transition-colors"
               >
                 {adding ? "Adding..." : "Add Domain"}
@@ -342,7 +349,8 @@ export default function TestingStep({
                     </div>
                     <button
                       onClick={() => removeDomain(d.id)}
-                      className="text-zinc-500 hover:text-red-400 transition-colors"
+                      disabled={readOnly}
+                      className="text-zinc-500 hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -443,7 +451,7 @@ export default function TestingStep({
             )}
             <button
               onClick={generateSecret}
-              disabled={generating || !appId}
+              disabled={readOnly || generating || !appId}
               className="px-4 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 disabled:opacity-40 transition-colors"
             >
               {generating ? "Generating..." : hasSecret ? "Rotate Secret" : "Generate Secret"}

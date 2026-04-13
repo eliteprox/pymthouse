@@ -18,6 +18,8 @@ interface Props {
   /** Post-logout URIs and initiate-login URI (OIDC client metadata). */
   initialPostLogoutRedirectUris?: string[];
   initialInitiateLoginUri?: string | null;
+  /** When false, settings are view-only (non-admin team members). */
+  canEdit?: boolean;
 }
 
 function mergeFormData(initial: Partial<AppFormData>): AppFormData {
@@ -40,6 +42,7 @@ export default function AppSettingsScreen({
   initialDomains,
   initialPostLogoutRedirectUris = [],
   initialInitiateLoginUri = null,
+  canEdit = true,
 }: Props) {
   const [formData, setFormData] = useState<AppFormData>(() =>
     mergeFormData(initialData),
@@ -67,6 +70,7 @@ export default function AppSettingsScreen({
   );
 
   const saveChanges = useCallback(async () => {
+    if (!canEdit) return;
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -108,7 +112,7 @@ export default function AppSettingsScreen({
     } finally {
       setSaving(false);
     }
-  }, [appId, formData, postLogoutRedirectUris, initiateLoginUri]);
+  }, [appId, formData, postLogoutRedirectUris, initiateLoginUri, canEdit]);
 
   const addPostLogoutUri = () => {
     const trimmed = newPostLogoutUri.trim();
@@ -132,6 +136,12 @@ export default function AppSettingsScreen({
 
   return (
     <div className="max-w-3xl mx-auto space-y-8">
+      {!canEdit && (
+        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-200 text-sm">
+          You can view this app&apos;s configuration. Only platform or app
+          administrators can change settings.
+        </div>
+      )}
       {error && (
         <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
           {error}
@@ -144,11 +154,19 @@ export default function AppSettingsScreen({
       )}
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
-        <AppInfoStep data={formData} onChange={updateFormData} />
+        <AppInfoStep
+          data={formData}
+          onChange={updateFormData}
+          readOnly={!canEdit}
+        />
       </section>
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
-        <AppModeStep data={formData} onChange={updateFormData} />
+        <AppModeStep
+          data={formData}
+          onChange={updateFormData}
+          readOnly={!canEdit}
+        />
       </section>
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
@@ -165,6 +183,7 @@ export default function AppSettingsScreen({
           onSecretGenerated={() =>
             setAppState((s) => ({ ...s, hasSecret: true }))
           }
+          readOnly={!canEdit}
         />
       </section>
 
@@ -190,12 +209,14 @@ export default function AppSettingsScreen({
                 e.key === "Enter" && (e.preventDefault(), addPostLogoutUri())
               }
               placeholder="https://example.com/logout-complete"
-              className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100"
+              disabled={!canEdit}
+              className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <button
               type="button"
               onClick={addPostLogoutUri}
-              className="px-4 py-2 rounded-lg bg-zinc-700 text-zinc-200 text-sm hover:bg-zinc-600 transition-colors"
+              disabled={!canEdit}
+              className="px-4 py-2 rounded-lg bg-zinc-700 text-zinc-200 text-sm hover:bg-zinc-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Add
             </button>
@@ -214,7 +235,8 @@ export default function AppSettingsScreen({
                       items.filter((item) => item !== uri),
                     )
                   }
-                  className="text-xs text-zinc-500 hover:text-red-400"
+                  disabled={!canEdit}
+                  className="text-xs text-zinc-500 hover:text-red-400 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Remove
                 </button>
@@ -232,7 +254,8 @@ export default function AppSettingsScreen({
             value={initiateLoginUri}
             onChange={(e) => setInitiateLoginUri(e.target.value)}
             placeholder="https://example.com/login"
-            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100"
+            disabled={!canEdit}
+            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
           />
         </div>
       </section>
@@ -254,7 +277,7 @@ export default function AppSettingsScreen({
         <button
           type="button"
           onClick={() => void saveChanges()}
-          disabled={saving || !formData.name.trim()}
+          disabled={!canEdit || saving || !formData.name.trim()}
           className="px-6 py-2.5 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
         >
           {saving ? "Saving…" : "Save changes"}

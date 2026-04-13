@@ -109,6 +109,7 @@ export async function getClient(clientId: string): Promise<{
   grantTypes: string[];
   tokenEndpointAuthMethod: string;
   clientSecretHash: string | null;
+  createdAt: string;
 } | null> {
   const rows = await db
     .select()
@@ -128,7 +129,38 @@ export async function getClient(clientId: string): Promise<{
     grantTypes: client.grantTypes.split(",").filter(Boolean),
     tokenEndpointAuthMethod: client.tokenEndpointAuthMethod,
     clientSecretHash: client.clientSecretHash,
+    createdAt: client.createdAt,
   };
+}
+
+/**
+ * Get all OIDC clients in the database.
+ * Used primarily for admin interfaces to view/manage all clients including seeded ones.
+ */
+export async function getAllClients(): Promise<Array<{
+  id: string;
+  clientId: string;
+  displayName: string;
+  redirectUris: string[];
+  allowedScopes: string[];
+  grantTypes: string[];
+  tokenEndpointAuthMethod: string;
+  hasSecret: boolean;
+  createdAt: string;
+}>> {
+  const rows = await db.select().from(oidcClients);
+
+  return rows.map((client) => ({
+    id: client.id,
+    clientId: client.clientId,
+    displayName: client.displayName,
+    redirectUris: JSON.parse(client.redirectUris) as string[],
+    allowedScopes: client.allowedScopes.split(/[,\s]+/).filter(Boolean),
+    grantTypes: client.grantTypes.split(",").filter(Boolean),
+    tokenEndpointAuthMethod: client.tokenEndpointAuthMethod,
+    hasSecret: !!client.clientSecretHash,
+    createdAt: client.createdAt,
+  }));
 }
 
 export async function validateRedirectUri(
@@ -287,16 +319,71 @@ const NAAP_WEB_REDIRECT_URIS = [
 ] as const;
 
 /**
- * Public NaaP web app: Authorization Code + PKCE (no client secret in the browser).
+ * Confidential NaaP web app: Authorization Code + refresh_token.
+ * The user agent completes the authorize redirect; the code→token exchange MUST run on NaaP
+ * servers with `client_id` + `client_secret` (`client_secret_post`).
+ *
+ * Set `NAAP_WEB_CLIENT_SECRET` to pin or rotate the secret. On first create, if unset,
+ * a one-time secret is generated and printed — store it and set the env var on future runs.
+ * Existing DB rows that still use `token_endpoint_auth_method: none` log a migration hint
+ * until `NAAP_WEB_CLIENT_SECRET` is set and seed is re-run.
  */
 export async function seedNaapWebClient(): Promise<void> {
+  const existing = await getClient("naap-web");
+  const envSecret = process.env.NAAP_WEB_CLIENT_SECRET?.trim();
+
+  if (existing) {
+    if (envSecret) {
+      await registerClient({
+        clientId: "naap-web",
+        clientSecret: envSecret,
+        displayName: "NaaP Platform (web)",
+        redirectUris: [...NAAP_WEB_REDIRECT_URIS],
+        allowedScopes: NAAP_WEB_OIDC_SCOPES,
+        grantTypes: ["authorization_code", "refresh_token"],
+        tokenEndpointAuthMethod: "client_secret_post",
+      });
+      console.log(
+        "[oidc:seed] naap-web: updated client_secret from NAAP_WEB_CLIENT_SECRET",
+      );
+    } else {
+      await db
+        .update(oidcClients)
+        .set({
+          displayName: "NaaP Platform (web)",
+          redirectUris: JSON.stringify([...NAAP_WEB_REDIRECT_URIS]),
+          allowedScopes: NAAP_WEB_OIDC_SCOPES,
+          grantTypes: "authorization_code,refresh_token",
+        })
+        .where(eq(oidcClients.clientId, "naap-web"));
+      console.log(
+        "[oidc:seed] naap-web: synced redirect URIs, scopes, and grant types (secret unchanged)",
+      );
+      if (existing.tokenEndpointAuthMethod === "none") {
+        console.warn(
+          "[oidc:seed] naap-web is still registered as a public client; set NAAP_WEB_CLIENT_SECRET and re-run oidc:seed to migrate to confidential.",
+        );
+      }
+    }
+    return;
+  }
+
+  const secret = envSecret ?? generateClientSecret();
+  if (!envSecret) {
+    console.warn(
+      "[oidc:seed] NAAP_WEB_CLIENT_SECRET not set; generated secret for naap-web — save it and set NAAP_WEB_CLIENT_SECRET on future runs:",
+    );
+    console.warn(`[oidc:seed]   ${secret}`);
+  }
+
   await registerClient({
     clientId: "naap-web",
+    clientSecret: secret,
     displayName: "NaaP Platform (web)",
     redirectUris: [...NAAP_WEB_REDIRECT_URIS],
     allowedScopes: NAAP_WEB_OIDC_SCOPES,
     grantTypes: ["authorization_code", "refresh_token"],
-    tokenEndpointAuthMethod: "none",
+    tokenEndpointAuthMethod: "client_secret_post",
   });
 }
 
