@@ -116,8 +116,12 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
         });
       } catch (err) {
         if (err instanceof TokenExchangeError) {
+          console.warn("[OIDC] token exchange rejected", {
+            code: err.code,
+            detail: err.message,
+          });
           return NextResponse.json(
-            { error: err.code, error_description: err.message },
+            { error: err.code, error_description: err.publicDescription },
             { status: 400 },
           );
         }

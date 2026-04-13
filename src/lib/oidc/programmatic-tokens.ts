@@ -5,15 +5,15 @@ import { ensureSigningKey } from "@/lib/oidc/jwks";
 import { getIssuer } from "@/lib/oidc/tokens";
 import { createSession, revokeSession, validateBearerToken } from "@/lib/auth";
 import { db } from "@/db/index";
-import { appUsers } from "@/db/schema";
+import { appUsers, developerApps, oidcClients } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL_DAYS = 30;
 
 export async function issueProgrammaticTokens(input: {
-  appId: string;
-  clientId: string;
+  developerAppId: string;
+  oauthClientId: string;
   appUserId: string;
   scopes: string[];
   role?: string;
@@ -26,8 +26,8 @@ export async function issueProgrammaticTokens(input: {
   const accessToken = await new SignJWT({
     scope,
     scp: input.scopes,
-    app_id: input.clientId,
-    client_id: input.clientId,
+    app_id: input.developerAppId,
+    client_id: input.oauthClientId,
     roles: [input.role || "user"],
     user_type: "app_user",
   })
@@ -42,7 +42,7 @@ export async function issueProgrammaticTokens(input: {
     .sign(keyPair.privateKey);
 
   const refresh = await createSession({
-    appId: input.clientId,
+    appId: input.developerAppId,
     label: `app_user_refresh:${input.appUserId}`,
     scopes: scope,
     expiresInDays: REFRESH_TOKEN_TTL_DAYS,
@@ -81,13 +81,25 @@ export async function rotateProgrammaticRefreshToken(refreshToken: string) {
     return null;
   }
 
+  const appRows = await db
+    .select({ oauthClientId: oidcClients.clientId })
+    .from(developerApps)
+    .innerJoin(oidcClients, eq(developerApps.oidcClientId, oidcClients.id))
+    .where(eq(developerApps.id, session.appId))
+    .limit(1);
+  const app = appRows[0];
+
+  if (!app) {
+    return null;
+  }
+
   await revokeSession(session.sessionId);
 
   return issueProgrammaticTokens({
-    appId: session.appId,
-    clientId: session.appId,
+    developerAppId: session.appId,
+    oauthClientId: app.oauthClientId,
     appUserId: appUser.id,
-    scopes: session.scopes.split(",").map((scope) => scope.trim()).filter(Boolean),
+    scopes: session.scopes.split(/[\s,]+/).map((scope) => scope.trim()).filter(Boolean),
     role: appUser.role,
   });
 }

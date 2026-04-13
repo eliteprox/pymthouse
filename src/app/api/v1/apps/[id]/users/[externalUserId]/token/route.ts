@@ -116,8 +116,8 @@ export async function POST(
     : ["sign:job", "discover:orchestrators"];
 
   const tokens = await issueProgrammaticTokens({
-    appId: id,
-    clientId: client.clientId,
+    developerAppId: id,
+    oauthClientId: client.clientId,
     appUserId: appUser.id,
     scopes,
     role: "user",
