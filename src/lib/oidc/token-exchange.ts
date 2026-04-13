@@ -44,11 +44,16 @@ export async function handleTokenExchange(params: {
     throw new TokenExchangeError(
       "unsupported_token_type",
       `subject_token_type must be ${JWT_TOKEN_TYPE}`,
+      "Unsupported subject token type",
     );
   }
 
   if (!(await validateClientSecret(clientId, clientSecret))) {
-    throw new TokenExchangeError("invalid_client", "Invalid client credentials");
+    throw new TokenExchangeError(
+      "invalid_client",
+      "Invalid client credentials",
+      "Invalid client credentials",
+    );
   }
 
   const clientRows = await db
@@ -58,7 +63,11 @@ export async function handleTokenExchange(params: {
     .limit(1);
   const clientRow = clientRows[0];
   if (!clientRow) {
-    throw new TokenExchangeError("invalid_client", "Client not found");
+    throw new TokenExchangeError(
+      "invalid_client",
+      "Client not found",
+      "Invalid client credentials",
+    );
   }
 
   const appRows = await db
@@ -71,6 +80,7 @@ export async function handleTokenExchange(params: {
     throw new TokenExchangeError(
       "invalid_client",
       "App is not approved for token exchange",
+      "Client is not approved for token exchange",
     );
   }
 
@@ -78,6 +88,7 @@ export async function handleTokenExchange(params: {
     throw new TokenExchangeError(
       "invalid_request",
       "Token exchange requires per_user billing pattern",
+      "Token exchange requires per-user billing",
     );
   }
 
@@ -85,6 +96,7 @@ export async function handleTokenExchange(params: {
     throw new TokenExchangeError(
       "invalid_request",
       "App has no JWKS URI configured for token exchange",
+      "App is not configured for token exchange",
     );
   }
 
@@ -95,6 +107,7 @@ export async function handleTokenExchange(params: {
     throw new TokenExchangeError(
       "invalid_request",
       `Failed to fetch platform JWKS: ${err instanceof Error ? err.message : "unknown error"}`,
+      "Unable to validate subject token",
     );
   }
 
@@ -107,6 +120,7 @@ export async function handleTokenExchange(params: {
     throw new TokenExchangeError(
       "invalid_grant",
       `Subject token verification failed: ${err instanceof Error ? err.message : "invalid signature"}`,
+      "Invalid subject token",
     );
   }
 
@@ -115,10 +129,11 @@ export async function handleTokenExchange(params: {
     throw new TokenExchangeError(
       "invalid_grant",
       "Subject token missing sub claim",
+      "Invalid subject token",
     );
   }
 
-  const { id: endUserId } = await findOrCreateAppEndUser(clientId, externalSub);
+  const { id: endUserId } = await findOrCreateAppEndUser(app.id, externalSub);
 
   const requestedScopes = scope
     .split(/\s+/)
@@ -132,6 +147,7 @@ export async function handleTokenExchange(params: {
   const expiresIn = 3600;
 
   const accessToken = await new jose.SignJWT({
+    app_id: app.id,
     client_id: clientId,
     scope: scopeString,
     gateway: scopeString.includes("gateway"),
@@ -157,11 +173,14 @@ export async function handleTokenExchange(params: {
 
 export class TokenExchangeError extends Error {
   code: string;
+  publicDescription: string;
   constructor(
     code: string,
     message: string,
+    publicDescription?: string,
   ) {
     super(message);
     this.code = code;
+    this.publicDescription = publicDescription || message;
   }
 }
