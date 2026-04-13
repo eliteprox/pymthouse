@@ -108,7 +108,7 @@ After migrations, register built-in OIDC clients (signing key, **`naap-web`**, *
 npm run oidc:seed
 ```
 
-Optional: set `NAAP_WEB_CLIENT_SECRET` and `NAAP_SERVICE_CLIENT_SECRET` in `.env` before seeding so the **`naap-web`** and **`naap-service`** secrets are known. See [docs/naap-oidc-integration.md](docs/naap-oidc-integration.md) and [docs/builder-api.md](docs/builder-api.md).
+Optional: set `NAAP_SERVICE_CLIENT_SECRET` in `.env` before seeding so the `naap-service` secret is known. See [docs/naap-oidc-integration.md](docs/naap-oidc-integration.md) and [docs/builder-api.md](docs/builder-api.md).
 
 ## Common commands
 
@@ -125,29 +125,7 @@ docker compose down
 # Run linter
 npm run lint
 ```
-## Deployment to Production
 
-### Vercel + Railway/Render
-
-Pymthouse can be deployed to Vercel (for the Next.js app) with the Docker signer running on Railway, Render, or Fly.io.
-
-**Quick Deploy (15 minutes):**
-See [DEPLOYMENT.md](DEPLOYMENT.md) for a quick checklist.
-
-**Detailed Guide:**
-See [docs/vercel-deployment.md](docs/vercel-deployment.md) for full step-by-step instructions including:
-- Deploying the go-livepeer signer to Railway/Render/Fly.io
-- Deploying the Next.js app to Vercel
-- Configuring environment variables
-- Setting up PostgreSQL (Neon/Vercel Postgres)
-- OAuth callback URLs
-- Custom domains
-
-**Files included:**
-- `vercel.json` - Vercel configuration
-- `Dockerfile.signer` - Docker image for signer deployment
-- `railway.json` - Railway configuration
-- `render.yaml` - Render Blueprint
 ## Troubleshooting
 
 - `Signer is not running`: ensure `go-livepeer` is up (`docker compose ps`) and healthy.

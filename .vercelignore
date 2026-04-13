@@ -1,8 +1,0 @@
-# Vercel ignore file - exclude local development files from deployment
-data/
-*.log
-.env.local
-.env
-docker-compose.yml
-Dockerfile
-drizzle/
