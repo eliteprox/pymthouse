@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "../../naap"
+		},
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../python-gateway"
+		},
+		{
+			"path": "../../discovery-service"
+		}
+	],
+	"settings": {}
+}

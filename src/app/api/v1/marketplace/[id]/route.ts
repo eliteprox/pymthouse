@@ -9,7 +9,7 @@ export async function GET(
 ) {
   const { id } = await params;
 
-  const app = db
+  const results = await db
     .select({
       id: developerApps.id,
       name: developerApps.name,
@@ -30,7 +30,9 @@ export async function GET(
     .from(developerApps)
     .leftJoin(oidcClients, eq(developerApps.oidcClientId, oidcClients.id))
     .where(and(eq(developerApps.id, id), eq(developerApps.status, "approved")))
-    .get();
+    .limit(1);
+
+  const app = results[0];
 
   if (!app) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

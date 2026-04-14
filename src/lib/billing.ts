@@ -1,69 +1,106 @@
 import { db } from "@/db/index";
-import { endUsers, transactions, streamSessions } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { endUsers, transactions } from "@/db/schema";
+import { eq, and, sql } from "drizzle-orm";
+import { v4 as uuidv4 } from "uuid";
 
-export function hasEnoughCredits(
+export async function hasEnoughCredits(
   endUserId: string,
-  requiredWei: bigint
-): boolean {
-  const user = db
+  requiredWei: bigint,
+): Promise<boolean> {
+  const rows = await db
     .select()
     .from(endUsers)
     .where(eq(endUsers.id, endUserId))
-    .get();
+    .limit(1);
+  const user = rows[0];
   if (!user) return false;
   return BigInt(user.creditBalanceWei) >= requiredWei;
 }
 
-export function deductCredits(
+export async function deductCredits(
   endUserId: string,
-  amountWei: bigint
-): boolean {
-  const user = db
-    .select()
-    .from(endUsers)
-    .where(eq(endUsers.id, endUserId))
-    .get();
-  if (!user) return false;
+  amountWei: bigint,
+): Promise<boolean> {
+  const updated = await db
+    .update(endUsers)
+    .set({
+      creditBalanceWei:
+        sql`(((${endUsers.creditBalanceWei})::numeric - ${amountWei.toString()}::numeric)::text)`,
+    })
+    .where(
+      and(
+        eq(endUsers.id, endUserId),
+        sql`(${endUsers.creditBalanceWei})::numeric >= ${amountWei.toString()}::numeric`,
+      ),
+    )
+    .returning({ id: endUsers.id });
 
-  const current = BigInt(user.creditBalanceWei);
-  if (current < amountWei) return false;
-
-  db.update(endUsers)
-    .set({ creditBalanceWei: (current - amountWei).toString() })
-    .where(eq(endUsers.id, endUserId))
-    .run();
-  return true;
+  return updated.length > 0;
 }
 
-export function addCredits(
+export async function addCredits(
   endUserId: string,
-  amountWei: bigint
-): void {
-  const user = db
+  amountWei: bigint,
+): Promise<void> {
+  const rows = await db
     .select()
     .from(endUsers)
     .where(eq(endUsers.id, endUserId))
-    .get();
+    .limit(1);
+  const user = rows[0];
   if (!user) return;
 
   const newBalance = BigInt(user.creditBalanceWei) + amountWei;
-  db.update(endUsers)
+  await db
+    .update(endUsers)
     .set({ creditBalanceWei: newBalance.toString() })
-    .where(eq(endUsers.id, endUserId))
-    .run();
+    .where(eq(endUsers.id, endUserId));
 }
 
-export function getTransactions(
-  endUserId?: string,
-  limit: number = 50,
-  offset: number = 0
-) {
-  let query = db.select().from(transactions);
+export async function findOrCreateAppEndUser(
+  appId: string,
+  externalUserId: string,
+): Promise<{ id: string; isNew: boolean }> {
+  const existingRows = await db
+    .select()
+    .from(endUsers)
+    .where(
+      and(
+        eq(endUsers.appId, appId),
+        eq(endUsers.externalUserId, externalUserId),
+      ),
+    )
+    .limit(1);
+  const existing = existingRows[0];
 
-  if (endUserId) {
-    query = query.where(eq(transactions.endUserId, endUserId)) as typeof query;
+  if (existing) {
+    return { id: existing.id, isNew: false };
   }
 
-  return query.limit(limit).offset(offset).all();
+  const id = uuidv4();
+  await db.insert(endUsers).values({
+    id,
+    appId,
+    externalUserId,
+    creditBalanceWei: "0",
+  });
+
+  return { id, isNew: true };
+}
+
+export async function getTransactions(
+  endUserId?: string,
+  limit: number = 50,
+  offset: number = 0,
+) {
+  if (endUserId) {
+    return db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.endUserId, endUserId))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  return db.select().from(transactions).limit(limit).offset(offset);
 }

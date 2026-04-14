@@ -6,17 +6,14 @@ import { eq } from "drizzle-orm";
 import DashboardLayout from "@/components/DashboardLayout";
 import StreamSessionTable from "@/components/StreamSessionTable";
 
-export default function StreamsPage() {
-  const activeSessions = db
+export default async function StreamsPage() {
+  const activeSessions = await db
     .select()
     .from(streamSessions)
-    .where(eq(streamSessions.status, "active"))
-    .all();
+    .where(eq(streamSessions.status, "active"));
 
-  const historicalSessions = db
-    .select()
-    .from(streamSessions)
-    .all()
+  const allSessions = await db.select().from(streamSessions);
+  const historicalSessions = allSessions
     .filter((s) => s.status !== "active")
     .slice(0, 100);
 

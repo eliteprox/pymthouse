@@ -5,6 +5,7 @@ import { db } from "@/db/index";
 import { developerApps, oidcClients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { updateClientConfig } from "@/lib/oidc/clients";
+import { publishProviderAndPlans } from "@/lib/naap-marketplace";
 
 export async function POST(
   request: NextRequest,
@@ -23,11 +24,13 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const app = db
+  const appResults = await db
     .select()
     .from(developerApps)
     .where(eq(developerApps.id, id))
-    .get();
+    .limit(1);
+
+  const app = appResults[0];
 
   if (!app) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -53,20 +56,22 @@ export async function POST(
     app.pendingGrantTypes &&
     app.oidcClientId
   ) {
-    const client = db
+    const clientResults = await db
       .select()
       .from(oidcClients)
       .where(eq(oidcClients.id, app.oidcClientId))
-      .get();
+      .limit(1);
+
+    const client = clientResults[0];
 
     if (action === "approve" && client) {
-      updateClientConfig(client.clientId, {
+      await updateClientConfig(client.clientId, {
         allowedScopes: app.pendingScopes,
         grantTypes: app.pendingGrantTypes.split(",").filter(Boolean),
       });
     }
 
-    db.update(developerApps)
+    await db.update(developerApps)
       .set({
         pendingScopes: null,
         pendingGrantTypes: null,
@@ -74,8 +79,7 @@ export async function POST(
         reviewerNotes: action === "reject" ? notes || null : null,
         updatedAt: now,
       })
-      .where(eq(developerApps.id, id))
-      .run();
+      .where(eq(developerApps.id, id));
 
     return NextResponse.json({
       success: true,
@@ -94,16 +98,23 @@ export async function POST(
 
   const newStatus = action === "approve" ? "approved" : "rejected";
 
-  db.update(developerApps)
+  await db.update(developerApps)
     .set({
       status: newStatus,
       reviewerNotes: notes || null,
       reviewedBy: userId,
       reviewedAt: now,
+      publishedAt: action === "approve" ? now : null,
       updatedAt: now,
     })
-    .where(eq(developerApps.id, id))
-    .run();
+    .where(eq(developerApps.id, id));
+
+  // Publish to marketplace when approved
+  if (action === "approve") {
+    void publishProviderAndPlans(id).catch((err) => {
+      console.error("Failed to publish app to marketplace:", err);
+    });
+  }
 
   return NextResponse.json({ success: true, status: newStatus });
 }

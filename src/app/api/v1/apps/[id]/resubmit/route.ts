@@ -23,11 +23,10 @@ export async function POST(
 
   const userId = (session.user as Record<string, unknown>).id as string;
 
-  const app = db
+  const [app] = await db
     .select()
     .from(developerApps)
-    .where(eq(developerApps.id, id))
-    .get();
+    .where(eq(developerApps.id, id));
 
   if (!app || app.ownerId !== userId) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -79,8 +78,7 @@ export async function POST(
       reviewedAt: null,
       updatedAt: now,
     })
-    .where(eq(developerApps.id, id))
-    .run();
+    .where(eq(developerApps.id, id));
 
   return NextResponse.json({
     success: true,

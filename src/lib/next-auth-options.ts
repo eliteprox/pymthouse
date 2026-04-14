@@ -8,10 +8,12 @@ import { eq, and } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { validateBearerToken, hasScope } from "@/lib/auth";
 import { verifyPrivyToken, findOrCreateDeveloperUser, getPrivyClient } from "@/lib/privy";
+import { getNextAuthSecret } from "@/lib/next-auth-secret";
+
+const nextAuthSecret = getNextAuthSecret();
 
 export const authOptions: NextAuthOptions = {
   providers: [
-    // Token login -- paste a pmth_ bearer token to sign in
     CredentialsProvider({
       id: "token",
       name: "Admin Token",
@@ -21,16 +23,17 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.token) return null;
 
-        const auth = validateBearerToken(credentials.token);
+        const auth = await validateBearerToken(credentials.token);
         if (!auth) return null;
         if (!hasScope(auth.scopes, "admin")) return null;
         if (!auth.userId) return null;
 
-        const user = db
+        const userRows = await db
           .select()
           .from(users)
           .where(eq(users.id, auth.userId))
-          .get();
+          .limit(1);
+        const user = userRows[0];
 
         if (!user) return null;
 
@@ -42,7 +45,6 @@ export const authOptions: NextAuthOptions = {
       },
     }),
 
-    // Privy wallet login -- developer sign-in with ETH wallet
     CredentialsProvider({
       id: "privy-wallet",
       name: "Wallet",
@@ -56,7 +58,6 @@ export const authOptions: NextAuthOptions = {
         const privyDid = await verifyPrivyToken(credentials.privyToken);
         if (!privyDid) return null;
 
-        // Get additional user info from Privy if available
         let email: string | undefined;
         let name: string | undefined;
         try {
@@ -64,13 +65,12 @@ export const authOptions: NextAuthOptions = {
           if (client) {
             const privyUser = await client.users()._get(privyDid);
             const emailAccount = privyUser.linked_accounts.find(
-              (a) => a.type === "email"
+              (a) => a.type === "email",
             ) as { address: string } | undefined;
             email = emailAccount?.address || undefined;
-            // Pick up wallet from linked accounts (email users get embedded wallets)
             if (!credentials.walletAddress) {
               const walletAccount = privyUser.linked_accounts.find(
-                (a) => a.type === "wallet"
+                (a) => a.type === "wallet",
               ) as { address: string } | undefined;
               if (walletAccount?.address) {
                 credentials.walletAddress = walletAccount.address;
@@ -78,21 +78,22 @@ export const authOptions: NextAuthOptions = {
             }
           }
         } catch {
-          // Non-critical: proceed without extra info
+          /* non-critical */
         }
 
-        const { id } = findOrCreateDeveloperUser(
+        const { id } = await findOrCreateDeveloperUser(
           privyDid,
           credentials.walletAddress || undefined,
           undefined,
-          email
+          email,
         );
 
-        const user = db
+        const userRows = await db
           .select()
           .from(users)
           .where(eq(users.id, id))
-          .get();
+          .limit(1);
+        const user = userRows[0];
 
         if (!user) return null;
 
@@ -125,53 +126,49 @@ export const authOptions: NextAuthOptions = {
     async signIn({ user, account }) {
       if (!account) return false;
 
-      // Token login -- user already validated in authorize()
       if (account.provider === "token") return true;
 
-      // Privy wallet login -- user already created/found in authorize()
       if (account.provider === "privy-wallet") return true;
 
-      // OAuth login
       if (!user.email) return false;
 
       const provider = account.provider;
       const subject = account.providerAccountId;
 
-      const existing = db
+      const existingRows = await db
         .select()
         .from(users)
         .where(
           and(
             eq(users.oauthProvider, provider),
-            eq(users.oauthSubject, subject)
-          )
+            eq(users.oauthSubject, subject),
+          ),
         )
-        .get();
+        .limit(1);
+      const existing = existingRows[0];
 
       if (!existing) {
-        db.insert(users)
-          .values({
-            id: uuidv4(),
-            email: user.email,
-            name: user.name || null,
-            oauthProvider: provider,
-            oauthSubject: subject,
-            role: "developer",
-          })
-          .run();
+        await db.insert(users).values({
+          id: uuidv4(),
+          email: user.email,
+          name: user.name || null,
+          oauthProvider: provider,
+          oauthSubject: subject,
+          role: "developer",
+        });
       }
 
       return true;
     },
     async session({ session, token }) {
       if (session.user) {
-        // Try direct ID lookup first (token login stores userId)
         if (token.userId) {
-          const pmthUser = db
+          const pmthRows = await db
             .select()
             .from(users)
             .where(eq(users.id, token.userId as string))
-            .get();
+            .limit(1);
+          const pmthUser = pmthRows[0];
 
           if (pmthUser) {
             (session.user as Record<string, unknown>).id = pmthUser.id;
@@ -180,18 +177,18 @@ export const authOptions: NextAuthOptions = {
           }
         }
 
-        // Fall back to OAuth provider lookup
         if (token.provider && token.sub) {
-          const pmthUser = db
+          const pmthRows = await db
             .select()
             .from(users)
             .where(
               and(
                 eq(users.oauthProvider, token.provider as string),
-                eq(users.oauthSubject, token.sub)
-              )
+                eq(users.oauthSubject, token.sub),
+              ),
             )
-            .get();
+            .limit(1);
+          const pmthUser = pmthRows[0];
 
           if (pmthUser) {
             (session.user as Record<string, unknown>).id = pmthUser.id;
@@ -205,7 +202,6 @@ export const authOptions: NextAuthOptions = {
       if (account) {
         token.provider = account.provider;
       }
-      // For credentials login, store the DB user ID directly
       if (user?.id) {
         token.userId = user.id;
       }
@@ -218,5 +214,5 @@ export const authOptions: NextAuthOptions = {
   pages: {
     signIn: "/",
   },
-  secret: process.env.NEXTAUTH_SECRET,
+  secret: nextAuthSecret,
 };

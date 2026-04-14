@@ -42,9 +42,8 @@ export default function AdminAppsReviewPage() {
 
   useEffect(() => {
     if (status === "unauthenticated" || (status === "authenticated" && userRole !== "admin")) {
-      if (status === "authenticated") {
-        router.push("/");
-      }
+      router.push("/");
+      setLoading(false);
       return;
     }
     if (status !== "authenticated") return;
@@ -152,191 +151,181 @@ export default function AdminAppsReviewPage() {
 
       {loading ? (
         <div className="text-zinc-500 text-center py-12 animate-pulse">
-          Loading submissions...
-        </div>
-      ) : pendingApps.length === 0 && otherApps.length === 0 ? (
-        <div className="text-center py-16 border border-zinc-800 rounded-xl bg-zinc-900/20">
-          <div className="w-16 h-16 bg-zinc-800 rounded-xl flex items-center justify-center mx-auto mb-4">
-            <svg
-              className="w-8 h-8 text-zinc-600"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-          </div>
-          <h2 className="text-lg font-medium text-zinc-300 mb-2">
-            No app submissions
-          </h2>
-          <p className="text-sm text-zinc-500">
-            Apps submitted by developers will appear here for review.
-          </p>
+          Loading apps...
         </div>
       ) : (
         <div className="space-y-8">
-          {pendingApps.length > 0 && (
-            <div>
-              <h2 className="text-lg font-semibold text-zinc-200 mb-4">
-                Pending Review ({pendingApps.length})
-              </h2>
+          {/* Pending Apps */}
+          <div>
+            <h2 className="text-lg font-semibold text-zinc-200 mb-4">
+              Pending Review ({pendingApps.length})
+            </h2>
+            {pendingApps.length === 0 ? (
+              <div className="text-zinc-500 text-center py-8 border border-zinc-800 rounded-xl bg-zinc-900/30">
+                No pending submissions
+              </div>
+            ) : (
               <div className="space-y-4">
                 {pendingApps.map((app) => (
-                  <ReviewCard
+                  <div
                     key={app.id}
-                    app={app}
-                    reviewing={reviewing === app.id}
-                    notes={notesByAppId[app.id] ?? ""}
-                    setNotes={(v) =>
-                      setNotesByAppId((prev) => ({ ...prev, [app.id]: v }))
-                    }
-                    onReview={handleReview}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
+                    className="border border-zinc-800 rounded-xl p-5 bg-zinc-900/30"
+                  >
+                    <div className="flex items-start justify-between gap-4 mb-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="text-lg font-semibold text-zinc-200">
+                            {app.name}
+                          </h3>
+                          <span
+                            className={`px-2 py-0.5 rounded text-xs font-medium ${
+                              STATUS_COLORS[app.status] || "bg-zinc-700/30 text-zinc-400"
+                            }`}
+                          >
+                            {app.status.replace("_", " ")}
+                          </span>
+                          {app.pendingRevisionSubmittedAt && (
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-500/20 text-amber-400">
+                              pending revision
+                            </span>
+                          )}
+                        </div>
+                        {app.subtitle && (
+                          <p className="text-sm text-zinc-400">{app.subtitle}</p>
+                        )}
+                        <div className="flex items-center gap-3 mt-2 text-xs text-zinc-500">
+                          {app.developerName && <span>by {app.developerName}</span>}
+                          {app.category && (
+                            <>
+                              <span>•</span>
+                              <span>{app.category}</span>
+                            </>
+                          )}
+                          {app.ownerEmail && (
+                            <>
+                              <span>•</span>
+                              <span>{app.ownerEmail}</span>
+                            </>
+                          )}
+                        </div>
+                        {app.submittedAt && (
+                          <p className="text-xs text-zinc-600 mt-1">
+                            Submitted: {new Date(app.submittedAt).toLocaleDateString()}
+                          </p>
+                        )}
+                      </div>
+                      <Link
+                        href={`/apps/${app.id}`}
+                        className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
+                      >
+                        View Details
+                      </Link>
+                    </div>
 
-          {otherApps.length > 0 && (
-            <div>
-              <h2 className="text-lg font-semibold text-zinc-200 mb-4">
-                Previously Reviewed ({otherApps.length})
-              </h2>
-              <div className="space-y-4">
-                {otherApps.map((app) => (
-                  <ReviewCard
-                    key={app.id}
-                    app={app}
-                    reviewing={false}
-                    revoking={revoking === app.id}
-                    notes=""
-                    setNotes={() => {}}
-                    onReview={async () => {}}
-                    onRevoke={app.status === "approved" ? handleRevoke : undefined}
-                    readOnly
-                  />
+                    <div className="mt-4">
+                      <label className="block text-xs text-zinc-500 mb-2">
+                        Reviewer Notes (optional)
+                      </label>
+                      <textarea
+                        value={notesByAppId[app.id] || ""}
+                        onChange={(e) =>
+                          setNotesByAppId((prev) => ({ ...prev, [app.id]: e.target.value }))
+                        }
+                        placeholder="Add notes about this submission..."
+                        rows={2}
+                        className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-3 mt-4">
+                      <button
+                        onClick={() => handleReview(app.id, "approve")}
+                        disabled={reviewing === app.id}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {reviewing === app.id ? "Processing..." : "Approve"}
+                      </button>
+                      <button
+                        onClick={() => handleReview(app.id, "reject")}
+                        disabled={reviewing === app.id}
+                        className="px-4 py-2 bg-red-600/80 hover:bg-red-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
+
+          {/* Other Apps */}
+          <div>
+            <h2 className="text-lg font-semibold text-zinc-200 mb-4">
+              All Apps ({otherApps.length})
+            </h2>
+            {otherApps.length === 0 ? (
+              <div className="text-zinc-500 text-center py-8 border border-zinc-800 rounded-xl bg-zinc-900/30">
+                No apps yet
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {otherApps.map((app) => (
+                  <div
+                    key={app.id}
+                    className="border border-zinc-800 rounded-xl p-4 bg-zinc-900/30"
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="text-base font-semibold text-zinc-200">
+                            {app.name}
+                          </h3>
+                          <span
+                            className={`px-2 py-0.5 rounded text-xs font-medium ${
+                              STATUS_COLORS[app.status] || "bg-zinc-700/30 text-zinc-400"
+                            }`}
+                          >
+                            {app.status}
+                          </span>
+                        </div>
+                        {app.subtitle && (
+                          <p className="text-xs text-zinc-400">{app.subtitle}</p>
+                        )}
+                        <div className="flex items-center gap-2 mt-1 text-xs text-zinc-500">
+                          {app.category && <span>{app.category}</span>}
+                          {app.ownerEmail && (
+                            <>
+                              <span>•</span>
+                              <span>{app.ownerEmail}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <Link
+                        href={`/apps/${app.id}`}
+                        className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors shrink-0"
+                      >
+                        View
+                      </Link>
+                    </div>
+
+                    {app.status === "approved" && (
+                      <button
+                        onClick={() => handleRevoke(app.id)}
+                        disabled={revoking === app.id}
+                        className="mt-3 w-full px-3 py-1.5 text-xs text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-500/50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {revoking === app.id ? "Revoking..." : "Revoke Approval"}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </DashboardLayout>
-  );
-}
-
-function ReviewCard({
-  app,
-  reviewing,
-  revoking,
-  notes,
-  setNotes,
-  onReview,
-  onRevoke,
-  readOnly = false,
-}: {
-  app: AdminApp;
-  reviewing: boolean;
-  revoking?: boolean;
-  notes: string;
-  setNotes: (v: string) => void;
-  onReview: (id: string, action: "approve" | "reject") => Promise<void>;
-  onRevoke?: (id: string) => Promise<void>;
-  readOnly?: boolean;
-}) {
-  const statusColor = STATUS_COLORS[app.status] || "bg-zinc-700 text-zinc-300";
-
-  return (
-    <div className="p-5 border border-zinc-800 rounded-xl bg-zinc-900/30">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h3 className="text-base font-semibold text-zinc-100">{app.name}</h3>
-            <span
-              className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColor}`}
-            >
-              {app.status.replace("_", " ")}
-            </span>
-          </div>
-          {app.subtitle && (
-            <p className="text-sm text-zinc-500 mt-0.5">{app.subtitle}</p>
-          )}
-          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-sm text-zinc-400">
-            <span>{app.developerName || app.ownerName || "—"}</span>
-            {app.ownerEmail && (
-              <span className="text-zinc-500">{app.ownerEmail}</span>
-            )}
-            {app.category && <span>{app.category}</span>}
-            {app.submittedAt && (
-              <span>
-                Submitted{" "}
-                {new Date(app.submittedAt).toLocaleDateString(undefined, {
-                  dateStyle: "short",
-                })}
-              </span>
-            )}
-          </div>
-          {app.clientId && (
-            <code className="mt-2 block text-xs text-zinc-600 font-mono">
-              {app.clientId}
-            </code>
-          )}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Link
-            href={`/apps/${app.id}`}
-            className="px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-lg hover:border-zinc-600 transition-colors"
-          >
-            View
-          </Link>
-          {app.status === "approved" && onRevoke && (
-            <button
-              onClick={() => onRevoke(app.id)}
-              disabled={revoking}
-              className="px-3 py-1.5 text-sm text-amber-400 hover:text-amber-300 border border-amber-500/30 rounded-lg hover:border-amber-500/50 transition-colors disabled:opacity-50"
-            >
-              {revoking ? "..." : "Revoke"}
-            </button>
-          )}
-          {!readOnly && (
-            <>
-              <button
-                onClick={() => onReview(app.id, "reject")}
-                disabled={reviewing}
-                className="px-3 py-1.5 text-sm text-red-400 hover:text-red-300 border border-red-500/30 rounded-lg hover:border-red-500/50 transition-colors disabled:opacity-50"
-              >
-                {reviewing ? "..." : "Reject"}
-              </button>
-              <button
-                onClick={() => onReview(app.id, "approve")}
-                disabled={reviewing}
-                className="px-3 py-1.5 text-sm text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 rounded-lg hover:border-emerald-500/50 transition-colors disabled:opacity-50"
-              >
-                {reviewing ? "..." : "Approve"}
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-      {!readOnly && (
-        <div className="mt-4 pt-4 border-t border-zinc-800">
-          <label className="block text-xs text-zinc-500 mb-2">
-            Notes (optional, shown to developer on reject)
-          </label>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Add notes for the developer..."
-            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 resize-none"
-            rows={2}
-          />
-        </div>
-      )}
-    </div>
   );
 }

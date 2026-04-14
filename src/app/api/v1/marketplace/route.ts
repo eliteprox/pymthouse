@@ -4,7 +4,7 @@ import { developerApps, oidcClients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 export async function GET() {
-  const apps = db
+  const apps = await db
     .select({
       id: developerApps.id,
       name: developerApps.name,
@@ -21,8 +21,7 @@ export async function GET() {
     })
     .from(developerApps)
     .leftJoin(oidcClients, eq(developerApps.oidcClientId, oidcClients.id))
-    .where(eq(developerApps.status, "approved"))
-    .all();
+    .where(eq(developerApps.status, "approved"));
 
   return NextResponse.json({ apps });
 }

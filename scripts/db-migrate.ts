@@ -1,21 +1,78 @@
-import Database from "better-sqlite3";
-import fs from "fs";
+/**
+ * Apply Drizzle SQL migrations to PostgreSQL (DATABASE_URL).
+ */
+import "./load-env-first";
 import path from "path";
-import { runMigrations } from "../src/db/migrate";
+import { existsSync } from "fs";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
+import * as schema from "../src/db/schema";
 
-const dbPath = process.env.DATABASE_PATH || "./data/pymthouse.db";
-const dir = path.dirname(dbPath);
+/**
+ * Resolve the drizzle migrations folder robustly across environments
+ * (local dev, Vercel build, tsx CJS/ESM transforms).
+ */
+function findMigrationsFolder(): string {
+  // 1. npm scripts always set cwd to the project root
+  const fromCwd = path.resolve(process.cwd(), "drizzle");
+  if (existsSync(path.join(fromCwd, "meta", "_journal.json"))) return fromCwd;
 
-if (!fs.existsSync(dir)) {
-  fs.mkdirSync(dir, { recursive: true });
+  // 2. Relative to this script file (works when __dirname is available)
+  if (typeof __dirname !== "undefined") {
+    const fromDir = path.resolve(__dirname, "..", "drizzle");
+    if (existsSync(path.join(fromDir, "meta", "_journal.json"))) return fromDir;
+  }
+
+  throw new Error(
+    `Cannot locate drizzle/meta/_journal.json from cwd=${process.cwd()}`
+  );
 }
 
-const sqlite = new Database(dbPath);
-sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = ON");
-sqlite.pragma("busy_timeout = 5000");
+const { signerConfig } = schema;
 
-runMigrations(sqlite);
-sqlite.close();
+async function seedDefaultSigner(dbUrl: string) {
+  const client = postgres(dbUrl, { max: 1 });
+  const db = drizzle(client, { schema });
+  const now = new Date().toISOString();
+  await db
+    .insert(signerConfig)
+    .values({
+      id: "default",
+      name: "pymthouse signer",
+      network: "arbitrum-one-mainnet",
+      ethRpcUrl: "https://arb1.arbitrum.io/rpc",
+      signerPort: 8081,
+      status: "stopped",
+      defaultCutPercent: 15.0,
+      billingMode: "delegated",
+      createdAt: now,
+    })
+    .onConflictDoNothing({ target: signerConfig.id });
+  await client.end({ timeout: 5 });
+}
 
-console.log(`[db:migrate] schema ready at ${dbPath}`);
+async function main() {
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (!databaseUrl) {
+    console.error("[db:migrate] DATABASE_URL is not set.");
+    process.exit(1);
+  }
+
+  const migrationClient = postgres(databaseUrl, { max: 1 });
+  const migrationsFolder = findMigrationsFolder();
+  console.log(`[db:migrate] Using migrations from: ${migrationsFolder}`);
+  await migrate(drizzle(migrationClient, { schema }), {
+    migrationsFolder,
+  });
+  await migrationClient.end({ timeout: 5 });
+
+  await seedDefaultSigner(databaseUrl);
+
+  console.log("[db:migrate] PostgreSQL migrations applied.");
+}
+
+main().catch((err) => {
+  console.error("[db:migrate] Error:", err);
+  process.exit(1);
+});

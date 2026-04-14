@@ -28,23 +28,25 @@ async function getAdminUser(request: NextRequest) {
   if (oauthSession?.user) {
     const sessionUser = oauthSession.user as Record<string, unknown>;
     if (sessionUser.id) {
-      const user = db
+      const rows = await db
         .select()
         .from(users)
         .where(eq(users.id, sessionUser.id as string))
-        .get();
+        .limit(1);
+      const user = rows[0];
       if (user?.role !== "admin") return null;
       return user;
     }
   }
 
-  const auth = authenticateRequest(request);
+  const auth = await authenticateRequest(request);
   if (auth && hasScope(auth.scopes, "admin") && auth.userId) {
-    const user = db
+    const rows = await db
       .select()
       .from(users)
       .where(eq(users.id, auth.userId))
-      .get();
+      .limit(1);
+    const user = rows[0];
     if (user?.role !== "admin") return null;
     return user;
   }

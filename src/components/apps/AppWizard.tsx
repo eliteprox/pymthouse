@@ -1,40 +1,27 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import AppInfoStep from "./steps/AppInfoStep";
-import AuthAndDomainsStep from "./steps/AuthAndDomainsStep";
+import AppModeStep from "./steps/AppModeStep";
 import TestingStep from "./steps/TestingStep";
-import ReviewSubmitStep from "./steps/ReviewSubmitStep";
 import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
 
-const STEPS = [
-  { label: "App Info", key: "info" },
-  { label: "Auth & Scopes", key: "auth" },
-  { label: "Domains & Testing", key: "testing" },
-  { label: "Submit", key: "submit" },
-] as const;
+const ALL_STEPS = [
+  { label: "App Info", key: "info" as const, alwaysVisible: true },
+  { label: "Auth & Scopes", key: "mode" as const, alwaysVisible: true },
+  { label: "Credentials & Testing", key: "testing" as const, alwaysVisible: true },
+];
 
 export interface AppFormData {
-  // Step 1: App Info
   name: string;
-  subtitle: string;
   description: string;
-  category: string;
   developerName: string;
   websiteUrl: string;
-
-  // Step 2: Auth & Domains
   tokenEndpointAuthMethod: "none" | "client_secret_post" | "client_secret_basic";
   redirectUris: string[];
   allowedScopes: string;
   grantTypes: string[];
-
-  // Step 5: Review & Submit
-  supportUrl: string;
-  privacyPolicyUrl: string;
-  tosUrl: string;
-  demoRecordingUrl: string;
-  linksToPurchases: boolean;
 }
 
 export interface AppState {
@@ -45,22 +32,15 @@ export interface AppState {
   pendingRevisionSubmittedAt?: string | null;
 }
 
-const defaultFormData: AppFormData = {
+export const defaultAppFormData: AppFormData = {
   name: "",
-  subtitle: "",
   description: "",
-  category: "",
   developerName: "",
   websiteUrl: "",
   tokenEndpointAuthMethod: "none",
   redirectUris: [],
   allowedScopes: DEFAULT_OIDC_SCOPES,
   grantTypes: ["authorization_code", "refresh_token"],
-  supportUrl: "",
-  privacyPolicyUrl: "",
-  tosUrl: "",
-  demoRecordingUrl: "",
-  linksToPurchases: false,
 };
 
 interface Props {
@@ -70,9 +50,10 @@ interface Props {
 }
 
 export default function AppWizard({ initialData, initialState, initialDomains }: Props) {
+  const router = useRouter();
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState<AppFormData>({
-    ...defaultFormData,
+    ...defaultAppFormData,
     ...initialData,
   });
   const [appState, setAppState] = useState<AppState>(
@@ -83,6 +64,12 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isM2MMode =
+    formData.tokenEndpointAuthMethod !== "none" &&
+    formData.grantTypes.includes("client_credentials");
+
+  const visibleSteps = useMemo(() => ALL_STEPS, []);
 
   const updateFormData = useCallback(
     (updates: Partial<AppFormData>) => {
@@ -110,7 +97,7 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
         setAppState({
           id: data.id,
           clientId: data.clientId,
-          status: "draft",
+          status: data.status || "approved",
           hasSecret: false,
         });
       } else {
@@ -136,21 +123,31 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
   const handleNext = useCallback(async () => {
     try {
       await saveApp();
-      setStep((s) => Math.min(s + 1, STEPS.length - 1));
+      setStep((currentStep) => Math.min(currentStep + 1, visibleSteps.length - 1));
     } catch {
       // error already set
     }
-  }, [saveApp]);
+  }, [saveApp, visibleSteps.length]);
 
   const handleBack = useCallback(() => {
     setStep((s) => Math.max(s - 1, 0));
   }, []);
 
+  const handleFinish = useCallback(async () => {
+    if (!appState.id) return;
+    try {
+      await saveApp();
+      router.push(`/apps/${appState.id}`);
+    } catch {
+      // error already set by saveApp
+    }
+  }, [appState.id, router, saveApp]);
+
   return (
     <div className="max-w-3xl mx-auto">
       {/* Progress Stepper */}
       <div className="flex items-center justify-between mb-8">
-        {STEPS.map((s, i) => (
+        {visibleSteps.map((s, i) => (
           <div key={s.key} className="flex items-center flex-1">
             <button
               onClick={() => appState.id && setStep(i)}
@@ -182,7 +179,7 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
                 {s.label}
               </span>
             </button>
-            {i < STEPS.length - 1 && (
+            {i < visibleSteps.length - 1 && (
               <div
                 className={`flex-1 h-px mx-2 ${
                   i < step ? "bg-emerald-500/30" : "bg-zinc-800"
@@ -201,16 +198,13 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
 
       {/* Step Content */}
       <div className="border border-zinc-800 bg-zinc-900/40 rounded-xl p-6">
-        {step === 0 && (
+        {visibleSteps[step]?.key === "info" && (
           <AppInfoStep data={formData} onChange={updateFormData} />
         )}
-        {step === 1 && (
-          <AuthAndDomainsStep
-            data={formData}
-            onChange={updateFormData}
-          />
+        {visibleSteps[step]?.key === "mode" && (
+          <AppModeStep data={formData} onChange={updateFormData} />
         )}
-        {step === 2 && (
+        {visibleSteps[step]?.key === "testing" && (
           <TestingStep
             appId={appState.id}
             clientId={appState.clientId}
@@ -226,19 +220,6 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
             }
           />
         )}
-        {step === 3 && (
-          <ReviewSubmitStep
-            data={formData}
-            appState={appState}
-            onChange={updateFormData}
-            onStatusChange={(status) =>
-              setAppState((s) => ({ ...s, status }))
-            }
-            onAppStateChange={(updates) =>
-              setAppState((s) => ({ ...s, ...updates }))
-            }
-          />
-        )}
       </div>
 
       {/* Navigation */}
@@ -250,15 +231,27 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
         >
           Back
         </button>
-        {step < STEPS.length - 1 && (
-          <button
-            onClick={handleNext}
-            disabled={saving || (!formData.name && step === 0)}
-            className="px-6 py-2 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {saving ? "Saving..." : appState.id ? "Save & Continue" : "Create App"}
-          </button>
-        )}
+        <div className="flex gap-2">
+          {step < visibleSteps.length - 1 && (
+            <button
+              onClick={handleNext}
+              disabled={saving || (!formData.name && step === 0)}
+              className="px-6 py-2 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {saving ? "Saving..." : appState.id ? "Save & Continue" : "Create App"}
+            </button>
+          )}
+          {step === visibleSteps.length - 1 && appState.id && (
+            <button
+              type="button"
+              onClick={handleFinish}
+              disabled={saving}
+              className="px-6 py-2 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {saving ? "Saving..." : "Save & view app"}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

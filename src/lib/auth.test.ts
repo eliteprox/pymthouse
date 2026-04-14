@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-process.env.DATABASE_PATH = `/tmp/pymthouse-auth-test-${Date.now()}.db`;
+const run = process.env.DATABASE_URL ? test : test.skip;
 
-test("authenticateRequestAsync still accepts pmth bearer tokens", async () => {
+run("authenticateRequestAsync still accepts pmth bearer tokens", async () => {
   const { createSession, authenticateRequestAsync } = await import("./auth");
-  const { token } = createSession({
+  const { token } = await createSession({
     scopes: "gateway",
     expiresInDays: 1,
   });

@@ -1,6 +1,6 @@
 import { db } from "@/db/index";
 import { signerConfig, streamSessions, transactions } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 interface MetricsPayload {
   ethAddress: string | null;
@@ -22,23 +22,23 @@ export function isMetricsEnabled(): boolean {
   return !!NAAP_METRICS_URL;
 }
 
-export function collectMetrics(): MetricsPayload | null {
-  const signer = db
+export async function collectMetrics(): Promise<MetricsPayload | null> {
+  const signerRows = await db
     .select()
     .from(signerConfig)
     .where(eq(signerConfig.id, "default"))
-    .get();
+    .limit(1);
+  const signer = signerRows[0];
 
   if (!signer?.naapApiKey) return null;
 
-  const activeSessions = db
+  const activeSessions = await db
     .select()
     .from(streamSessions)
-    .where(eq(streamSessions.status, "active"))
-    .all();
+    .where(eq(streamSessions.status, "active"));
 
-  const allSessions = db.select().from(streamSessions).all();
-  const txns = db.select().from(transactions).all();
+  const allSessions = await db.select().from(streamSessions);
+  const txns = await db.select().from(transactions);
 
   let totalPixels = 0n;
   let totalFee = 0n;
@@ -65,15 +65,16 @@ export function collectMetrics(): MetricsPayload | null {
 export async function reportMetrics(): Promise<boolean> {
   if (!NAAP_METRICS_URL) return false;
 
-  const signer = db
+  const signerRows = await db
     .select()
     .from(signerConfig)
     .where(eq(signerConfig.id, "default"))
-    .get();
+    .limit(1);
+  const signer = signerRows[0];
 
   if (!signer?.naapApiKey) return false;
 
-  const payload = collectMetrics();
+  const payload = await collectMetrics();
   if (!payload) return false;
 
   try {

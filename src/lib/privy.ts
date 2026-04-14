@@ -38,7 +38,7 @@ export function isPrivyEnabled(): boolean {
  * Returns null if verification fails.
  */
 export async function verifyPrivyToken(
-  accessToken: string
+  accessToken: string,
 ): Promise<string | null> {
   const client = getPrivyClient();
   if (!client) return null;
@@ -54,36 +54,34 @@ export async function verifyPrivyToken(
 /**
  * Find or create an end user in the database by Privy DID.
  */
-export function findOrCreateEndUser(
+export async function findOrCreateEndUser(
   privyDid: string,
-  walletAddress?: string
-): { id: string; isNew: boolean } {
-  const existing = db
+  walletAddress?: string,
+): Promise<{ id: string; isNew: boolean }> {
+  const existingRows = await db
     .select()
     .from(endUsers)
     .where(eq(endUsers.privyDid, privyDid))
-    .get();
+    .limit(1);
+  const existing = existingRows[0];
 
   if (existing) {
-    // Update wallet address if it changed
     if (walletAddress && walletAddress !== existing.walletAddress) {
-      db.update(endUsers)
+      await db
+        .update(endUsers)
         .set({ walletAddress })
-        .where(eq(endUsers.id, existing.id))
-        .run();
+        .where(eq(endUsers.id, existing.id));
     }
     return { id: existing.id, isNew: false };
   }
 
   const id = uuidv4();
-  db.insert(endUsers)
-    .values({
-      id,
-      privyDid,
-      walletAddress: walletAddress || null,
-      creditBalanceWei: "0",
-    })
-    .run();
+  await db.insert(endUsers).values({
+    id,
+    privyDid,
+    walletAddress: walletAddress || null,
+    creditBalanceWei: "0",
+  });
 
   return { id, isNew: true };
 }
@@ -91,55 +89,54 @@ export function findOrCreateEndUser(
 /**
  * Get end user by Privy DID.
  */
-export function getEndUserByDid(privyDid: string) {
-  return db
+export async function getEndUserByDid(privyDid: string) {
+  const rows = await db
     .select()
     .from(endUsers)
     .where(eq(endUsers.privyDid, privyDid))
-    .get();
+    .limit(1);
+  return rows[0];
 }
 
 /**
  * Find or create a developer user in the users table by Privy DID.
  * Used for wallet-based developer sign-in via NextAuth.
  */
-export function findOrCreateDeveloperUser(
+export async function findOrCreateDeveloperUser(
   privyDid: string,
   walletAddress?: string,
   name?: string,
-  email?: string
-): { id: string; isNew: boolean } {
-  const existing = db
+  email?: string,
+): Promise<{ id: string; isNew: boolean }> {
+  const existingRows = await db
     .select()
     .from(users)
     .where(eq(users.privyDid, privyDid))
-    .get();
+    .limit(1);
+  const existing = existingRows[0];
 
   if (existing) {
-    // Update wallet address if it changed
     if (walletAddress && walletAddress !== existing.walletAddress) {
-      db.update(users)
+      await db
+        .update(users)
         .set({ walletAddress })
-        .where(eq(users.id, existing.id))
-        .run();
+        .where(eq(users.id, existing.id));
     }
     return { id: existing.id, isNew: false };
   }
 
   const id = uuidv4();
   const safeEmail = email || `${privyDid}@privy.local`;
-  db.insert(users)
-    .values({
-      id,
-      email: safeEmail,
-      name: name || (walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : null),
-      oauthProvider: "privy-wallet",
-      oauthSubject: privyDid,
-      role: "developer",
-      walletAddress: walletAddress || null,
-      privyDid,
-    })
-    .run();
+  await db.insert(users).values({
+    id,
+    email: safeEmail,
+    name: name || (walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : null),
+    oauthProvider: "privy-wallet",
+    oauthSubject: privyDid,
+    role: "developer",
+    walletAddress: walletAddress || null,
+    privyDid,
+  });
 
   return { id, isNew: true };
 }
@@ -147,10 +144,11 @@ export function findOrCreateDeveloperUser(
 /**
  * Get end user by ID.
  */
-export function getEndUserById(endUserId: string) {
-  return db
+export async function getEndUserById(endUserId: string) {
+  const rows = await db
     .select()
     .from(endUsers)
     .where(eq(endUsers.id, endUserId))
-    .get();
+    .limit(1);
+  return rows[0];
 }

@@ -14,6 +14,7 @@ interface Props {
   onDomainsChange: (domains: { id: string; domain: string }[]) => void;
   hasSecret: boolean;
   onSecretGenerated: () => void;
+  readOnly?: boolean;
 }
 
 export default function TestingStep({
@@ -27,6 +28,7 @@ export default function TestingStep({
   onDomainsChange,
   hasSecret,
   onSecretGenerated,
+  readOnly = false,
 }: Props) {
   const [newUri, setNewUri] = useState("");
   const [newDomain, setNewDomain] = useState("");
@@ -34,23 +36,57 @@ export default function TestingStep({
   const [secret, setSecret] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-  const [deviceTestLoading, setDeviceTestLoading] = useState(false);
-  const [deviceTestResult, setDeviceTestResult] = useState<{
-    user_code: string;
-    verification_uri: string;
-    verification_uri_complete: string;
-    device_code: string;
-    expires_in: number;
-  } | null>(null);
+  const [redirectPersistError, setRedirectPersistError] = useState<string | null>(null);
+  const [redirectSaving, setRedirectSaving] = useState(false);
 
   const hasAuthCodeFlow = grantTypes.includes("authorization_code");
-  const hasDeviceFlow = grantTypes.includes("urn:ietf:params:oauth:grant-type:device_code");
+  const isM2MOnly = grantTypes.includes("client_credentials") && !hasAuthCodeFlow;
+
+  const persistRedirectUris = async (nextUris: string[]) => {
+    if (readOnly) return false;
+    if (!appId) return true;
+    setRedirectSaving(true);
+    setRedirectPersistError(null);
+    try {
+      const res = await fetch(`/api/v1/apps/${appId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ redirectUris: nextUris }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        let message = `Failed to save redirect URIs (${res.status})`;
+        try {
+          const data = text ? JSON.parse(text) : {};
+          if (data.error) message = data.error;
+        } catch {
+          /* keep generic */
+        }
+        setRedirectPersistError(message);
+        return false;
+      }
+      return true;
+    } finally {
+      setRedirectSaving(false);
+    }
+  };
 
   const addRedirectUri = async () => {
+    if (readOnly) return;
     const uri = newUri.trim();
     if (!uri || redirectUris.includes(uri)) return;
-    onRedirectUrisChange([...redirectUris, uri]);
+    const previous = redirectUris;
+    const next = [...redirectUris, uri];
+    onRedirectUrisChange(next);
     setNewUri("");
+
+    if (appId) {
+      const ok = await persistRedirectUris(next);
+      if (!ok) {
+        onRedirectUrisChange(previous);
+        return;
+      }
+    }
 
     // Auto-add the domain to the whitelist if not already present
     if (appId) {
@@ -73,12 +109,19 @@ export default function TestingStep({
     }
   };
 
-  const removeRedirectUri = (uri: string) => {
-    onRedirectUrisChange(redirectUris.filter((u) => u !== uri));
+  const removeRedirectUri = async (uri: string) => {
+    if (readOnly) return;
+    const previous = redirectUris;
+    const next = redirectUris.filter((u) => u !== uri);
+    onRedirectUrisChange(next);
+    if (appId) {
+      const ok = await persistRedirectUris(next);
+      if (!ok) onRedirectUrisChange(previous);
+    }
   };
 
   const addDomain = async () => {
-    if (!appId || !newDomain.trim()) return;
+    if (readOnly || !appId || !newDomain.trim()) return;
     setAdding(true);
     try {
       const res = await fetch(`/api/v1/apps/${appId}/domains`, {
@@ -97,7 +140,7 @@ export default function TestingStep({
   };
 
   const removeDomain = async (domainId: string) => {
-    if (!appId) return;
+    if (readOnly || !appId) return;
     await fetch(`/api/v1/apps/${appId}/domains?domainId=${domainId}`, {
       method: "DELETE",
     });
@@ -110,7 +153,7 @@ export default function TestingStep({
       : "";
 
   const generateSecret = useCallback(async () => {
-    if (!appId) return;
+    if (readOnly || !appId) return;
     setGenerating(true);
     try {
       const res = await fetch(`/api/v1/apps/${appId}/credentials`, {
@@ -124,7 +167,7 @@ export default function TestingStep({
     } finally {
       setGenerating(false);
     }
-  }, [appId, onSecretGenerated]);
+  }, [appId, onSecretGenerated, readOnly]);
 
   const copyToClipboard = useCallback(
     async (text: string, label: string) => {
@@ -153,14 +196,55 @@ export default function TestingStep({
         }).toString()}`
       : null;
 
+  const m2mCurlSnippet = clientId
+    ? `curl -X POST ${typeof window !== "undefined" ? window.location.origin : ""}/api/v1/oidc/token \\
+  -H "Content-Type: application/x-www-form-urlencoded" \\
+  -d "grant_type=client_credentials" \\
+  -d "client_id=${clientId}" \\
+  -d "client_secret=YOUR_CLIENT_SECRET" \\
+  -d "scope=${allowedScopes}"`
+    : "";
+
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-100 mb-1">Domains & Testing</h2>
+        <h2 className="text-lg font-semibold text-zinc-100 mb-1">Credentials & Testing</h2>
         <p className="text-sm text-zinc-500">
-          Configure redirect URIs and allowed domains, then test your OIDC integration.
+          {isM2MOnly
+            ? "Generate your client secret, then test your M2M token request."
+            : "Your app is available for development as soon as it is created—no separate approval step. Configure redirect URIs and allowed domains, then test your OIDC integration."}
         </p>
       </div>
+
+      {/* M2M Quick-start */}
+      {isM2MOnly && clientId && (
+        <div className="space-y-4 p-5 rounded-xl border border-zinc-800 bg-zinc-900/30">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-cyan-500" />
+            <h3 className="text-sm font-semibold text-zinc-200">Client Credentials Quick-start</h3>
+          </div>
+          <p className="text-xs text-zinc-500">
+            Once you have a secret, exchange your credentials for an access token:
+          </p>
+          <div className="relative">
+            <pre className="p-3 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-300 font-mono overflow-x-auto whitespace-pre">
+              {m2mCurlSnippet}
+            </pre>
+            <button
+              onClick={() => copyToClipboard(m2mCurlSnippet, "curl")}
+              className="absolute top-2 right-2 px-2 py-1 bg-zinc-700 text-zinc-200 rounded text-xs hover:bg-zinc-600 transition-colors"
+            >
+              {copied === "curl" ? "Copied!" : "Copy"}
+            </button>
+          </div>
+          <div className="flex items-start gap-2 text-xs text-zinc-500">
+            <svg className="w-3.5 h-3.5 mt-0.5 shrink-0 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            The response will include an <code className="text-zinc-400 mx-0.5">access_token</code>. Pass it as a Bearer token on all API calls.
+          </div>
+        </div>
+      )}
 
       {/* Authorization Code Flow Section */}
       {hasAuthCodeFlow && (
@@ -177,7 +261,13 @@ export default function TestingStep({
             </label>
             <p className="text-xs text-zinc-500">
               URIs where PymtHouse can redirect after authorization. Wildcards (*) are supported.
+              {appId
+                ? " Each add or remove is saved immediately so you can test the authorization flow."
+                : " Save the app on earlier steps first, then add URIs here."}
             </p>
+            {redirectPersistError && (
+              <p className="text-xs text-red-400">{redirectPersistError}</p>
+            )}
             <div className="flex gap-2 mb-2">
               <input
                 type="text"
@@ -185,14 +275,15 @@ export default function TestingStep({
                 onChange={(e) => setNewUri(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addRedirectUri())}
                 placeholder="https://myapp.com/callback"
-                className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                disabled={readOnly}
+                className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <button
-                onClick={addRedirectUri}
-                disabled={!newUri.trim()}
+                onClick={() => void addRedirectUri()}
+                disabled={readOnly || !newUri.trim() || redirectSaving}
                 className="px-3 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 disabled:opacity-40 transition-colors"
               >
-                Add
+                {redirectSaving ? "Saving..." : "Add"}
               </button>
             </div>
             {redirectUris.length > 0 && (
@@ -204,8 +295,10 @@ export default function TestingStep({
                   >
                     <code className="text-xs text-zinc-300 truncate">{uri}</code>
                     <button
-                      onClick={() => removeRedirectUri(uri)}
-                      className="text-zinc-500 hover:text-red-400 ml-2 shrink-0"
+                      type="button"
+                      onClick={() => void removeRedirectUri(uri)}
+                      disabled={readOnly || redirectSaving}
+                      className="text-zinc-500 hover:text-red-400 ml-2 shrink-0 disabled:opacity-40"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -232,11 +325,12 @@ export default function TestingStep({
                 onChange={(e) => setNewDomain(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addDomain())}
                 placeholder="example.com"
-                className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                disabled={readOnly}
+                className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <button
                 onClick={addDomain}
-                disabled={adding || !newDomain.trim() || !appId}
+                disabled={readOnly || adding || !newDomain.trim() || !appId}
                 className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-500 disabled:opacity-40 transition-colors"
               >
                 {adding ? "Adding..." : "Add Domain"}
@@ -255,7 +349,8 @@ export default function TestingStep({
                     </div>
                     <button
                       onClick={() => removeDomain(d.id)}
-                      className="text-zinc-500 hover:text-red-400 transition-colors"
+                      disabled={readOnly}
+                      className="text-zinc-500 hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -299,97 +394,6 @@ export default function TestingStep({
               </>
             )}
           </div>
-        </div>
-      )}
-
-      {/* Device Authorization Flow Section */}
-      {hasDeviceFlow && (
-        <div className="space-y-4 p-5 rounded-xl border border-zinc-800 bg-zinc-900/30">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-violet-500" />
-            <h3 className="text-sm font-semibold text-zinc-200">Device Authorization Flow</h3>
-          </div>
-          <p className="text-xs text-zinc-500">
-            For CLI tools, smart TVs, and IoT devices. No redirect URIs or domain whitelisting required.
-          </p>
-
-          {clientId ? (
-            <>
-              {!deviceTestResult ? (
-                <div>
-                  <button
-                    onClick={async () => {
-                      setDeviceTestLoading(true);
-                      try {
-                        const res = await fetch("/api/v1/oidc/device_authorization", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                          body: new URLSearchParams({
-                            client_id: clientId,
-                            scope: allowedScopes,
-                          }),
-                        });
-                        if (res.ok) {
-                          setDeviceTestResult(await res.json());
-                        }
-                      } finally {
-                        setDeviceTestLoading(false);
-                      }
-                    }}
-                    disabled={deviceTestLoading}
-                    className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm hover:bg-violet-500 disabled:opacity-40 transition-colors"
-                  >
-                    {deviceTestLoading ? "Requesting..." : "Start Device Flow Test"}
-                  </button>
-                  <p className="text-xs text-zinc-500 mt-1.5">
-                    Simulates a CLI/device client requesting authorization. You&apos;ll get a user code to enter on the verification page.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3 p-4 bg-zinc-800/50 rounded-lg border border-violet-500/20">
-                  <div>
-                    <p className="text-xs text-zinc-500 mb-1">User Code</p>
-                    <div className="flex items-center gap-2">
-                      <code className="text-2xl font-bold tracking-widest text-violet-400">
-                        {deviceTestResult.user_code}
-                      </code>
-                      <button
-                        onClick={() => copyToClipboard(deviceTestResult.user_code, "userCode")}
-                        className="px-2 py-1 bg-zinc-700 text-zinc-200 rounded text-xs hover:bg-zinc-600 transition-colors"
-                      >
-                        {copied === "userCode" ? "Copied!" : "Copy"}
-                      </button>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-xs text-zinc-500 mb-1">Verification URL</p>
-                    <div className="flex items-center gap-2">
-                      <code className="text-sm text-zinc-300 break-all">
-                        {deviceTestResult.verification_uri}
-                      </code>
-                      <button
-                        onClick={() => window.open(deviceTestResult.verification_uri_complete, "_blank")}
-                        className="px-2 py-1 bg-violet-600 text-white rounded text-xs hover:bg-violet-500 transition-colors shrink-0"
-                      >
-                        Open
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-xs text-zinc-500">
-                    Expires in {Math.floor(deviceTestResult.expires_in / 60)} minutes. Open the verification URL and enter the code to approve.
-                  </p>
-                  <button
-                    onClick={() => setDeviceTestResult(null)}
-                    className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-                  >
-                    Reset
-                  </button>
-                </div>
-              )}
-            </>
-          ) : (
-            <p className="text-sm text-zinc-500">Create app first to test the device flow.</p>
-          )}
         </div>
       )}
 
@@ -447,7 +451,7 @@ export default function TestingStep({
             )}
             <button
               onClick={generateSecret}
-              disabled={generating || !appId}
+              disabled={readOnly || generating || !appId}
               className="px-4 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 disabled:opacity-40 transition-colors"
             >
               {generating ? "Generating..." : hasSecret ? "Rotate Secret" : "Generate Secret"}
@@ -489,14 +493,7 @@ export default function TestingStep({
                   "Token exchange works (authorization_code grant)",
                 ]
               : []),
-            ...(hasDeviceFlow
-              ? [
-                  "Device authorization flow returns user code",
-                  "User can approve device code on verification page",
-                  "Token exchange works (device_code grant)",
-                ]
-              : []),
-            "UserInfo endpoint returns expected claims",
+            "User token issuance works for a provisioned app user",
             "Refresh token flow works (if enabled)",
           ].map((item) => (
             <div key={item} className="flex items-center gap-2">

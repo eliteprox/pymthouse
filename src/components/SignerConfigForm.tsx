@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 interface SignerConfigFormProps {
   config: {
     name: string;
+    signerUrl?: string | null;
+    signerApiKey?: string | null;
     network: string;
     ethRpcUrl: string;
     ethAcctAddr: string | null;
@@ -26,6 +28,8 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: config.name,
+    signerUrl: config.signerUrl || "",
+    signerApiKey: config.signerApiKey || "",
     network: config.network,
     ethRpcUrl: config.ethRpcUrl,
     ethAcctAddr: config.ethAcctAddr || "",
@@ -83,7 +87,7 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <h3 className="font-semibold text-zinc-200">Configuration</h3>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <fieldset className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-0 p-0 m-0 min-w-0">
         <div>
           <label className="block text-xs text-zinc-500 mb-1.5">
             Signer Name
@@ -96,6 +100,20 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
               setFormData({ ...formData, name: e.target.value })
             }
             className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50"
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-zinc-500 mb-1.5">
+            Signer Base URL
+          </label>
+          <input
+            type="url"
+            value={formData.signerUrl}
+            onChange={(e) =>
+              setFormData({ ...formData, signerUrl: e.target.value })
+            }
+            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50"
+            placeholder="https://signer.example.com"
           />
         </div>
         <div>
@@ -140,6 +158,20 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
             }
             className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-none focus:border-emerald-500/50 font-mono text-xs"
             placeholder="https://arb1.arbitrum.io/rpc"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="block text-xs text-zinc-500 mb-1.5">
+            Signer API Key
+          </label>
+          <input
+            type="text"
+            value={formData.signerApiKey}
+            onChange={(e) =>
+              setFormData({ ...formData, signerApiKey: e.target.value })
+            }
+            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-none focus:border-emerald-500/50 font-mono text-xs"
+            placeholder="Optional shared secret for the remote signer"
           />
         </div>
         <div className="sm:col-span-2">
@@ -262,7 +294,7 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
             placeholder="Leave empty to disable metrics reporting"
           />
         </div>
-      </div>
+      </fieldset>
 
       <div className="flex items-center gap-3">
         <button

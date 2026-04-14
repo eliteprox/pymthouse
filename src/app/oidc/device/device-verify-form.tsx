@@ -4,6 +4,12 @@ import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { normalizeUserCode } from "@/lib/oidc/device";
 
+interface DeviceInfo {
+  clientName: string;
+  scopes: string[];
+  primaryColor?: string;
+}
+
 export default function DeviceVerifyForm() {
   const searchParams = useSearchParams();
   const prefilled = searchParams.get("user_code") || "";
@@ -11,14 +17,13 @@ export default function DeviceVerifyForm() {
   const [status, setStatus] = useState<
     "idle" | "loading" | "success" | "error" | "denied"
   >("idle");
-  const [deviceInfo, setDeviceInfo] = useState<{
-    clientName: string;
-    scopes: string[];
-  } | null>(null);
+  const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<"enter" | "confirm">(
     prefilled ? "confirm" : "enter"
   );
+
+  const primaryColor = deviceInfo?.primaryColor || "#10b981";
 
   // If prefilled, immediately look up the device code
   useEffect(() => {
@@ -45,7 +50,11 @@ export default function DeviceVerifyForm() {
         setStatus("error");
         return;
       }
-      setDeviceInfo({ clientName: data.client_name, scopes: data.scopes });
+      setDeviceInfo({ 
+        clientName: data.client_name, 
+        scopes: data.scopes,
+        primaryColor: data.branding?.primaryColor,
+      });
       setStep("confirm");
       setStatus("idle");
     } catch {
@@ -89,8 +98,15 @@ export default function DeviceVerifyForm() {
   if (status === "success") {
     return (
       <div className="text-center space-y-4">
-        <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto">
-          <svg className="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div 
+          className="w-16 h-16 rounded-full flex items-center justify-center mx-auto"
+          style={{ 
+            backgroundColor: `${primaryColor}1a`, 
+            borderWidth: 1, 
+            borderColor: `${primaryColor}33` 
+          }}
+        >
+          <svg className="w-8 h-8" style={{ color: primaryColor }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         </div>
@@ -137,7 +153,10 @@ export default function DeviceVerifyForm() {
             onChange={(e) => setUserCode(normalizeUserCode(e.target.value))}
             placeholder="ABCD-1234"
             maxLength={8}
-            className="w-full text-center text-2xl font-mono tracking-[0.3em] px-4 py-4 rounded-xl bg-zinc-950/60 border border-zinc-700 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/50"
+            className="w-full text-center text-2xl font-mono tracking-[0.3em] px-4 py-4 rounded-xl bg-zinc-950/60 border border-zinc-700 text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:border-opacity-50"
+            style={{ 
+              "--tw-ring-color": `${primaryColor}66`,
+            } as React.CSSProperties}
             autoFocus
             autoComplete="off"
           />
@@ -152,7 +171,8 @@ export default function DeviceVerifyForm() {
         <button
           type="submit"
           disabled={userCode.length < 8 || status === "loading"}
-          className="w-full px-6 py-3 text-sm font-medium rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="w-full px-6 py-3 text-sm font-medium rounded-xl text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          style={{ backgroundColor: primaryColor }}
         >
           {status === "loading" ? "Verifying..." : "Continue"}
         </button>
@@ -214,7 +234,8 @@ export default function DeviceVerifyForm() {
           type="button"
           onClick={() => authorize(true)}
           disabled={status === "loading"}
-          className="flex-1 px-6 py-3 text-sm font-medium rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors"
+          className="flex-1 px-6 py-3 text-sm font-medium rounded-xl text-white hover:opacity-90 disabled:opacity-50 transition-colors"
+          style={{ backgroundColor: primaryColor }}
         >
           {status === "loading" ? "Authorizing..." : "Authorize"}
         </button>
