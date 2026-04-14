@@ -10,6 +10,71 @@ import {
 } from "@/lib/provider-apps";
 import { publishProviderAndPlans } from "@/lib/naap-marketplace";
 
+function parseCapabilities(input: unknown): {
+  capabilities: Array<{
+    pipeline: string;
+    modelId: string;
+    slaTargetScore: number | null;
+    slaTargetP95Ms: number | null;
+    maxPricePerUnit: string | null;
+  }>;
+  error?: string;
+} {
+  if (input === undefined) {
+    return { capabilities: [] };
+  }
+
+  if (!Array.isArray(input)) {
+    return { capabilities: [], error: "capabilities must be an array" };
+  }
+
+  const capabilities = input.map((raw, index) => {
+    const value = (raw ?? {}) as Record<string, unknown>;
+    const pipeline = typeof value.pipeline === "string" ? value.pipeline.trim() : "";
+    const modelId = typeof value.modelId === "string" ? value.modelId.trim() : "";
+
+    if (!pipeline) {
+      throw new Error(`capabilities[${index}].pipeline is required`);
+    }
+
+    if (!modelId) {
+      throw new Error(`capabilities[${index}].modelId is required`);
+    }
+
+    const rawSlaTargetScore = value.slaTargetScore;
+    const rawSlaTargetP95Ms = value.slaTargetP95Ms;
+    const parsedSlaTargetScore =
+      rawSlaTargetScore === null || rawSlaTargetScore === undefined
+        ? null
+        : Number(rawSlaTargetScore);
+    const parsedSlaTargetP95Ms =
+      rawSlaTargetP95Ms === null || rawSlaTargetP95Ms === undefined
+        ? null
+        : Number(rawSlaTargetP95Ms);
+
+    if (parsedSlaTargetScore !== null && !Number.isFinite(parsedSlaTargetScore)) {
+      throw new Error(`capabilities[${index}].slaTargetScore must be numeric`);
+    }
+
+    if (parsedSlaTargetP95Ms !== null && !Number.isFinite(parsedSlaTargetP95Ms)) {
+      throw new Error(`capabilities[${index}].slaTargetP95Ms must be numeric`);
+    }
+
+    return {
+      pipeline,
+      modelId,
+      slaTargetScore: parsedSlaTargetScore,
+      slaTargetP95Ms: parsedSlaTargetP95Ms,
+      maxPricePerUnit:
+        value.maxPricePerUnit === null || value.maxPricePerUnit === undefined
+          ? null
+          : String(value.maxPricePerUnit),
+    };
+  });
+
+  return { capabilities };
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -68,17 +133,30 @@ export async function POST(
     updatedAt: now,
   });
 
-  const capabilities = Array.isArray(body.capabilities) ? body.capabilities : [];
-  for (const capability of capabilities) {
+  let parsedCapabilities: ReturnType<typeof parseCapabilities>;
+  try {
+    parsedCapabilities = parseCapabilities(body.capabilities);
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Invalid capabilities" },
+      { status: 400 },
+    );
+  }
+
+  if (parsedCapabilities.error) {
+    return NextResponse.json({ error: parsedCapabilities.error }, { status: 400 });
+  }
+
+  for (const capability of parsedCapabilities.capabilities) {
     await db.insert(planCapabilityBundles).values({
       id: uuidv4(),
       planId,
       clientId: id,
-      pipeline: String(capability.pipeline || "video"),
-      modelId: String(capability.modelId || ""),
+      pipeline: capability.pipeline,
+      modelId: capability.modelId,
       slaTargetScore: capability.slaTargetScore ?? null,
       slaTargetP95Ms: capability.slaTargetP95Ms ?? null,
-      maxPricePerUnit: capability.maxPricePerUnit ? String(capability.maxPricePerUnit) : null,
+      maxPricePerUnit: capability.maxPricePerUnit,
       createdAt: now,
     });
   }
@@ -132,18 +210,32 @@ export async function PUT(
     })
     .where(eq(plans.id, planId));
 
-  if (Array.isArray(body.capabilities)) {
+  if (body.capabilities !== undefined) {
+    let parsedCapabilities: ReturnType<typeof parseCapabilities>;
+    try {
+      parsedCapabilities = parseCapabilities(body.capabilities);
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Invalid capabilities" },
+        { status: 400 },
+      );
+    }
+
+    if (parsedCapabilities.error) {
+      return NextResponse.json({ error: parsedCapabilities.error }, { status: 400 });
+    }
+
     await db.delete(planCapabilityBundles).where(eq(planCapabilityBundles.planId, planId));
-    for (const capability of body.capabilities) {
+    for (const capability of parsedCapabilities.capabilities) {
       await db.insert(planCapabilityBundles).values({
         id: uuidv4(),
         planId,
         clientId: id,
-        pipeline: String(capability.pipeline || "video"),
-        modelId: String(capability.modelId || ""),
+        pipeline: capability.pipeline,
+        modelId: capability.modelId,
         slaTargetScore: capability.slaTargetScore ?? null,
         slaTargetP95Ms: capability.slaTargetP95Ms ?? null,
-        maxPricePerUnit: capability.maxPricePerUnit ? String(capability.maxPricePerUnit) : null,
+        maxPricePerUnit: capability.maxPricePerUnit,
         createdAt: now,
       });
     }

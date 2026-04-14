@@ -88,13 +88,27 @@ export async function verifyDomainOwnership(
     const flatRecords = records.map((r) => r.join(""));
 
     if (flatRecords.includes(expectedRecord) || flatRecords.includes(verificationToken)) {
-      await db
+      const updated = await db
         .update(developerApps)
         .set({
           customDomainVerifiedAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         })
-        .where(eq(developerApps.id, appId));
+        .where(
+          and(
+            eq(developerApps.id, appId),
+            eq(developerApps.customLoginDomain, normalized),
+            eq(developerApps.customDomainVerificationToken, verificationToken),
+          ),
+        )
+        .returning({ id: developerApps.id });
+
+      if (updated.length === 0) {
+        return {
+          verified: false,
+          error: "Domain verification state changed, please retry",
+        };
+      }
 
       return { verified: true };
     }

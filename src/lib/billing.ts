@@ -1,6 +1,6 @@
 import { db } from "@/db/index";
 import { endUsers, transactions } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 
 export async function hasEnoughCredits(
@@ -21,22 +21,21 @@ export async function deductCredits(
   endUserId: string,
   amountWei: bigint,
 ): Promise<boolean> {
-  const rows = await db
-    .select()
-    .from(endUsers)
-    .where(eq(endUsers.id, endUserId))
-    .limit(1);
-  const user = rows[0];
-  if (!user) return false;
-
-  const current = BigInt(user.creditBalanceWei);
-  if (current < amountWei) return false;
-
-  await db
+  const updated = await db
     .update(endUsers)
-    .set({ creditBalanceWei: (current - amountWei).toString() })
-    .where(eq(endUsers.id, endUserId));
-  return true;
+    .set({
+      creditBalanceWei:
+        sql`(((${endUsers.creditBalanceWei})::numeric - ${amountWei.toString()}::numeric)::text)`,
+    })
+    .where(
+      and(
+        eq(endUsers.id, endUserId),
+        sql`(${endUsers.creditBalanceWei})::numeric >= ${amountWei.toString()}::numeric`,
+      ),
+    )
+    .returning({ id: endUsers.id });
+
+  return updated.length > 0;
 }
 
 export async function addCredits(

@@ -4,7 +4,7 @@ import { authenticateAppClient, hasScope } from "@/lib/auth";
 import { db } from "@/db/index";
 import { appUsers } from "@/db/schema";
 import { createCorrelationId, writeAuditLog } from "@/lib/audit";
-import { issueProgrammaticTokens } from "@/lib/oidc/programmatic-tokens";
+import { issueProgrammaticTokens, ProgrammaticTokenError } from "@/lib/oidc/programmatic-tokens";
 
 export async function POST(
   request: NextRequest,
@@ -115,13 +115,35 @@ export async function POST(
     ? requestedScopes
     : ["sign:job", "discover:orchestrators"];
 
-  const tokens = await issueProgrammaticTokens({
-    developerAppId: id,
-    oauthClientId: client.clientId,
-    appUserId: appUser.id,
-    scopes,
-    role: "user",
-  });
+  let tokens;
+  try {
+    tokens = await issueProgrammaticTokens({
+      developerAppId: id,
+      oauthClientId: client.clientId,
+      appUserId: appUser.id,
+      scopes,
+      role: "user",
+    });
+  } catch (err) {
+    if (err instanceof ProgrammaticTokenError) {
+      await writeAuditLog({
+        clientId: id,
+        action: "programmatic_token_issued",
+        status: err.code,
+        correlationId,
+        metadata: { externalUserId, message: err.message },
+      });
+      return NextResponse.json(
+        {
+          error: err.code,
+          error_description: err.message,
+          correlation_id: correlationId,
+        },
+        { status: 400 },
+      );
+    }
+    throw err;
+  }
 
   await writeAuditLog({
     clientId: id,

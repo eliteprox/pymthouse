@@ -76,10 +76,7 @@ export async function handleNaapGatewayTokenExchange(params: {
   const normalizedScopes = (scopeFromScope || scopeFromScp)
     .trim()
     .replace(/\s+/g, ",");
-  const hasGatewayBoolean =
-    (payload as Record<string, unknown>).gateway === true;
-  const effectiveScopes =
-    normalizedScopes || (hasGatewayBoolean ? "gateway" : "");
+  const effectiveScopes = normalizedScopes;
 
   if (!hasScope(effectiveScopes, "gateway")) {
     throw new TokenExchangeError(

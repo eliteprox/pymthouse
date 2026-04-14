@@ -12,6 +12,7 @@ import {
   getAuthorizedProviderApp,
   appEditForbiddenResponse,
 } from "@/lib/provider-apps";
+import { createCorrelationId, writeAuditLog } from "@/lib/audit";
 
 export async function GET(
   _request: NextRequest,
@@ -78,11 +79,26 @@ export async function POST(
 
   await db.insert(apiKeys).values(apiKey);
 
+  const correlationId = createCorrelationId();
+  await writeAuditLog({
+    clientId: id,
+    actorUserId: userId || null,
+    action: "api_key_created",
+    status: "success",
+    correlationId,
+    metadata: {
+      keyId: apiKey.id,
+      subscriptionId,
+      label: apiKey.label,
+    },
+  });
+
   return NextResponse.json(
     {
       apiKey: apiKeyValue,
       id: apiKey.id,
       message: "Store this API key securely. It will not be shown again.",
+      correlation_id: correlationId,
     },
     { status: 201 },
   );
@@ -108,7 +124,7 @@ export async function DELETE(
     return NextResponse.json({ error: "keyId is required" }, { status: 400 });
   }
 
-  await db
+  const revoked = await db
     .update(apiKeys)
     .set({
       status: "revoked",
@@ -119,7 +135,24 @@ export async function DELETE(
         eq(apiKeys.id, keyId),
         eq(apiKeys.clientId, id),
       ),
-    );
+    )
+    .returning({ id: apiKeys.id });
 
-  return NextResponse.json({ success: true });
+  if (revoked.length === 0) {
+    return NextResponse.json({ error: "Key not found" }, { status: 404 });
+  }
+
+  const session = await getServerSession(authOptions);
+  const actorUserId = (session?.user as Record<string, unknown> | undefined)?.id as string | undefined;
+  const correlationId = createCorrelationId();
+  await writeAuditLog({
+    clientId: id,
+    actorUserId: actorUserId || null,
+    action: "api_key_revoked",
+    status: "success",
+    correlationId,
+    metadata: { keyId },
+  });
+
+  return NextResponse.json({ success: true, correlation_id: correlationId });
 }

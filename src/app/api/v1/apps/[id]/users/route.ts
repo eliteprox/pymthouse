@@ -41,7 +41,7 @@ export async function GET(
   const { id } = await params;
   const access = await canAccessUsers(request, id, "users:read");
   if (!access) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const users = await db.select().from(appUsers).where(eq(appUsers.clientId, id));
@@ -60,7 +60,7 @@ export async function POST(
 
   const access = await canAccessUsers(request, id, "users:write");
   if (!access) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const body = await request.json();
@@ -135,7 +135,7 @@ export async function PUT(
 
   const access = await canAccessUsers(request, id, "users:write");
   if (!access) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const body = await request.json();
@@ -192,7 +192,7 @@ export async function DELETE(
 
   const access = await canAccessUsers(request, id, "users:write");
   if (!access) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { searchParams } = new URL(request.url);

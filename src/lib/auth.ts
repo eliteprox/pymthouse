@@ -211,8 +211,7 @@ export async function authenticateRequestAsync(request: NextRequest): Promise<Au
   const normalizedScopes = (scopeFromScope || scopeFromScp)
     .trim()
     .replace(/\s+/g, ",");
-  const hasGatewayBoolean = (jwtPayload as Record<string, unknown>).gateway === true;
-  const effectiveScopes = normalizedScopes || (hasGatewayBoolean ? "gateway" : "");
+  const effectiveScopes = normalizedScopes;
 
   return {
     userId: typeof jwtPayload.sub === "string" ? jwtPayload.sub : null,

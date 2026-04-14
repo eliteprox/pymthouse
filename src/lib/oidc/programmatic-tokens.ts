@@ -11,6 +11,17 @@ import { and, eq } from "drizzle-orm";
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL_DAYS = 30;
 
+export class ProgrammaticTokenError extends Error {
+  code: string;
+  constructor(
+    code: string,
+    message: string,
+  ) {
+    super(message);
+    this.code = code;
+  }
+}
+
 export async function issueProgrammaticTokens(input: {
   developerAppId: string;
   oauthClientId: string;
@@ -18,6 +29,24 @@ export async function issueProgrammaticTokens(input: {
   scopes: string[];
   role?: string;
 }) {
+  const appRows = await db
+    .select({ billingPattern: developerApps.billingPattern })
+    .from(developerApps)
+    .where(eq(developerApps.id, input.developerAppId))
+    .limit(1);
+  const app = appRows[0];
+
+  if (!app) {
+    throw new ProgrammaticTokenError("invalid_client", "App not found");
+  }
+
+  if (app.billingPattern !== "per_user") {
+    throw new ProgrammaticTokenError(
+      "invalid_request",
+      "Programmatic user tokens require per-user billing",
+    );
+  }
+
   const issuer = getIssuer();
   const keyPair = await ensureSigningKey();
   const nowSeconds = Math.floor(Date.now() / 1000);
@@ -82,14 +111,14 @@ export async function rotateProgrammaticRefreshToken(refreshToken: string) {
   }
 
   const appRows = await db
-    .select({ oauthClientId: oidcClients.clientId })
+    .select({ oauthClientId: oidcClients.clientId, billingPattern: developerApps.billingPattern })
     .from(developerApps)
     .innerJoin(oidcClients, eq(developerApps.oidcClientId, oidcClients.id))
     .where(eq(developerApps.id, session.appId))
     .limit(1);
   const app = appRows[0];
 
-  if (!app) {
+  if (!app || app.billingPattern !== "per_user") {
     return null;
   }
 

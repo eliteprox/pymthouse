@@ -10,7 +10,7 @@
  * PymtHouse upserts an end_users row keyed on (appId, naapUserId) so usage
  * records can be attributed per NaaP user.
  *
- * TODO: Replace this endpoint with the standard developer-app builder API:
+ * Planned migration path for this endpoint:
  *   1. POST /api/v1/apps/{appId}/users          — provision the NaaP user
  *   2. POST /api/v1/apps/{appId}/users/{id}/token — issue a user-scoped JWT
  *      with gateway + sign:job + discover:orchestrators scopes
