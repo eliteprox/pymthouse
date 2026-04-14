@@ -3,14 +3,31 @@
  */
 import "./load-env-first";
 import path from "path";
-import { fileURLToPath } from "url";
+import { existsSync } from "fs";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import * as schema from "../src/db/schema";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = path.resolve(__dirname, "..");
+/**
+ * Resolve the drizzle migrations folder robustly across environments
+ * (local dev, Vercel build, tsx CJS/ESM transforms).
+ */
+function findMigrationsFolder(): string {
+  // 1. npm scripts always set cwd to the project root
+  const fromCwd = path.resolve(process.cwd(), "drizzle");
+  if (existsSync(path.join(fromCwd, "meta", "_journal.json"))) return fromCwd;
+
+  // 2. Relative to this script file (works when __dirname is available)
+  if (typeof __dirname !== "undefined") {
+    const fromDir = path.resolve(__dirname, "..", "drizzle");
+    if (existsSync(path.join(fromDir, "meta", "_journal.json"))) return fromDir;
+  }
+
+  throw new Error(
+    `Cannot locate drizzle/meta/_journal.json from cwd=${process.cwd()}`
+  );
+}
 
 const { signerConfig } = schema;
 
@@ -43,8 +60,10 @@ async function main() {
   }
 
   const migrationClient = postgres(databaseUrl, { max: 1 });
+  const migrationsFolder = findMigrationsFolder();
+  console.log(`[db:migrate] Using migrations from: ${migrationsFolder}`);
   await migrate(drizzle(migrationClient, { schema }), {
-    migrationsFolder: path.join(PROJECT_ROOT, "drizzle"),
+    migrationsFolder,
   });
   await migrationClient.end({ timeout: 5 });
 
