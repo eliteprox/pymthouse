@@ -1,18 +1,20 @@
 "use client";
 
 import { signIn, useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import Link from "next/link";
 
-function PrivyLoginButton({ callbackUrl }: { callbackUrl: string }) {
+function PrivyLoginButton() {
   const { login, authenticated, getAccessToken } = usePrivy();
   const [bridging, setBridging] = useState(false);
   const [bridgeRequested, setBridgeRequested] = useState(false);
   const [failed, setFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
 
   useEffect(() => {
     if (bridgeRequested && authenticated && !bridging && !failed) {
@@ -77,19 +79,16 @@ function PrivyLoginButton({ callbackUrl }: { callbackUrl: string }) {
   );
 }
 
-export function LoginForm({
-  callbackUrl,
-  isAdmin,
-}: {
-  callbackUrl: string;
-  isAdmin: boolean;
-}) {
+export function LoginForm() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showAdmin, setShowAdmin] = useState(isAdmin);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  const isAdmin = searchParams.get("admin") === "1";
 
   useEffect(() => {
     if (status === "authenticated" && session) {
@@ -149,7 +148,7 @@ export function LoginForm({
           <p className="text-sm text-zinc-500 mb-5">
             Sign in with your email, wallet, or social account.
           </p>
-          <PrivyLoginButton callbackUrl={callbackUrl} />
+          <PrivyLoginButton />
         </div>
 
         {/* Admin / OAuth section -- collapsed by default */}
