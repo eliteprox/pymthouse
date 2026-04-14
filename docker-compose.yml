@@ -13,6 +13,10 @@ services:
       - -v=99
     volumes:
       - ./data:/data
+    environment:
+      - SIGNER_REMOTE_DISCOVERY=${SIGNER_REMOTE_DISCOVERY:-0}
+      - ORCH_WEBHOOK_URL=${ORCH_WEBHOOK_URL:-}
+      - LIVE_AI_CAP_REPORT_INTERVAL=${LIVE_AI_CAP_REPORT_INTERVAL:-}
     entrypoint:
       - /bin/sh
       - -c
@@ -28,6 +32,12 @@ services:
             *) ARGS="$$ARGS $$arg" ;;
           esac
         done
+        # Add remote discovery flags when enabled (must use -remoteDiscovery=true; bare -remoteDiscovery is not supported)
+        if [ "$$SIGNER_REMOTE_DISCOVERY" = "1" ] || [ "$$SIGNER_REMOTE_DISCOVERY" = "true" ]; then
+          ARGS="$$ARGS -remoteDiscovery=true"
+          [ -n "$$ORCH_WEBHOOK_URL" ] && ARGS="$$ARGS -orchWebhookUrl=$$ORCH_WEBHOOK_URL"
+          [ -n "$$LIVE_AI_CAP_REPORT_INTERVAL" ] && ARGS="$$ARGS -liveAICapReportInterval=$$LIVE_AI_CAP_REPORT_INTERVAL"
+        fi
         exec /usr/local/bin/livepeer $$ARGS
       - --
     expose:

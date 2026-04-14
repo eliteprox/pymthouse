@@ -42,6 +42,9 @@ export const signerConfig = sqliteTable("signer_config", {
   defaultCutPercent: real("default_cut_percent").notNull().default(15.0),
   billingMode: text("billing_mode").notNull().default("delegated"), // prepay | delegated
   naapApiKey: text("naap_api_key"),
+  remoteDiscovery: integer("remote_discovery").notNull().default(0), // 0 | 1
+  orchWebhookUrl: text("orch_webhook_url"),
+  liveAICapReportInterval: text("live_ai_cap_report_interval"),
   lastStartedAt: text("last_started_at"),
   lastError: text("last_error"),
   createdAt: text("created_at")

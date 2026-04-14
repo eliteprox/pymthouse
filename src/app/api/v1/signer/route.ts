@@ -61,6 +61,12 @@ export async function PATCH(request: NextRequest) {
   }
   if (body.ethRpcUrl !== undefined) updates.ethRpcUrl = body.ethRpcUrl;
   if (body.ethAcctAddr !== undefined) updates.ethAcctAddr = body.ethAcctAddr;
+  if (body.remoteDiscovery !== undefined) {
+    updates.remoteDiscovery = body.remoteDiscovery === true || body.remoteDiscovery === 1 || body.remoteDiscovery === "1" ? 1 : 0;
+  }
+  if (body.orchWebhookUrl !== undefined) updates.orchWebhookUrl = body.orchWebhookUrl;
+  if (body.liveAICapReportInterval !== undefined)
+    updates.liveAICapReportInterval = body.liveAICapReportInterval;
   if (body.defaultCutPercent !== undefined)
     updates.defaultCutPercent = body.defaultCutPercent;
   if (body.billingMode !== undefined) updates.billingMode = body.billingMode;

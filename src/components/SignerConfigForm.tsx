@@ -9,6 +9,9 @@ interface SignerConfigFormProps {
     network: string;
     ethRpcUrl: string;
     ethAcctAddr: string | null;
+    remoteDiscovery: number;
+    orchWebhookUrl: string | null;
+    liveAICapReportInterval: string | null;
     defaultCutPercent: number;
     billingMode: string;
     naapApiKey: string | null;
@@ -25,6 +28,9 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
     network: config.network,
     ethRpcUrl: config.ethRpcUrl,
     ethAcctAddr: config.ethAcctAddr || "",
+    remoteDiscovery: config.remoteDiscovery === 1,
+    orchWebhookUrl: config.orchWebhookUrl || "",
+    liveAICapReportInterval: config.liveAICapReportInterval || "",
     defaultCutPercent: config.defaultCutPercent,
     billingMode: config.billingMode,
     naapApiKey: config.naapApiKey || "",
@@ -44,6 +50,9 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
           ...formData,
           network: "arbitrum-one-mainnet",
           ethAcctAddr: formData.ethAcctAddr || null,
+          remoteDiscovery: formData.remoteDiscovery,
+          orchWebhookUrl: formData.orchWebhookUrl || null,
+          liveAICapReportInterval: formData.liveAICapReportInterval || null,
           naapApiKey: formData.naapApiKey || null,
         }),
       });
@@ -119,6 +128,52 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
             placeholder="0x..."
           />
         </div>
+        <div className="sm:col-span-2 flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="remoteDiscovery"
+            checked={formData.remoteDiscovery}
+            onChange={(e) =>
+              setFormData({ ...formData, remoteDiscovery: e.target.checked })
+            }
+            className="rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/50"
+          />
+          <label htmlFor="remoteDiscovery" className="text-xs text-zinc-500">
+            Remote Discovery (adds -remoteDiscovery=true, orchWebhookUrl, liveAICapReportInterval when enabled)
+          </label>
+        </div>
+        {formData.remoteDiscovery && (
+          <>
+            <div className="sm:col-span-2">
+              <label className="block text-xs text-zinc-500 mb-1.5">
+                Orchestrator Webhook URL
+              </label>
+              <input
+                type="url"
+                value={formData.orchWebhookUrl}
+                onChange={(e) =>
+                  setFormData({ ...formData, orchWebhookUrl: e.target.value })
+                }
+                className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-none focus:border-emerald-500/50 font-mono text-xs"
+                placeholder="https://..."
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs text-zinc-500 mb-1.5">
+                Live AI Cap Report Interval
+              </label>
+              <input
+                type="text"
+                value={formData.liveAICapReportInterval}
+                onChange={(e) =>
+                  setFormData({ ...formData, liveAICapReportInterval: e.target.value })
+                }
+                className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-none focus:border-emerald-500/50 font-mono text-xs"
+                placeholder="e.g. 30s"
+              />
+            </div>
+          </>
+        )}
         <div>
           <label className="block text-xs text-zinc-500 mb-1.5">
             Platform Cut (%)

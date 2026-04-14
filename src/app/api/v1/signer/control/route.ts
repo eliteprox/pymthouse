@@ -115,17 +115,24 @@ function getComposeCommand(action: string): string {
 function buildSignerComposeEnv(
   signer:
     | {
+        network: string;
         ethRpcUrl: string;
         ethAcctAddr: string | null;
-        ethAddress: string | null;
+        remoteDiscovery: number;
+        orchWebhookUrl: string | null;
+        liveAICapReportInterval: string | null;
       }
     | undefined
 ): NodeJS.ProcessEnv {
+  const enabled = signer?.remoteDiscovery === 1;
   return {
     ...process.env,
-    SIGNER_NETWORK: "arbitrum-one-mainnet",
+    SIGNER_NETWORK: signer?.network ?? "arbitrum-one-mainnet",
     ETH_RPC_URL: signer?.ethRpcUrl ?? "",
     SIGNER_ETH_ADDR: signer?.ethAcctAddr || "",
+    SIGNER_REMOTE_DISCOVERY: enabled ? "1" : "0",
+    ORCH_WEBHOOK_URL: signer?.orchWebhookUrl ?? "",
+    LIVE_AI_CAP_REPORT_INTERVAL: signer?.liveAICapReportInterval ?? "",
   };
 }
 

@@ -100,6 +100,19 @@ export default function SignerPage() {
           <ConfigRow label="EthPassword" value="***" />
           <ConfigRow label="Datadir" value="/data" />
           <ConfigRow label="RemoteSigner" value="true" />
+          <ConfigRow
+            label="RemoteDiscovery"
+            value={signer.remoteDiscovery ? "true" : "false"}
+          />
+          {signer.remoteDiscovery && signer.orchWebhookUrl && (
+            <ConfigRow label="OrchWebhookUrl" value={signer.orchWebhookUrl} mono />
+          )}
+          {signer.remoteDiscovery && signer.liveAICapReportInterval && (
+            <ConfigRow
+              label="LiveAICapReportInterval"
+              value={signer.liveAICapReportInterval}
+            />
+          )}
           <ConfigRow label="Verbosity" value="99" />
         </div>
       </div>
@@ -141,6 +154,9 @@ export default function SignerPage() {
             network: signer.network,
             ethRpcUrl: signer.ethRpcUrl,
             ethAcctAddr: signer.ethAcctAddr,
+            remoteDiscovery: signer.remoteDiscovery ?? 0,
+            orchWebhookUrl: signer.orchWebhookUrl,
+            liveAICapReportInterval: signer.liveAICapReportInterval,
             defaultCutPercent: signer.defaultCutPercent,
             billingMode: signer.billingMode,
             naapApiKey: signer.naapApiKey,

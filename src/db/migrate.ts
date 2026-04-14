@@ -98,6 +98,15 @@ export function runMigrations(sqlite: Database) {
   try {
     sqlite.exec("ALTER TABLE signer_config ADD COLUMN eth_acct_addr TEXT;");
   } catch {}
+  try {
+    sqlite.exec("ALTER TABLE signer_config ADD COLUMN remote_discovery INTEGER NOT NULL DEFAULT 0;");
+  } catch {}
+  try {
+    sqlite.exec("ALTER TABLE signer_config ADD COLUMN orch_webhook_url TEXT;");
+  } catch {}
+  try {
+    sqlite.exec("ALTER TABLE signer_config ADD COLUMN live_ai_cap_report_interval TEXT;");
+  } catch {}
 
   // Seed singleton signer config if it doesn't exist
   const existing = sqlite
