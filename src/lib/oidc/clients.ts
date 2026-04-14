@@ -172,9 +172,9 @@ export async function validateRedirectUri(
 
   return client.redirectUris.some((pattern) => {
     if (pattern.includes("*")) {
-      const regex = new RegExp(
-        "^" + pattern.replace(/\*/g, ".*").replace(/\//g, "\\/") + "$",
-      );
+      const escapedPattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const wildcardPattern = escapedPattern.replace(/\\\*/g, ".*");
+      const regex = new RegExp("^" + wildcardPattern + "$");
       return regex.test(redirectUri);
     }
     return pattern === redirectUri;
