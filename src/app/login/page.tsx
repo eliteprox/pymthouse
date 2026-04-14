@@ -1,18 +1,16 @@
+import { Suspense } from "react";
 import { LoginForm } from "./login-form";
 
-type SearchParams = Record<string, string | string[] | undefined>;
-
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: Promise<SearchParams>;
-}) {
-  const params = await searchParams;
-  const callbackUrl =
-    typeof params.callbackUrl === "string" ? params.callbackUrl : "/dashboard";
-  const isAdmin = params.admin === "1";
-
+export default function LoginPage() {
   return (
-    <LoginForm callbackUrl={callbackUrl} isAdmin={isAdmin} />
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-screen bg-zinc-950">
+          <div className="animate-pulse text-zinc-500">Loading...</div>
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }
