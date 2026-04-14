@@ -7,6 +7,7 @@ import { createSession, revokeSession, validateBearerToken } from "@/lib/auth";
 import { db } from "@/db/index";
 import { appUsers, developerApps, oidcClients } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
+import { validateClientSecret } from "./clients";
 
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL_DAYS = 30;
@@ -87,9 +88,17 @@ export async function issueProgrammaticTokens(input: {
   };
 }
 
-export async function rotateProgrammaticRefreshToken(refreshToken: string) {
-  const session = await validateBearerToken(refreshToken);
+export async function rotateProgrammaticRefreshToken(input: {
+  refreshToken: string;
+  clientId: string;
+  clientSecret: string;
+}) {
+  const session = await validateBearerToken(input.refreshToken);
   if (!session?.label?.startsWith("app_user_refresh:") || !session.appId) {
+    return null;
+  }
+
+  if (!input.clientId || !input.clientSecret) {
     return null;
   }
 
@@ -119,6 +128,14 @@ export async function rotateProgrammaticRefreshToken(refreshToken: string) {
   const app = appRows[0];
 
   if (!app || app.billingPattern !== "per_user") {
+    return null;
+  }
+
+  if (input.clientId !== app.oauthClientId) {
+    return null;
+  }
+
+  if (!(await validateClientSecret(input.clientId, input.clientSecret))) {
     return null;
   }
 

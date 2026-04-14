@@ -119,20 +119,6 @@ export async function POST(
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
 
-  const planId = uuidv4();
-  const now = new Date().toISOString();
-  await db.insert(plans).values({
-    id: planId,
-    clientId: id,
-    name,
-    type: body.type || "free",
-    priceAmount: String(body.priceAmount || "0"),
-    priceCurrency: body.priceCurrency || "USD",
-    status: body.status || "active",
-    createdAt: now,
-    updatedAt: now,
-  });
-
   let parsedCapabilities: ReturnType<typeof parseCapabilities>;
   try {
     parsedCapabilities = parseCapabilities(body.capabilities);
@@ -147,19 +133,35 @@ export async function POST(
     return NextResponse.json({ error: parsedCapabilities.error }, { status: 400 });
   }
 
-  for (const capability of parsedCapabilities.capabilities) {
-    await db.insert(planCapabilityBundles).values({
-      id: uuidv4(),
-      planId,
+  const planId = uuidv4();
+  const now = new Date().toISOString();
+  await db.transaction(async (tx) => {
+    await tx.insert(plans).values({
+      id: planId,
       clientId: id,
-      pipeline: capability.pipeline,
-      modelId: capability.modelId,
-      slaTargetScore: capability.slaTargetScore ?? null,
-      slaTargetP95Ms: capability.slaTargetP95Ms ?? null,
-      maxPricePerUnit: capability.maxPricePerUnit,
+      name,
+      type: body.type || "free",
+      priceAmount: String(body.priceAmount || "0"),
+      priceCurrency: body.priceCurrency || "USD",
+      status: body.status || "active",
       createdAt: now,
+      updatedAt: now,
     });
-  }
+
+    for (const capability of parsedCapabilities.capabilities) {
+      await tx.insert(planCapabilityBundles).values({
+        id: uuidv4(),
+        planId,
+        clientId: id,
+        pipeline: capability.pipeline,
+        modelId: capability.modelId,
+        slaTargetScore: capability.slaTargetScore ?? null,
+        slaTargetP95Ms: capability.slaTargetP95Ms ?? null,
+        maxPricePerUnit: capability.maxPricePerUnit,
+        createdAt: now,
+      });
+    }
+  });
 
   void publishProviderAndPlans(id).catch(() => {});
 
@@ -197,21 +199,8 @@ export async function PUT(
     return NextResponse.json({ error: "Plan not found" }, { status: 404 });
   }
 
-  const now = new Date().toISOString();
-  await db
-    .update(plans)
-    .set({
-      name: body.name ?? existing.name,
-      type: body.type ?? existing.type,
-      priceAmount: body.priceAmount !== undefined ? String(body.priceAmount) : existing.priceAmount,
-      priceCurrency: body.priceCurrency ?? existing.priceCurrency,
-      status: body.status ?? existing.status,
-      updatedAt: now,
-    })
-    .where(eq(plans.id, planId));
-
+  let parsedCapabilities: ReturnType<typeof parseCapabilities> | null = null;
   if (body.capabilities !== undefined) {
-    let parsedCapabilities: ReturnType<typeof parseCapabilities>;
     try {
       parsedCapabilities = parseCapabilities(body.capabilities);
     } catch (err) {
@@ -224,22 +213,46 @@ export async function PUT(
     if (parsedCapabilities.error) {
       return NextResponse.json({ error: parsedCapabilities.error }, { status: 400 });
     }
-
-    await db.delete(planCapabilityBundles).where(eq(planCapabilityBundles.planId, planId));
-    for (const capability of parsedCapabilities.capabilities) {
-      await db.insert(planCapabilityBundles).values({
-        id: uuidv4(),
-        planId,
-        clientId: id,
-        pipeline: capability.pipeline,
-        modelId: capability.modelId,
-        slaTargetScore: capability.slaTargetScore ?? null,
-        slaTargetP95Ms: capability.slaTargetP95Ms ?? null,
-        maxPricePerUnit: capability.maxPricePerUnit,
-        createdAt: now,
-      });
-    }
   }
+
+  const now = new Date().toISOString();
+  await db.transaction(async (tx) => {
+    await tx
+      .update(plans)
+      .set({
+        name: body.name ?? existing.name,
+        type: body.type ?? existing.type,
+        priceAmount: body.priceAmount !== undefined ? String(body.priceAmount) : existing.priceAmount,
+        priceCurrency: body.priceCurrency ?? existing.priceCurrency,
+        status: body.status ?? existing.status,
+        updatedAt: now,
+      })
+      .where(eq(plans.id, planId));
+
+    if (parsedCapabilities) {
+      await tx
+        .delete(planCapabilityBundles)
+        .where(
+          and(
+            eq(planCapabilityBundles.planId, planId),
+            eq(planCapabilityBundles.clientId, id),
+          ),
+        );
+      for (const capability of parsedCapabilities.capabilities) {
+        await tx.insert(planCapabilityBundles).values({
+          id: uuidv4(),
+          planId,
+          clientId: id,
+          pipeline: capability.pipeline,
+          modelId: capability.modelId,
+          slaTargetScore: capability.slaTargetScore ?? null,
+          slaTargetP95Ms: capability.slaTargetP95Ms ?? null,
+          maxPricePerUnit: capability.maxPricePerUnit,
+          createdAt: now,
+        });
+      }
+    }
+  });
 
   void publishProviderAndPlans(id).catch(() => {});
 
@@ -266,8 +279,27 @@ export async function DELETE(
     return NextResponse.json({ error: "planId is required" }, { status: 400 });
   }
 
-  await db.delete(planCapabilityBundles).where(eq(planCapabilityBundles.planId, planId));
-  await db.delete(plans).where(and(eq(plans.id, planId), eq(plans.clientId, id)));
+  const planRows = await db
+    .select({ id: plans.id })
+    .from(plans)
+    .where(and(eq(plans.id, planId), eq(plans.clientId, id)))
+    .limit(1);
+
+  if (!planRows[0]) {
+    return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(planCapabilityBundles)
+      .where(
+        and(
+          eq(planCapabilityBundles.planId, planId),
+          eq(planCapabilityBundles.clientId, id),
+        ),
+      );
+    await tx.delete(plans).where(and(eq(plans.id, planId), eq(plans.clientId, id)));
+  });
 
   return NextResponse.json({ success: true });
 }

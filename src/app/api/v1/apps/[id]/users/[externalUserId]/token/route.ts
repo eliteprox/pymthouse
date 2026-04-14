@@ -60,7 +60,11 @@ export async function POST(
     .map((scope) => scope.trim())
     .filter(Boolean);
 
-  const invalidScope = requestedScopes.find(
+  const scopes = requestedScopes.length > 0
+    ? requestedScopes
+    : ["sign:job", "discover:orchestrators"];
+
+  const invalidScope = scopes.find(
     (scope) => !hasScope(client.scopes, scope) || scope === "admin",
   );
   if (invalidScope) {
@@ -110,10 +114,6 @@ export async function POST(
       { status: 404 },
     );
   }
-
-  const scopes = requestedScopes.length > 0
-    ? requestedScopes
-    : ["sign:job", "discover:orchestrators"];
 
   let tokens;
   try {

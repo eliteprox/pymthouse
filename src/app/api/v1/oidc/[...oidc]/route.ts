@@ -73,7 +73,11 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
 
     if (grantType === "refresh_token") {
       const refreshToken = exchangeParams.get("refresh_token") || "";
-      const refreshed = await rotateProgrammaticRefreshToken(refreshToken);
+      const refreshed = await rotateProgrammaticRefreshToken({
+        refreshToken,
+        clientId: exchangeParams.get("client_id") || "",
+        clientSecret: exchangeParams.get("client_secret") || "",
+      });
       if (refreshed) {
         return NextResponse.json(refreshed, {
           headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
