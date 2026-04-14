@@ -83,11 +83,22 @@ export async function POST(
   }
 
   const domainId = uuidv4();
-  await db.insert(appAllowedDomains).values({
-    id: domainId,
-    appId: id,
-    domain: normalizedDomain,
-  });
+  try {
+    await db.insert(appAllowedDomains).values({
+      id: domainId,
+      appId: id,
+      domain: normalizedDomain,
+    });
+  } catch (err: unknown) {
+    // Handle unique constraint violation (Postgres error code 23505)
+    if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "23505") {
+      return NextResponse.json(
+        { error: `Domain "${normalizedDomain}" is already in the whitelist` },
+        { status: 409 }
+      );
+    }
+    throw err;
+  }
 
   return NextResponse.json({ id: domainId, domain: normalizedDomain }, { status: 201 });
 }

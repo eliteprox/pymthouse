@@ -453,7 +453,9 @@ export const appAllowedDomains = pgTable("app_allowed_domains", {
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
-});
+}, (table) => [
+  uniqueIndex("app_allowed_domains_app_id_domain_unique").on(table.appId, table.domain),
+]);
 
 /** node-oidc-provider adapter storage (JSON payloads). */
 export const oidcPayloads = pgTable(

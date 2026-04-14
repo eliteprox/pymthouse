@@ -22,6 +22,14 @@ export async function GET(
   const groupBy = url.searchParams.get("groupBy") || "none";
   const filterUserId = url.searchParams.get("userId");
 
+  // Validate date params as ISO strings
+  if (startDate && isNaN(Date.parse(startDate))) {
+    return NextResponse.json({ error: "Invalid startDate format" }, { status: 400 });
+  }
+  if (endDate && isNaN(Date.parse(endDate))) {
+    return NextResponse.json({ error: "Invalid endDate format" }, { status: 400 });
+  }
+
   const conditions = [eq(usageRecords.clientId, id)];
   if (startDate) conditions.push(gte(usageRecords.createdAt, startDate));
   if (endDate) conditions.push(lte(usageRecords.createdAt, endDate));

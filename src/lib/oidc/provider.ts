@@ -223,6 +223,23 @@ function buildInteractionPolicy() {
 }
 
 let _provider: Provider | null = null;
+let _cleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+// TTL-cached CORS snapshot (refreshes every 60s)
+let _corsCache: {
+  trustedHosts: string[];
+  clientOrigins: Map<string, Set<string>>;
+} | null = null;
+let _corsCacheExpiry = 0;
+const CORS_CACHE_TTL_MS = 60_000;
+
+async function getCorsSnapshot() {
+  const now = Date.now();
+  if (_corsCache && now < _corsCacheExpiry) return _corsCache;
+  _corsCache = await buildCorsSnapshot();
+  _corsCacheExpiry = now + CORS_CACHE_TTL_MS;
+  return _corsCache;
+}
 
 async function buildCorsSnapshot(): Promise<{
   trustedHosts: string[];
@@ -259,7 +276,6 @@ export async function getProvider(): Promise<Provider> {
   const issuer = getIssuer();
   const jwks = await loadJWKS();
   const clients = await loadClients();
-  const corsSnapshot = await buildCorsSnapshot();
 
   const configuration: Configuration = {
     adapter: PostgresOidcAdapter,
@@ -277,11 +293,14 @@ export async function getProvider(): Promise<Provider> {
         return true;
       }
 
+      // Use cached snapshot (refreshed in background via TTL)
+      const corsSnapshot = _corsCache;
+
       try {
         const originUrl = new URL(origin);
         const originHost = normalizeDomain(originUrl.host);
         if (
-          corsSnapshot.trustedHosts.some(
+          corsSnapshot?.trustedHosts.some(
             (h) => normalizeDomain(h) === originHost,
           )
         ) {
@@ -301,8 +320,11 @@ export async function getProvider(): Promise<Provider> {
       });
       if (matchesRedirectUri) return true;
 
-      const allowed = corsSnapshot.clientOrigins.get(client.clientId);
+      const allowed = corsSnapshot?.clientOrigins.get(client.clientId);
       if (allowed?.has(origin)) return true;
+
+      // Trigger async refresh so next request picks up changes
+      void getCorsSnapshot();
 
       return false;
     },
@@ -510,8 +532,12 @@ export async function getProvider(): Promise<Provider> {
   // Trust the proxy (Next.js + reverse proxy)
   _provider.proxy = true;
 
-  // Run periodic cleanup of expired adapter rows
-  setInterval(() => {
+  // Seed the CORS cache
+  await getCorsSnapshot();
+
+  // Run periodic cleanup of expired adapter rows (deduplicated)
+  if (_cleanupInterval) clearInterval(_cleanupInterval);
+  _cleanupInterval = setInterval(() => {
     void PostgresOidcAdapter.cleanup();
   }, 10 * 60 * 1000);
 
@@ -524,5 +550,11 @@ export async function getProvider(): Promise<Provider> {
  * the app settings API) so the provider picks up the changes.
  */
 export function resetProvider(): void {
+  if (_cleanupInterval) {
+    clearInterval(_cleanupInterval);
+    _cleanupInterval = null;
+  }
+  _corsCache = null;
+  _corsCacheExpiry = 0;
   _provider = null;
 }

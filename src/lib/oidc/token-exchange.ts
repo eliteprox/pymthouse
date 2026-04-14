@@ -29,7 +29,7 @@ export async function handleTokenExchange(params: {
   clientSecret: string;
   subjectToken: string;
   subjectTokenType: string;
-  scope: string;
+  scope?: string;
   resource?: string;
 }): Promise<TokenExchangeResult> {
   const {
@@ -135,7 +135,7 @@ export async function handleTokenExchange(params: {
 
   const { id: endUserId } = await findOrCreateAppEndUser(app.id, externalSub);
 
-  const requestedScopes = scope
+  const requestedScopes = (scope || "")
     .split(/\s+/)
     .filter(Boolean);
   const allowedScopes = clientRow.allowedScopes.split(/[,\s]+/).filter(Boolean);

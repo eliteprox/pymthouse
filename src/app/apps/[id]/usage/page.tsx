@@ -22,9 +22,14 @@ interface UsageData {
 function formatWei(wei: string): string {
   const value = BigInt(wei);
   if (value === 0n) return "0";
-  const eth = Number(value) / 1e18;
-  if (eth < 0.0001) return `${value.toString()} wei`;
-  return `${eth.toFixed(6)} ETH`;
+  // Use BigInt division to avoid floating-point precision loss
+  const ETH_DECIMALS = 18n;
+  const DIVISOR = 10n ** ETH_DECIMALS;
+  const whole = value / DIVISOR;
+  const remainder = value % DIVISOR;
+  if (whole === 0n && remainder > 0n) return `${value.toString()} wei`;
+  const fracStr = remainder.toString().padStart(18, "0").slice(0, 6);
+  return `${whole}.${fracStr} ETH`;
 }
 
 export default function UsageDashboardPage() {
@@ -36,12 +41,22 @@ export default function UsageDashboardPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch(`/api/v1/apps/${id}`).then((r) => r.json()),
-      fetch(`/api/v1/apps/${id}/usage?groupBy=user`).then((r) => r.json()),
+      fetch(`/api/v1/apps/${id}`).then((r) => {
+        if (!r.ok) throw new Error(`App fetch failed: ${r.status}`);
+        return r.json();
+      }),
+      fetch(`/api/v1/apps/${id}/usage?groupBy=user`).then((r) => {
+        if (!r.ok) throw new Error(`Usage fetch failed: ${r.status}`);
+        return r.json();
+      }),
     ])
       .then(([appData, usageData]) => {
         setAppName(appData.name || "App");
         setUsage(usageData);
+      })
+      .catch(() => {
+        setAppName("App");
+        setUsage(null);
       })
       .finally(() => setLoading(false));
   }, [id]);

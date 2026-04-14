@@ -30,8 +30,15 @@ export default function AppDetailPage() {
 
   useEffect(() => {
     fetch(`/api/v1/apps/${id}`)
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) return null;
+        return r.json();
+      })
       .then((data) => {
+        if (!data) {
+          setAppData(null);
+          return;
+        }
         setAppData({
           formData: {
             name: data.name || "",
@@ -61,9 +68,10 @@ export default function AppDetailPage() {
           ),
           postLogoutRedirectUris: data.oidcClient?.postLogoutRedirectUris || [],
           initiateLoginUri: data.oidcClient?.initiateLoginUri ?? null,
-          canEdit: data.canEdit !== false,
+          canEdit: data.canEdit === true,
         });
       })
+      .catch(() => setAppData(null))
       .finally(() => setLoading(false));
   }, [id]);
 

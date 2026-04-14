@@ -24,7 +24,20 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const keys = await db.select().from(apiKeys).where(eq(apiKeys.clientId, id));
+  // Return all keys (including revoked) for audit visibility
+  const keys = await db
+    .select({
+      id: apiKeys.id,
+      clientId: apiKeys.clientId,
+      userId: apiKeys.userId,
+      subscriptionId: apiKeys.subscriptionId,
+      label: apiKeys.label,
+      status: apiKeys.status,
+      createdAt: apiKeys.createdAt,
+      revokedAt: apiKeys.revokedAt,
+    })
+    .from(apiKeys)
+    .where(eq(apiKeys.clientId, id));
   return NextResponse.json({ keys });
 }
 

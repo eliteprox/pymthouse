@@ -112,7 +112,7 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
           clientSecret: exchangeParams.get("client_secret") || "",
           subjectToken: exchangeParams.get("subject_token") || "",
           subjectTokenType,
-          scope: exchangeParams.get("scope") || "gateway",
+          scope: exchangeParams.get("scope") || undefined,
           resource: exchangeParams.get("resource") || undefined,
         });
         return NextResponse.json(result, {

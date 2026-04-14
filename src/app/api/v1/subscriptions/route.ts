@@ -31,7 +31,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
   const planId = String(body.planId || "");
   const planRows = await db.select().from(plans).where(eq(plans.id, planId)).limit(1);
   const plan = planRows[0];
@@ -104,7 +109,7 @@ export async function DELETE(request: NextRequest) {
       status: "cancelled",
       cancelledAt: new Date().toISOString(),
     })
-    .where(eq(subscriptions.id, subscriptionId));
+    .where(and(eq(subscriptions.id, subscriptionId), eq(subscriptions.userId, userId)));
 
   return NextResponse.json({ success: true });
 }

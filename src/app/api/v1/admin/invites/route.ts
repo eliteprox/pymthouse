@@ -70,31 +70,33 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invite code required" }, { status: 400 });
   }
 
-  const inviteRows = await db
-    .select()
-    .from(adminInvites)
-    .where(
-      and(
-        eq(adminInvites.code, code),
-        isNull(adminInvites.usedBy),
-        gt(adminInvites.expiresAt, new Date().toISOString())
+  const result = await db.transaction(async (tx) => {
+    // Atomically claim the invite: only succeeds if still unused and not expired
+    const claimed = await tx
+      .update(adminInvites)
+      .set({ usedBy: userId })
+      .where(
+        and(
+          eq(adminInvites.code, code),
+          isNull(adminInvites.usedBy),
+          gt(adminInvites.expiresAt, new Date().toISOString())
+        )
       )
-    )
-    .limit(1);
-  const invite = inviteRows[0];
+      .returning({ id: adminInvites.id });
 
-  if (!invite) {
-    return NextResponse.json({ error: "Invalid or expired invite code" }, { status: 400 });
+    if (claimed.length === 0) {
+      return { error: "Invalid or expired invite code" };
+    }
+
+    // Upgrade user to admin
+    await tx.update(users).set({ role: "admin" }).where(eq(users.id, userId));
+
+    return { success: true };
+  });
+
+  if ("error" in result) {
+    return NextResponse.json({ error: result.error }, { status: 400 });
   }
-
-  // Upgrade user to admin
-  await db.update(users).set({ role: "admin" }).where(eq(users.id, userId));
-
-  // Mark invite as used
-  await db
-    .update(adminInvites)
-    .set({ usedBy: userId })
-    .where(eq(adminInvites.id, invite.id));
 
   return NextResponse.json({ success: true, role: "admin" });
 }

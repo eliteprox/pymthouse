@@ -43,11 +43,16 @@ export function shouldUseWhiteLabelBranding(branding: AppBranding): boolean {
 }
 
 export function getBrandingCssVars(branding: AppBranding): Record<string, string> {
+  const color = isValidHexColor(branding.primaryColor) ? branding.primaryColor : "#10b981";
   return {
-    "--branding-primary": branding.primaryColor,
-    "--branding-primary-hover": adjustColorBrightness(branding.primaryColor, -10),
-    "--branding-primary-muted": `${branding.primaryColor}1a`,
+    "--branding-primary": color,
+    "--branding-primary-hover": adjustColorBrightness(color, -10),
+    "--branding-primary-muted": `${color}1a`,
   };
+}
+
+function isValidHexColor(value: string): boolean {
+  return /^#[0-9a-fA-F]{6}$/.test(value);
 }
 
 function adjustColorBrightness(hex: string, amount: number): string {

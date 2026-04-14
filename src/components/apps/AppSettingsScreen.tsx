@@ -103,7 +103,9 @@ export default function AppSettingsScreen({
       });
       if (!settingsRes.ok) {
         const body = await settingsRes.json().catch(() => ({}));
-        throw new Error(body.error || "Failed to save advanced OIDC settings");
+        throw new Error(
+          body.error || "App metadata saved, but failed to save OIDC settings"
+        );
       }
 
       setMessage("All settings saved.");

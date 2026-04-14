@@ -41,11 +41,11 @@ async function getAdminUser(request: NextRequest) {
   const oauthSession = await getServerSession(authOptions);
   if (oauthSession?.user) {
     const sessionUser = oauthSession.user as Record<string, unknown>;
-    if (sessionUser.id) {
+    if (sessionUser.id && typeof sessionUser.id === "string" && sessionUser.role === "admin") {
       const rows = await db
         .select()
         .from(users)
-        .where(eq(users.id, sessionUser.id as string))
+        .where(eq(users.id, sessionUser.id))
         .limit(1);
       return rows[0];
     }

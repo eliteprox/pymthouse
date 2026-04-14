@@ -42,9 +42,8 @@ export default function AdminAppsReviewPage() {
 
   useEffect(() => {
     if (status === "unauthenticated" || (status === "authenticated" && userRole !== "admin")) {
-      if (status === "authenticated") {
-        router.push("/");
-      }
+      router.push("/");
+      setLoading(false);
       return;
     }
     if (status !== "authenticated") return;

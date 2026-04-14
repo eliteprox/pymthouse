@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 
 const run = process.env.DATABASE_URL ? test : test.skip;
 
 run("upsert preserves consumed state for existing rows", async () => {
   const { PostgresOidcAdapter } = await import("./adapter");
   const adapter = new PostgresOidcAdapter("DeviceCode");
-  const id = "device-code-consume-test";
+  const id = `device-code-consume-test-${crypto.randomUUID()}`;
 
   await adapter.upsert(
     id,

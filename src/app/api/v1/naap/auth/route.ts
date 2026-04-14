@@ -52,7 +52,7 @@ async function getAuthenticatedAdminUserId(
   const oauthSession = await getServerSession(authOptions);
   if (oauthSession?.user) {
     const sessionUser = oauthSession.user as Record<string, unknown>;
-    if (sessionUser.id && typeof sessionUser.id === "string") {
+    if (sessionUser.id && typeof sessionUser.id === "string" && sessionUser.role === "admin") {
       return sessionUser.id;
     }
   }

@@ -7,7 +7,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
 import { developerApps } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 
 export async function POST(
   request: NextRequest,
@@ -42,27 +42,32 @@ export async function POST(
     );
   }
 
-  // Check current status - can only submit from draft or rejected
-  if (!["draft", "rejected"].includes(app.status)) {
-    return NextResponse.json(
-      {
-        error: "Invalid status",
-        message: `App is currently ${app.status}. Only draft or rejected apps can be submitted for review.`,
-      },
-      { status: 400 }
-    );
-  }
-
-  // Update status to submitted
+  // Guarded update: atomically transition only from draft or rejected
   const now = new Date().toISOString();
-  await db
+  const updated = await db
     .update(developerApps)
     .set({
       status: "submitted",
       submittedAt: now,
       updatedAt: now,
     })
-    .where(eq(developerApps.id, id));
+    .where(
+      and(
+        eq(developerApps.id, id),
+        inArray(developerApps.status, ["draft", "rejected"]),
+      ),
+    )
+    .returning({ id: developerApps.id });
+
+  if (updated.length === 0) {
+    return NextResponse.json(
+      {
+        error: "Invalid status",
+        message: `App is currently ${app.status}. Only draft or rejected apps can be submitted for review.`,
+      },
+      { status: 409 }
+    );
+  }
 
   return NextResponse.json({
     success: true,

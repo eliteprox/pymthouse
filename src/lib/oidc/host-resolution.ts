@@ -18,6 +18,10 @@ export async function resolveHostContext(): Promise<HostContext> {
   const hostHeader = requestHeaders.get("host");
   const requestHost = forwardedHost || hostHeader || "localhost";
 
+  if (!forwardedHost && !hostHeader) {
+    console.warn("[host-resolution] No host header found, falling back to localhost");
+  }
+
   const canonicalOrigin = getPublicOrigin();
   const canonicalHost = new URL(canonicalOrigin).host;
 

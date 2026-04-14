@@ -4,7 +4,15 @@ These routes manage **provisioned end users** for a **developer app** registered
 
 ## Authentication
 
-Use **HTTP Basic** authentication:
+First obtain an access token via **OAuth 2.0 Client Credentials** (`POST /api/v1/oidc/token`) using `client_id` and `client_secret`. The token must include the `users:token` scope (for issuing end-user tokens) or `users:read`/`users:write` as needed.
+
+Then use **Bearer** authentication on builder API calls:
+
+```http
+Authorization: Bearer <access_token>
+```
+
+Alternatively, you can use **HTTP Basic** authentication directly:
 
 ```http
 Authorization: Basic base64(client_id:client_secret)

@@ -65,7 +65,7 @@ export async function POST(
     const client = clientResults[0];
 
     if (action === "approve" && client) {
-      updateClientConfig(client.clientId, {
+      await updateClientConfig(client.clientId, {
         allowedScopes: app.pendingScopes,
         grantTypes: app.pendingGrantTypes.split(",").filter(Boolean),
       });
