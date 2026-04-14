@@ -2,10 +2,15 @@
  * Apply Drizzle SQL migrations to PostgreSQL (DATABASE_URL).
  */
 import "./load-env-first";
+import path from "path";
+import { fileURLToPath } from "url";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import * as schema from "../src/db/schema";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = path.resolve(__dirname, "..");
 
 const { signerConfig } = schema;
 
@@ -39,7 +44,7 @@ async function main() {
 
   const migrationClient = postgres(databaseUrl, { max: 1 });
   await migrate(drizzle(migrationClient, { schema }), {
-    migrationsFolder: "./drizzle",
+    migrationsFolder: path.join(PROJECT_ROOT, "drizzle"),
   });
   await migrationClient.end({ timeout: 5 });
 
