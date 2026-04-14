@@ -107,17 +107,17 @@ export async function POST(request: NextRequest) {
     name: name.trim(),
     developerName: body.developerName || null,
     websiteUrl: body.websiteUrl || null,
-    status: "approved",
-    publishedAt: now,
+    status: "draft", // Apps start as draft and require admin approval
     createdAt: now,
     updatedAt: now,
   });
 
   await ensureProviderAdminMembership(userId, appId);
-  void publishProviderAndPlans(appId).catch(() => {});
+  // Only publish to marketplace after approval
+  // void publishProviderAndPlans(appId).catch(() => {});
 
   return NextResponse.json(
-    { id: appId, clientId, status: "approved" },
+    { id: appId, clientId, status: "draft" },
     { status: 201 }
   );
 }
