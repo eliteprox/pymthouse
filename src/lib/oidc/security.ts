@@ -51,17 +51,49 @@ export function validateRedirectUri(
         const prefix = allowedUri.slice(0, starIdx);
         const suffix = allowedUri.slice(starIdx + 1);
 
-        // Wildcard must not appear in the middle (only prefix or suffix allowed)
-        if (prefix && suffix && prefix.length > 0 && suffix.length > 0) {
-          // Both prefix and suffix exist — allow only if redirect starts with prefix and ends with suffix
-          if (redirectUri.startsWith(prefix) && redirectUri.endsWith(suffix) &&
-              redirectUri.length >= prefix.length + suffix.length) {
-            return true;
+        if (prefix && suffix) {
+          // Wildcard in the middle (e.g. https://*.example.com/callback):
+          // parse URL components to avoid matching across URL boundaries
+          try {
+            const templateUrl = new URL(allowedUri.replace("*", "WILDCARD"));
+            if (templateUrl.host.includes("WILDCARD")) {
+              // Wildcard is in the host component
+              const hostSuffix = templateUrl.host.replace("WILDCARD", "");
+              if (
+                redirectUrl.protocol === templateUrl.protocol &&
+                (redirectUrl.host === hostSuffix.replace(/^\./, "") ||
+                  redirectUrl.host.endsWith(hostSuffix)) &&
+                redirectUrl.pathname === templateUrl.pathname &&
+                redirectUrl.search === templateUrl.search
+              ) {
+                return true;
+              }
+            } else if (templateUrl.pathname.includes("WILDCARD")) {
+              // Wildcard is in the path component
+              const pathPrefix = templateUrl.pathname.split("WILDCARD")[0];
+              if (
+                redirectUrl.protocol === templateUrl.protocol &&
+                redirectUrl.host === templateUrl.host &&
+                redirectUrl.pathname.startsWith(pathPrefix)
+              ) {
+                return true;
+              }
+            }
+            // Wildcard in query/fragment — too permissive, skip
+          } catch {
+            continue;
           }
         } else if (prefix) {
-          if (redirectUri.startsWith(prefix)) return true;
+          // Prefix-only wildcard (e.g. "https://*"): compare via URL href
+          if (redirectUrl.href.startsWith(prefix)) return true;
         } else if (suffix) {
-          if (redirectUri.endsWith(suffix)) return true;
+          // Suffix-only wildcard (e.g. "*.example.com"): compare host component only
+          if (
+            redirectUrl.host === suffix.replace(/^\./, "") ||
+            redirectUrl.host.endsWith(suffix)
+          ) {
+            return true;
+          }
         }
       } else if (redirectUri === allowedUri) {
         return true;

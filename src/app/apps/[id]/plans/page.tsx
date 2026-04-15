@@ -114,21 +114,26 @@ export default function AppPlansPage() {
 
   const deletePlan = async (planId: string) => {
     if (!canEdit) return;
-    const res = await fetch(`/api/v1/apps/${id}/plans?planId=${encodeURIComponent(planId)}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) {
-      let msg = `Failed to delete plan (${res.status})`;
-      try {
-        const data = await res.json();
-        if (data?.error) msg = data.error;
-      } catch {
-        /* ignore */
+    setPlanError("");
+    try {
+      const res = await fetch(`/api/v1/apps/${id}/plans?planId=${encodeURIComponent(planId)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        let msg = `Failed to delete plan (${res.status})`;
+        try {
+          const data = await res.json();
+          if (data?.error) msg = data.error;
+        } catch {
+          /* ignore */
+        }
+        setPlanError(msg);
+        return;
       }
-      setPlanError(msg);
-      return;
+      load();
+    } catch (err) {
+      setPlanError(`Network error: ${err instanceof Error ? err.message : String(err)}`);
     }
-    load();
   };
 
   return (
