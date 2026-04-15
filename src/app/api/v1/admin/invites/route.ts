@@ -22,14 +22,12 @@ export async function POST(req: NextRequest) {
   const code = crypto.randomBytes(16).toString("hex");
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  db.insert(adminInvites)
-    .values({
-      id: uuidv4(),
-      code,
-      createdBy: userId,
-      expiresAt,
-    })
-    .run();
+  await db.insert(adminInvites).values({
+    id: uuidv4(),
+    code,
+    createdBy: userId,
+    expiresAt,
+  });
 
   return NextResponse.json({ code, expiresAt });
 }
@@ -45,7 +43,7 @@ export async function GET() {
     return NextResponse.json({ error: "Admin only" }, { status: 403 });
   }
 
-  const invites = db
+  const invites = await db
     .select()
     .from(adminInvites)
     .where(
@@ -53,8 +51,7 @@ export async function GET() {
         isNull(adminInvites.usedBy),
         gt(adminInvites.expiresAt, new Date().toISOString())
       )
-    )
-    .all();
+    );
 
   return NextResponse.json({ invites });
 }
@@ -73,33 +70,33 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invite code required" }, { status: 400 });
   }
 
-  const invite = db
-    .select()
-    .from(adminInvites)
-    .where(
-      and(
-        eq(adminInvites.code, code),
-        isNull(adminInvites.usedBy),
-        gt(adminInvites.expiresAt, new Date().toISOString())
+  const result = await db.transaction(async (tx) => {
+    // Atomically claim the invite: only succeeds if still unused and not expired
+    const claimed = await tx
+      .update(adminInvites)
+      .set({ usedBy: userId })
+      .where(
+        and(
+          eq(adminInvites.code, code),
+          isNull(adminInvites.usedBy),
+          gt(adminInvites.expiresAt, new Date().toISOString())
+        )
       )
-    )
-    .get();
+      .returning({ id: adminInvites.id });
 
-  if (!invite) {
-    return NextResponse.json({ error: "Invalid or expired invite code" }, { status: 400 });
+    if (claimed.length === 0) {
+      return { error: "Invalid or expired invite code" };
+    }
+
+    // Upgrade user to admin
+    await tx.update(users).set({ role: "admin" }).where(eq(users.id, userId));
+
+    return { success: true };
+  });
+
+  if ("error" in result) {
+    return NextResponse.json({ error: result.error }, { status: 400 });
   }
-
-  // Upgrade user to admin
-  db.update(users)
-    .set({ role: "admin" })
-    .where(eq(users.id, userId))
-    .run();
-
-  // Mark invite as used
-  db.update(adminInvites)
-    .set({ usedBy: userId })
-    .where(eq(adminInvites.id, invite.id))
-    .run();
 
   return NextResponse.json({ success: true, role: "admin" });
 }

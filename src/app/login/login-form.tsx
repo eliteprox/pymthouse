@@ -1,18 +1,28 @@
 "use client";
 
 import { signIn, useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import Link from "next/link";
 
-function PrivyLoginButton({ callbackUrl }: { callbackUrl: string }) {
+interface AppBranding {
+  mode: "blackLabel" | "whiteLabel";
+  displayName: string;
+  logoUrl: string | null;
+  primaryColor: string;
+}
+
+function PrivyLoginButton({ primaryColor = "#10b981" }: { primaryColor?: string }) {
   const { login, authenticated, getAccessToken } = usePrivy();
   const [bridging, setBridging] = useState(false);
   const [bridgeRequested, setBridgeRequested] = useState(false);
   const [failed, setFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const rawCallbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  const callbackUrl = rawCallbackUrl.startsWith("/") && !rawCallbackUrl.startsWith("//") ? rawCallbackUrl : "/dashboard";
 
   useEffect(() => {
     if (bridgeRequested && authenticated && !bridging && !failed) {
@@ -64,7 +74,8 @@ function PrivyLoginButton({ callbackUrl }: { callbackUrl: string }) {
           login();
         }}
         disabled={bridging}
-        className="w-full px-4 py-3 bg-emerald-500 text-white rounded-lg text-sm font-medium hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full px-4 py-3 text-white rounded-lg text-sm font-medium hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        style={{ backgroundColor: primaryColor }}
       >
         {bridging ? "Connecting..." : "Sign In / Create Account"}
       </button>
@@ -77,25 +88,42 @@ function PrivyLoginButton({ callbackUrl }: { callbackUrl: string }) {
   );
 }
 
-export function LoginForm({
-  callbackUrl,
-  isAdmin,
-}: {
-  callbackUrl: string;
-  isAdmin: boolean;
-}) {
+export function LoginForm() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showAdmin, setShowAdmin] = useState(isAdmin);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [branding, setBranding] = useState<AppBranding | null>(null);
+  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  const safeCallbackUrl = callbackUrl.startsWith("/") && !callbackUrl.startsWith("//") ? callbackUrl : "/dashboard";
+  const clientId = searchParams.get("client_id");
+  const isAdmin = searchParams.get("admin") === "1";
+  const isOidcFlow = callbackUrl.includes("/oidc/");
+
+  useEffect(() => {
+    if (clientId && isOidcFlow) {
+      fetch(`/api/v1/apps/branding?client_id=${encodeURIComponent(clientId)}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data?.branding) {
+            setBranding(data.branding);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [clientId, isOidcFlow]);
+
+  const isWhiteLabel = branding?.mode === "whiteLabel";
+  const primaryColor = branding?.primaryColor || "#10b981";
 
   useEffect(() => {
     if (status === "authenticated" && session) {
-      router.push(callbackUrl);
+      router.push(safeCallbackUrl);
     }
-  }, [session, status, router, callbackUrl]);
+  }, [session, status, router, safeCallbackUrl]);
 
   useEffect(() => {
     if (isAdmin) setShowAdmin(true);
@@ -117,7 +145,7 @@ export function LoginForm({
       setError("Invalid token or insufficient permissions.");
       setLoading(false);
     } else if (result?.ok) {
-      router.push(callbackUrl);
+      router.push(safeCallbackUrl);
     }
   }
 
@@ -133,23 +161,43 @@ export function LoginForm({
     <div className="flex items-center justify-center min-h-screen bg-zinc-950">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">
-            <span className="text-emerald-400">pymt</span>house
-          </h1>
-          <p className="text-zinc-500 mt-2 text-sm">
-            Identity & Payment Infrastructure
-          </p>
+          {isWhiteLabel && branding ? (
+            <>
+              {branding.logoUrl && (
+                <img
+                  src={branding.logoUrl}
+                  alt={branding.displayName}
+                  className="h-12 w-auto mx-auto mb-4"
+                />
+              )}
+              <h1 className="text-3xl font-bold tracking-tight text-zinc-100">
+                {branding.displayName}
+              </h1>
+              <p className="text-zinc-500 mt-2 text-sm">
+                Sign in to continue
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-3xl font-bold tracking-tight">
+                <span className="text-emerald-400">pymt</span>house
+              </h1>
+              <p className="text-zinc-500 mt-2 text-sm">
+                Identity & Payment Infrastructure
+              </p>
+            </>
+          )}
         </div>
 
         {/* Privy login -- primary (email, wallet, social) */}
         <div className="border border-zinc-800 rounded-xl p-6 bg-zinc-900/30 mb-4">
           <h2 className="text-lg font-semibold text-zinc-200 mb-1">
-            Developer Sign In
+            {isWhiteLabel ? "Sign In" : "Developer Sign In"}
           </h2>
           <p className="text-sm text-zinc-500 mb-5">
             Sign in with your email, wallet, or social account.
           </p>
-          <PrivyLoginButton callbackUrl={callbackUrl} />
+          <PrivyLoginButton primaryColor={primaryColor} />
         </div>
 
         {/* Admin / OAuth section -- collapsed by default */}
@@ -220,48 +268,56 @@ export function LoginForm({
           )}
         </div>
 
-        <footer className="mt-6 border-t border-zinc-800 pt-4">
-          <div className="grid grid-cols-3 gap-3 text-xs">
-            <div>
-              <p className="text-zinc-500 uppercase tracking-wider mb-2">Explore</p>
-              <div className="space-y-1.5">
-                <Link href="/" className="block text-zinc-400 hover:text-zinc-200 transition-colors">
-                  Home
-                </Link>
-                <Link href="/marketplace" className="block text-zinc-400 hover:text-zinc-200 transition-colors">
-                  Marketplace
-                </Link>
+        {isWhiteLabel ? (
+          <footer className="mt-6 pt-4 text-center">
+            <p className="text-xs text-zinc-600">
+              Identity powered by{" "}
+              <span className="text-zinc-500">
+                <span className="text-emerald-500">pymt</span>house
+              </span>
+            </p>
+          </footer>
+        ) : (
+          <footer className="mt-6 border-t border-zinc-800 pt-4">
+            <div className="grid grid-cols-3 gap-3 text-xs">
+              <div>
+                <p className="text-zinc-500 uppercase tracking-wider mb-2">Explore</p>
+                <div className="space-y-1.5">
+                  <Link href="/" className="block text-zinc-400 hover:text-zinc-200 transition-colors">
+                    Home
+                  </Link>
+                </div>
+              </div>
+              <div>
+                <p className="text-zinc-500 uppercase tracking-wider mb-2">Platform</p>
+                <div className="space-y-1.5">
+                  <Link href="/dashboard" className="block text-zinc-400 hover:text-zinc-200 transition-colors">
+                    Dashboard
+                  </Link>
+                </div>
+              </div>
+              <div>
+                <p className="text-zinc-500 uppercase tracking-wider mb-2">Help</p>
+                <div className="space-y-1.5">
+                  <a
+                    href="https://github.com/eliteprox/pymthouse"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block text-zinc-400 hover:text-zinc-200 transition-colors"
+                  >
+                    GitHub
+                  </a>
+                  <a
+                    href="mailto:john@eliteencoder.net"
+                    className="block text-zinc-400 hover:text-zinc-200 transition-colors"
+                  >
+                    Support
+                  </a>
+                </div>
               </div>
             </div>
-            <div>
-              <p className="text-zinc-500 uppercase tracking-wider mb-2">Platform</p>
-              <div className="space-y-1.5">
-                <Link href="/dashboard" className="block text-zinc-400 hover:text-zinc-200 transition-colors">
-                  Dashboard
-                </Link>
-              </div>
-            </div>
-            <div>
-              <p className="text-zinc-500 uppercase tracking-wider mb-2">Help</p>
-              <div className="space-y-1.5">
-                <a
-                  href="https://github.com/eliteprox/pymthouse"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block text-zinc-400 hover:text-zinc-200 transition-colors"
-                >
-                  GitHub
-                </a>
-                <a
-                  href="mailto:john@eliteencoder.net"
-                  className="block text-zinc-400 hover:text-zinc-200 transition-colors"
-                >
-                  Support
-                </a>
-              </div>
-            </div>
-          </div>
-        </footer>
+          </footer>
+        )}
       </div>
     </div>
   );

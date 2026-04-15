@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemo } from "react";
+
 interface StreamSessionRow {
   id: string;
   manifestId: string;
@@ -48,6 +50,20 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
+/** Most recent last payment first; rows with no payment sort last. */
+function sortSessionsByLastPaymentDesc(
+  rows: StreamSessionRow[],
+): StreamSessionRow[] {
+  return [...rows].sort((a, b) => {
+    if (!a.lastPaymentAt && !b.lastPaymentAt) return 0;
+    if (!a.lastPaymentAt) return 1;
+    if (!b.lastPaymentAt) return -1;
+    return (
+      new Date(b.lastPaymentAt).getTime() - new Date(a.lastPaymentAt).getTime()
+    );
+  });
+}
+
 const statusBadge: Record<string, string> = {
   active: "bg-emerald-500/20 text-emerald-400",
   ended: "bg-zinc-500/20 text-zinc-400",
@@ -57,7 +73,12 @@ const statusBadge: Record<string, string> = {
 export default function StreamSessionTable({
   sessions,
 }: StreamSessionTableProps) {
-  if (sessions.length === 0) {
+  const orderedSessions = useMemo(
+    () => sortSessionsByLastPaymentDesc(sessions),
+    [sessions],
+  );
+
+  if (orderedSessions.length === 0) {
     return (
       <div className="text-center py-12 text-zinc-500">
         <p>No stream sessions found</p>
@@ -80,7 +101,7 @@ export default function StreamSessionTable({
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-800/50">
-          {sessions.map((s) => (
+          {orderedSessions.map((s) => (
             <tr
               key={s.id}
               className="hover:bg-zinc-900/50 transition-colors"

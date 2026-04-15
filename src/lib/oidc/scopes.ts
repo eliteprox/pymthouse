@@ -11,7 +11,7 @@ export interface ScopeDefinition {
   required?: boolean;
 }
 
-export const DEFAULT_OIDC_SCOPES = "openid profile email";
+export const DEFAULT_OIDC_SCOPES = "openid sign:job";
 
 export const OIDC_SCOPES: ScopeDefinition[] = [
   {
@@ -21,39 +21,29 @@ export const OIDC_SCOPES: ScopeDefinition[] = [
     required: true,
   },
   {
-    value: "profile",
-    label: "Basic Profile",
-    description: "See your name and profile photo",
+    value: "sign:job",
+    label: "Sign Jobs",
+    description: "Access all remote signer endpoints, including discovery and payment signing",
   },
   {
-    value: "email",
-    label: "Email Address",
-    description: "See your email address",
+    value: "users:read",
+    label: "Read Users",
+    description: "Read provisioned provider-managed application users",
   },
   {
-    value: "role",
-    label: "Account Role",
-    description: "See your account role in PymtHouse",
+    value: "users:write",
+    label: "Write Users",
+    description: "Create, update, and deactivate provisioned application users",
   },
   {
-    value: "plan",
-    label: "Subscription Plan",
-    description: "See your current PymtHouse plan tier",
+    value: "users:token",
+    label: "Issue User Tokens",
+    description: "Issue app-user access tokens for provider-managed backends",
   },
   {
-    value: "entitlements",
-    label: "Feature Access",
-    description: "See which PymtHouse features are enabled for your account",
-  },
-  {
-    value: "gateway",
-    label: "Gateway Access",
-    description: "Use Livepeer gateway signing and payment operations on your behalf",
-  },
-  {
-    value: "offline_access",
-    label: "Offline Access",
-    description: "Allow the app to refresh access without asking you to sign in again",
+    value: "admin",
+    label: "Admin",
+    description: "Administrative access to provider configuration surfaces",
   },
 ];
 

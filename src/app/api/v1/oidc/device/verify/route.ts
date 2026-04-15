@@ -14,6 +14,8 @@ import { SqliteAdapter } from "@/lib/oidc/adapter";
 import { getClient } from "@/lib/oidc/clients";
 import { normalizeUserCode } from "@/lib/oidc/device";
 import { getIssuer } from "@/lib/oidc/tokens";
+import { resolveAppBrandingByClientId } from "@/lib/oidc/branding";
+import { checkAppAccess } from "@/lib/oidc/app-access";
 
 function errorResponse(
   error: string,
@@ -68,7 +70,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   if (action === "lookup") {
     const clientId = deviceCode.clientId || deviceCode.params?.client_id;
-    const client = typeof clientId === "string" ? getClient(clientId) : null;
+    const client =
+      typeof clientId === "string" ? await getClient(clientId) : null;
+    const branding =
+      typeof clientId === "string"
+        ? await resolveAppBrandingByClientId(clientId)
+        : null;
     const scope =
       typeof deviceCode.scope === "string"
         ? deviceCode.scope
@@ -78,6 +85,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({
       client_name: client?.displayName || clientId || "Unknown Application",
       scopes: scope.split(" ").filter(Boolean),
+      branding: branding ? {
+        mode: branding.mode,
+        displayName: branding.displayName,
+        logoUrl: branding.logoUrl,
+        primaryColor: branding.primaryColor,
+      } : null,
     });
   }
 
@@ -85,6 +98,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const clientId = deviceCode.clientId || deviceCode.params?.client_id;
     if (typeof clientId !== "string" || !clientId) {
       return errorResponse("server_error", "Device code is missing client binding", 500);
+    }
+
+    // Check app access before approving
+    const accessCheck = await checkAppAccess(clientId, userId);
+    if (!accessCheck.allowed) {
+      return errorResponse(
+        "access_denied",
+        accessCheck.reason || "You do not have access to this application",
+        403
+      );
     }
 
     const provider = await getProvider();

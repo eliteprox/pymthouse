@@ -15,28 +15,50 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!hasScope(auth.scopes, "gateway")) {
+    if (!hasScope(auth.scopes, "sign:job")) {
       return NextResponse.json(
-        { error: "Forbidden: requires 'gateway' scope" },
+        {
+          error: "insufficient_scope",
+          error_description: "sign:job scope is required",
+        },
         { status: 403 }
       );
     }
 
-    // If the token is scoped to a developer app, verify it is approved.
-    // auth.appId is the OIDC clientId string (app_XXXX), not the developer_apps UUID,
-    // so we join through oidc_clients to look up the correct row.
+    // Enforce developer app approval before proxying.
+    // Tokens without an appId (e.g. direct admin tokens) bypass this check.
     if (auth.appId) {
-      const app = db
-        .select({ status: developerApps.status })
+      const trimmed = auth.appId.trim();
+      const fields = {
+        id: developerApps.id,
+        status: developerApps.status,
+        ownerId: developerApps.ownerId,
+      };
+      const rows = await db
+        .select(fields)
         .from(developerApps)
-        .innerJoin(oidcClients, eq(oidcClients.id, developerApps.oidcClientId))
-        .where(eq(oidcClients.clientId, auth.appId))
-        .get();
+        .innerJoin(
+          oidcClients,
+          eq(developerApps.oidcClientId, oidcClients.id),
+        )
+        .where(eq(oidcClients.clientId, trimmed))
+        .limit(1);
+      const app = rows[0] ?? null;
 
-      if (!app || app.status !== "approved") {
-        return NextResponse.json(
-          { error: "Forbidden: app is not approved for signer access" },
-          { status: 403 }
+      if (app && app.status !== "approved") {
+        if (auth.userId !== app.ownerId) {
+          return NextResponse.json(
+            {
+              error: "app_not_approved",
+              error_description:
+                "This application has not been approved and cannot process live payments",
+            },
+            { status: 403 },
+          );
+        }
+        // App owner may test their own unapproved app; log for usage tracking.
+        console.warn(
+          `[api] generate-live-payment: unapproved app ${app.id} accessed by owner ${auth.userId} (status: ${app.status})`,
         );
       }
     }

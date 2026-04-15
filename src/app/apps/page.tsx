@@ -40,7 +40,7 @@ export default function AppsPage() {
         <div>
           <h1 className="text-2xl font-bold text-zinc-100">My Apps</h1>
           <p className="text-sm text-zinc-500 mt-1">
-            Manage your developer applications
+            Manage your provider applications
           </p>
         </div>
         <Link
@@ -76,8 +76,8 @@ export default function AppsPage() {
             No apps yet
           </h2>
           <p className="text-sm text-zinc-500 mb-6 max-w-sm mx-auto">
-            Create your first app to start building with PymtHouse&apos;s OIDC
-            authentication and Livepeer network capabilities.
+            Create your first provider app to configure identity, plans, user
+            management, and signer access.
           </p>
           <Link
             href="/apps/new"

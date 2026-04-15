@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   // Check for admin access first
   const adminUser = await getAdminUser(request);
   if (adminUser) {
-    const allEndUsers = db.select().from(endUsers).all();
+    const allEndUsers = await db.select().from(endUsers);
     return NextResponse.json({ endUsers: allEndUsers });
   }
 
@@ -35,11 +35,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const endUser = db
+    const endUserRows = await db
       .select()
       .from(endUsers)
       .where(eq(endUsers.privyDid, privyDid))
-      .get();
+      .limit(1);
+    const endUser = endUserRows[0];
 
     if (!endUser) {
       return NextResponse.json(
@@ -64,20 +65,19 @@ export async function POST(request: NextRequest) {
   const adminUser = await getAdminUser(request);
   if (adminUser) {
     const id = uuidv4();
-    db.insert(endUsers)
-      .values({
-        id,
-        privyDid: body.privyDid || null,
-        walletAddress: body.walletAddress || null,
-        creditBalanceWei: body.creditBalanceWei || "0",
-      })
-      .run();
+    await db.insert(endUsers).values({
+      id,
+      privyDid: body.privyDid || null,
+      walletAddress: body.walletAddress || null,
+      creditBalanceWei: body.creditBalanceWei || "0",
+    });
 
-    const created = db
+    const createdRows = await db
       .select()
       .from(endUsers)
       .where(eq(endUsers.id, id))
-      .get();
+      .limit(1);
+    const created = createdRows[0];
 
     return NextResponse.json({ endUser: created }, { status: 201 });
   }
@@ -93,16 +93,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { id, isNew } = findOrCreateEndUser(
+    const { id, isNew } = await findOrCreateEndUser(
       privyDid,
-      body.walletAddress
+      body.walletAddress,
     );
 
-    const endUser = db
+    const endUserRowsPost = await db
       .select()
       .from(endUsers)
       .where(eq(endUsers.id, id))
-      .get();
+      .limit(1);
+    const endUser = endUserRowsPost[0];
 
     return NextResponse.json(
       { endUser, isNew },
@@ -134,12 +135,19 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
+  if (!/^\d+$/.test(String(amountWei))) {
+    return NextResponse.json(
+      { error: "amountWei must be a non-negative integer string" },
+      { status: 400 }
+    );
+  }
+
   const amount = BigInt(amountWei);
 
   if (action === "add_credits") {
-    addCredits(endUserId, amount);
+    await addCredits(endUserId, amount);
   } else if (action === "deduct_credits") {
-    const success = deductCredits(endUserId, amount);
+    const success = await deductCredits(endUserId, amount);
     if (!success) {
       return NextResponse.json(
         { error: "Insufficient balance" },
@@ -153,11 +161,12 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  const updated = db
+  const updatedRows = await db
     .select()
     .from(endUsers)
     .where(eq(endUsers.id, endUserId))
-    .get();
+    .limit(1);
+  const updated = updatedRows[0];
 
   return NextResponse.json({ endUser: updated });
 }
@@ -166,18 +175,24 @@ async function getAdminUser(request: NextRequest) {
   const oauthSession = await getServerSession(authOptions);
   if (oauthSession?.user) {
     const sessionUser = oauthSession.user as Record<string, unknown>;
-    if (sessionUser.id) {
-      return db
+    if (sessionUser.id && typeof sessionUser.id === "string" && sessionUser.role === "admin") {
+      const rows = await db
         .select()
         .from(users)
-        .where(eq(users.id, sessionUser.id as string))
-        .get();
+        .where(eq(users.id, sessionUser.id))
+        .limit(1);
+      return rows[0];
     }
   }
 
-  const auth = authenticateRequest(request);
+  const auth = await authenticateRequest(request);
   if (auth && hasScope(auth.scopes, "admin") && auth.userId) {
-    return db.select().from(users).where(eq(users.id, auth.userId)).get();
+    const rows = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, auth.userId))
+      .limit(1);
+    return rows[0];
   }
 
   return null;

@@ -6,10 +6,12 @@
 
 import { Provider, interactionPolicy } from "oidc-provider";
 import type { Configuration, ClientMetadata, KoaContextWithOIDC } from "oidc-provider";
-import { SqliteAdapter } from "./adapter";
+import { PostgresOidcAdapter } from "./adapter";
 import { findAccount } from "./account";
 import { getIssuer } from "./tokens";
 import { hashClientSecret } from "./clients";
+import { getTrustedLoginHosts, normalizeDomain } from "./custom-domains";
+import { ensureSigningKey } from "./jwks";
 import { db } from "@/db/index";
 import { oidcSigningKeys, oidcClients, appAllowedDomains, developerApps } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
@@ -19,16 +21,21 @@ import * as jose from "jose";
 const KEY_ALGORITHM = "RS256";
 
 /**
- * Load JWKS from the existing `oidc_signing_keys` table.
- * Falls back to an empty set (provider will warn).
+ * Load JWKS from the `oidc_signing_keys` table.
+ *
+ * Ensures at least one active signing key exists so node-oidc-provider can
+ * populate `idTokenSigningAlgValues` from the keystore. An empty JWKS leaves
+ * that list empty and every client fails validation with
+ * `id_token_signed_response_alg must not be provided (no values are allowed)`.
  */
 async function loadJWKS(): Promise<{ keys: jose.JWK[] }> {
-  const keys = db
+  await ensureSigningKey();
+
+  const keys = await db
     .select()
     .from(oidcSigningKeys)
     .orderBy(desc(oidcSigningKeys.createdAt))
-    .limit(5)
-    .all();
+    .limit(5);
 
   const jwks: jose.JWK[] = [];
 
@@ -52,8 +59,8 @@ async function loadJWKS(): Promise<{ keys: jose.JWK[] }> {
  * Load clients from the `oidc_clients` table and convert to the
  * node-oidc-provider ClientMetadata format.
  */
-function loadClients(): ClientMetadata[] {
-  const rows = db.select().from(oidcClients).all();
+async function loadClients(): Promise<ClientMetadata[]> {
+  const rows = await db.select().from(oidcClients);
 
   return rows.map((row) => {
     const redirectUris = (JSON.parse(row.redirectUris) as string[])
@@ -89,10 +96,10 @@ function loadClients(): ClientMetadata[] {
       client_name: row.displayName,
       redirect_uris: effectiveRedirectUris,
       grant_types: grantTypes,
-      response_types: ["code"],
       token_endpoint_auth_method: row.tokenEndpointAuthMethod as "none" | "client_secret_post" | "client_secret_basic",
       scope: row.allowedScopes,
     };
+    meta.response_types = grantTypes.includes("authorization_code") ? ["code"] : [];
 
     // White-label client metadata
     if (row.postLogoutRedirectUris) {
@@ -108,10 +115,11 @@ function loadClients(): ClientMetadata[] {
     if (row.clientUri) meta.client_uri = row.clientUri;
 
     if (row.clientSecretHash) {
-      // Store the SHA-256 hash in client_secret and patch comparison logic
-      // to hash incoming secrets before constant-time comparison.
       meta.client_secret = row.clientSecretHash;
       meta.client_secret_expires_at = 0;
+      if (!grantTypes.includes("client_credentials")) {
+        grantTypes.push("client_credentials");
+      }
     } else if (meta.token_endpoint_auth_method !== "none") {
       // Safety guard: clients without a secret cannot be confidential.
       meta.token_endpoint_auth_method = "none";
@@ -158,17 +166,14 @@ function patchHashedClientSecretComparison(provider: Provider): void {
 }
 
 /**
- * Build the interaction policy that auto-approves trusted clients
- * like `naap` (matching the current `prompt=none` / `skipConsent` behavior).
+ * Build the interaction policy with consent prompts for new scopes.
  */
 function buildInteractionPolicy() {
   const basePolicy = interactionPolicy.base();
 
-  // Modify the consent prompt: skip it for the naap client
   const consent = basePolicy.find((p) => p.name === "consent");
   if (consent) {
     const { Check } = interactionPolicy;
-    // Remove all existing consent checks and add one that auto-skips for naap
     consent.checks.clear();
     consent.checks.add(
       new Check(
@@ -176,11 +181,6 @@ function buildInteractionPolicy() {
         "consent required for third-party clients",
         async (ctx) => {
           const oidc = ctx.oidc;
-          // Skip consent for naap (trusted first-party)
-          if (oidc.client?.clientId === "naap") {
-            return Check.NO_NEED_TO_PROMPT;
-          }
-
           const requestedScopes = Array.from(oidc.requestParamScopes ?? []);
           const grantId = oidc.session?.grantIdFor(oidc.client!.clientId);
           if (!grantId) {
@@ -217,16 +217,62 @@ function buildInteractionPolicy() {
 }
 
 let _provider: Provider | null = null;
+let _cleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+// TTL-cached CORS snapshot (refreshes every 60s)
+let _corsCache: {
+  trustedHosts: string[];
+  clientOrigins: Map<string, Set<string>>;
+} | null = null;
+let _corsCacheExpiry = 0;
+const CORS_CACHE_TTL_MS = 60_000;
+
+async function getCorsSnapshot() {
+  const now = Date.now();
+  if (_corsCache && now < _corsCacheExpiry) return _corsCache;
+  _corsCache = await buildCorsSnapshot();
+  _corsCacheExpiry = now + CORS_CACHE_TTL_MS;
+  return _corsCache;
+}
+
+async function buildCorsSnapshot(): Promise<{
+  trustedHosts: string[];
+  clientOrigins: Map<string, Set<string>>;
+}> {
+  const trustedHosts = await getTrustedLoginHosts();
+  const oidcRows = await db.select().from(oidcClients);
+  const clientOrigins = new Map<string, Set<string>>();
+
+  for (const oc of oidcRows) {
+    const appRows = await db
+      .select({ id: developerApps.id })
+      .from(developerApps)
+      .where(eq(developerApps.oidcClientId, oc.id))
+      .limit(1);
+    const app = appRows[0];
+    if (!app) continue;
+    const domains = await db
+      .select()
+      .from(appAllowedDomains)
+      .where(eq(appAllowedDomains.appId, app.id));
+    clientOrigins.set(
+      oc.clientId,
+      new Set(domains.map((d) => d.domain)),
+    );
+  }
+
+  return { trustedHosts, clientOrigins };
+}
 
 export async function getProvider(): Promise<Provider> {
   if (_provider) return _provider;
 
   const issuer = getIssuer();
   const jwks = await loadJWKS();
-  const clients = loadClients();
+  const clients = await loadClients();
 
   const configuration: Configuration = {
-    adapter: SqliteAdapter,
+    adapter: PostgresOidcAdapter,
 
     clients,
 
@@ -234,13 +280,30 @@ export async function getProvider(): Promise<Provider> {
 
     jwks: jwks as Configuration["jwks"],
 
-    // Allow CORS from redirect URI origins, whitelisted domains, plus the issuer origin.
-    clientBasedCORS: (ctx, origin, client) => {
+    // Allow CORS from redirect URI origins, whitelisted domains, custom login domains, plus the issuer origin.
+    clientBasedCORS: (_ctx, origin, client) => {
       const issuerOrigin = new URL(issuer).origin;
       if (origin === issuerOrigin) {
-        return true; // Same-origin (e.g. admin UI at localhost:3001 testing device flow)
+        return true;
       }
-      // Check redirect URI origins
+
+      // Use cached snapshot (refreshed in background via TTL)
+      const corsSnapshot = _corsCache;
+
+      try {
+        const originUrl = new URL(origin);
+        const originHost = normalizeDomain(originUrl.host);
+        if (
+          corsSnapshot?.trustedHosts.some(
+            (h) => normalizeDomain(h) === originHost,
+          )
+        ) {
+          return true;
+        }
+      } catch {
+        /* invalid origin */
+      }
+
       const uris = client.redirectUris ?? [];
       const matchesRedirectUri = uris.some((uri) => {
         try {
@@ -251,45 +314,31 @@ export async function getProvider(): Promise<Provider> {
       });
       if (matchesRedirectUri) return true;
 
-      // Check appAllowedDomains table for this client
-      const clientRow = db.select().from(oidcClients)
-        .where(eq(oidcClients.clientId, client.clientId))
-        .get();
-      if (clientRow) {
-        const appRow = db.select({ id: developerApps.id }).from(developerApps)
-          .where(eq(developerApps.oidcClientId, clientRow.id))
-          .get();
-        if (appRow) {
-          const domains = db.select().from(appAllowedDomains)
-            .where(eq(appAllowedDomains.appId, appRow.id))
-            .all();
-          if (domains.some((d) => d.domain === origin)) return true;
-        }
-      }
+      const allowed = corsSnapshot?.clientOrigins.get(client.clientId);
+      if (allowed?.has(origin)) return true;
+
+      // Trigger async refresh so next request picks up changes
+      void getCorsSnapshot();
+
       return false;
     },
 
-    // Custom scopes
     scopes: [
       "openid",
-      "profile",
-      "email",
-      "role",
-      "plan",
-      "entitlements",
-      "gateway",
-      "offline_access",
+      "sign:job",
+      "users:read",
+      "users:write",
+      "users:token",
+      "admin",
     ],
 
-    // Map scopes to claims
     claims: {
       openid: ["sub"],
-      profile: ["name"],
-      email: ["email"],
-      role: ["role"],
-      plan: ["plan"],
-      entitlements: ["entitlements"],
-      gateway: ["gateway"],
+      "sign:job": ["sub"],
+      "users:read": ["sub"],
+      "users:write": ["sub"],
+      "users:token": ["sub"],
+      admin: ["sub"],
     },
 
     // Only support code flow
@@ -309,11 +358,12 @@ export async function getProvider(): Promise<Provider> {
     // Always issue refresh tokens when refresh_token grant is allowed
     issueRefreshToken: async (_ctx, client, code) => {
       if (!client.grantTypeAllowed("refresh_token")) return false;
-      return code.scopes.has("offline_access") || code.scopes.has("openid");
+      return true;
     },
 
     features: {
       devInteractions: { enabled: false },
+      clientCredentials: { enabled: true },
       deviceFlow: {
         enabled: true,
         charset: "base-20",
@@ -353,7 +403,7 @@ export async function getProvider(): Promise<Provider> {
             throw new Error(`Unknown resource indicator: ${resourceIndicator}`);
           }
           return {
-            scope: "openid profile email role plan entitlements gateway offline_access",
+            scope: "openid sign:job users:read users:write users:token admin",
             audience: issuer,
             accessTokenFormat: "jwt" as const,
             accessTokenTTL: 3600,
@@ -419,14 +469,6 @@ export async function getProvider(): Promise<Provider> {
       idTokenSigningAlgValues: ["RS256"],
     },
 
-    // Add custom claims to access tokens
-    extraTokenClaims: async (_ctx, token) => {
-      if (token.kind === "AccessToken") {
-        return { client_id: token.clientId };
-      }
-      return undefined;
-    },
-
     // Load existing grants for returning users
     loadExistingGrant: async (ctx) => {
       const grantId =
@@ -436,23 +478,6 @@ export async function getProvider(): Promise<Provider> {
       if (grantId) {
         const grant = await ctx.oidc.provider.Grant.find(grantId);
         if (grant) return grant;
-      }
-
-      // Auto-grant for naap (trusted first-party)
-      if (ctx.oidc.client?.clientId === "naap") {
-        const grant = new ctx.oidc.provider.Grant();
-        grant.clientId = ctx.oidc.client.clientId;
-        grant.accountId = ctx.oidc.session!.accountId!;
-
-        const requestedScopes = ctx.oidc.requestParamScopes;
-        if (requestedScopes) {
-          const scopeStr = Array.from(requestedScopes).join(" ");
-          grant.addOIDCScope(scopeStr);
-          grant.addResourceScope(issuer, scopeStr);
-        }
-
-        await grant.save();
-        return grant;
       }
 
       return undefined;
@@ -465,8 +490,16 @@ export async function getProvider(): Promise<Provider> {
   // Trust the proxy (Next.js + reverse proxy)
   _provider.proxy = true;
 
-  // Run periodic cleanup of expired adapter rows
-  setInterval(() => SqliteAdapter.cleanup(), 10 * 60 * 1000);
+  // Seed the CORS cache
+  await getCorsSnapshot();
+
+  // Run periodic cleanup of expired adapter rows (deduplicated)
+  if (_cleanupInterval) clearInterval(_cleanupInterval);
+  _cleanupInterval = setInterval(() => {
+    PostgresOidcAdapter.cleanup().catch((err) =>
+      console.error("Oidc cleanup failed", err),
+    );
+  }, 10 * 60 * 1000);
 
   return _provider;
 }
@@ -477,5 +510,11 @@ export async function getProvider(): Promise<Provider> {
  * the app settings API) so the provider picks up the changes.
  */
 export function resetProvider(): void {
+  if (_cleanupInterval) {
+    clearInterval(_cleanupInterval);
+    _cleanupInterval = null;
+  }
+  _corsCache = null;
+  _corsCacheExpiry = 0;
   _provider = null;
 }

@@ -16,12 +16,12 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const scopes = body.scopes || "gateway";
+  const scopes = body.scopes || "sign:job";
   const expiresInDays = body.expiresInDays || 90;
   const endUserId = body.endUserId || undefined;
   const label = body.label || undefined;
 
-  const validScopes = ["admin", "gateway", "read"];
+  const validScopes = ["admin", "sign:job", "read"];
   const scopeList = scopes.split(",").map((s: string) => s.trim());
   for (const scope of scopeList) {
     if (!validScopes.includes(scope)) {
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { sessionId, token } = createSession({
+  const { sessionId, token } = await createSession({
     userId: admin.id,
     endUserId,
     label,
@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const allSessions = db
+  const allSessions = await db
     .select({
       id: sessions.id,
       label: sessions.label,
@@ -75,8 +75,7 @@ export async function GET(request: NextRequest) {
       expiresAt: sessions.expiresAt,
       createdAt: sessions.createdAt,
     })
-    .from(sessions)
-    .all();
+    .from(sessions);
 
   return NextResponse.json({ tokens: allSessions });
 }
@@ -98,7 +97,7 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
-  revokeSession(body.sessionId);
+  await revokeSession(body.sessionId);
   return NextResponse.json({ message: "Token revoked" });
 }
 
@@ -107,17 +106,23 @@ async function getAdminUser(request: NextRequest) {
   if (oauthSession?.user) {
     const sessionUser = oauthSession.user as Record<string, unknown>;
     if (sessionUser.id) {
-      return db
+      const rows = await db
         .select()
         .from(users)
         .where(eq(users.id, sessionUser.id as string))
-        .get();
+        .limit(1);
+      return rows[0];
     }
   }
 
-  const auth = authenticateRequest(request);
+  const auth = await authenticateRequest(request);
   if (auth && hasScope(auth.scopes, "admin") && auth.userId) {
-    return db.select().from(users).where(eq(users.id, auth.userId)).get();
+    const rows = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, auth.userId))
+      .limit(1);
+    return rows[0];
   }
 
   return null;

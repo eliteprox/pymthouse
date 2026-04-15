@@ -1,45 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
-import { developerApps, appAllowedDomains } from "@/db/schema";
+import { appAllowedDomains } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { normalizeDomainWhitelist } from "@/lib/domain-whitelist";
-
-async function getOwnerApp(appId: string) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) return null;
-
-  const userId = (session.user as Record<string, unknown>).id as string;
-  const role = (session.user as Record<string, unknown>).role as string;
-  if (!userId) return null;
-
-  const app = db
-    .select()
-    .from(developerApps)
-    .where(eq(developerApps.id, appId))
-    .get();
-
-  if (!app || (app.ownerId !== userId && role !== "admin")) return null;
-  return app;
-}
+import {
+  canEditProviderApp,
+  getAuthorizedProviderApp,
+  appEditForbiddenResponse,
+} from "@/lib/provider-apps";
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const app = await getOwnerApp(id);
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
+  const app = auth?.app ?? null;
   if (!app) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const domains = db
+  const domains = await db
     .select()
     .from(appAllowedDomains)
-    .where(eq(appAllowedDomains.appId, id))
-    .all();
+    .where(eq(appAllowedDomains.appId, app.id));
 
   return NextResponse.json({ domains });
 }
@@ -48,10 +33,15 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const app = await getOwnerApp(id);
-  if (!app) {
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
+  const app = auth?.app ?? null;
+  if (!auth || !app) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (!(await canEditProviderApp(auth))) {
+    return appEditForbiddenResponse();
   }
 
   const body = await request.json();
@@ -76,11 +66,10 @@ export async function POST(
   const normalizedDomain = result.normalized;
 
   // Check for duplicates
-  const existingDomains = db
+  const existingDomains = await db
     .select()
     .from(appAllowedDomains)
-    .where(eq(appAllowedDomains.appId, id))
-    .all();
+    .where(eq(appAllowedDomains.appId, app.id));
 
   const isDuplicate = existingDomains.some(
     (d) => d.domain.toLowerCase() === normalizedDomain.toLowerCase()
@@ -94,13 +83,22 @@ export async function POST(
   }
 
   const domainId = uuidv4();
-  db.insert(appAllowedDomains)
-    .values({
+  try {
+    await db.insert(appAllowedDomains).values({
       id: domainId,
-      appId: id,
+      appId: app.id,
       domain: normalizedDomain,
-    })
-    .run();
+    });
+  } catch (err: unknown) {
+    // Handle unique constraint violation (Postgres error code 23505)
+    if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "23505") {
+      return NextResponse.json(
+        { error: `Domain "${normalizedDomain}" is already in the whitelist` },
+        { status: 409 }
+      );
+    }
+    throw err;
+  }
 
   return NextResponse.json({ id: domainId, domain: normalizedDomain }, { status: 201 });
 }
@@ -109,10 +107,15 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const app = await getOwnerApp(id);
-  if (!app) {
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
+  const app = auth?.app ?? null;
+  if (!auth || !app) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (!(await canEditProviderApp(auth))) {
+    return appEditForbiddenResponse();
   }
 
   const { searchParams } = new URL(request.url);
@@ -125,14 +128,12 @@ export async function DELETE(
     );
   }
 
-  db.delete(appAllowedDomains)
-    .where(
-      and(
-        eq(appAllowedDomains.id, domainId),
-        eq(appAllowedDomains.appId, id)
-      )
-    )
-    .run();
+  await db.delete(appAllowedDomains).where(
+    and(
+      eq(appAllowedDomains.id, domainId),
+      eq(appAllowedDomains.appId, app.id),
+    ),
+  );
 
   return NextResponse.json({ success: true });
 }

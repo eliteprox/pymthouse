@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/next-auth-options";
 import DeviceVerifyForm from "./device-verify-form";
+import { resolveHostContext } from "@/lib/oidc/host-resolution";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -12,6 +13,7 @@ export default async function DeviceVerificationPage({
 }) {
   const params = await searchParams;
   const session = await getServerSession(authOptions);
+  const hostContext = await resolveHostContext();
 
   if (!session?.user) {
     const qs = new URLSearchParams();
@@ -59,6 +61,13 @@ export default async function DeviceVerificationPage({
         </div>
 
         <DeviceVerifyForm />
+
+        <p className="text-xs text-zinc-600 text-center mt-6">
+          Identity powered by{" "}
+          <span className="text-zinc-500">
+            {hostContext.branding.displayName}
+          </span>
+        </p>
       </div>
     </main>
   );

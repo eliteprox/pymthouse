@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 
-process.env.DATABASE_PATH = `/tmp/pymthouse-oidc-adapter-test-${Date.now()}.db`;
+const run = process.env.DATABASE_URL ? test : test.skip;
 
-test("upsert preserves consumed state for existing rows", async () => {
-  const { SqliteAdapter } = await import("./adapter");
-  const adapter = new SqliteAdapter("DeviceCode");
-  const id = "device-code-consume-test";
+run("upsert preserves consumed state for existing rows", async () => {
+  const { PostgresOidcAdapter } = await import("./adapter");
+  const adapter = new PostgresOidcAdapter("DeviceCode");
+  const id = `device-code-consume-test-${crypto.randomUUID()}`;
 
   await adapter.upsert(
     id,

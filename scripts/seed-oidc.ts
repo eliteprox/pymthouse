@@ -1,18 +1,11 @@
-import { seedNaapClient, seedSdkClient } from "../src/lib/oidc/clients";
+import "./load-env-first";
 import { ensureSigningKey } from "../src/lib/oidc/jwks";
 
 async function main() {
   console.log("[oidc:seed] Ensuring OIDC signing key exists...");
   const keyPair = await ensureSigningKey();
   console.log(`[oidc:seed] Active signing key: ${keyPair.kid}`);
-
-  console.log("[oidc:seed] Seeding naap OIDC client...");
-  seedNaapClient();
-
-  console.log("[oidc:seed] Seeding livepeer-sdk OIDC client...");
-  seedSdkClient();
-
-  console.log("[oidc:seed] OIDC setup complete");
+  console.log("[oidc:seed] Done. Register clients via the dashboard or API.");
 }
 
 main().catch((err) => {

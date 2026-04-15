@@ -10,9 +10,17 @@ import { getProvider } from "@/lib/oidc/provider";
 import { IncomingMessage, ServerResponse } from "http";
 import { Socket } from "net";
 import { normalizeProviderPath } from "@/lib/oidc/routes";
-import { OIDC_MOUNT_PATH, getIssuer } from "@/lib/oidc/tokens";
+import { OIDC_MOUNT_PATH, getIssuer, getPublicOrigin } from "@/lib/oidc/tokens";
 import { getRegisteredRedirectOrigins } from "@/lib/oidc/clients";
-import { deriveExternalOriginFromHeaders, resolveRedirectLocation } from "./utils";
+import { isVerifiedCustomDomain } from "@/lib/oidc/custom-domains";
+import { getSecureHeaders } from "@/lib/oidc/security";
+import { deriveExternalOriginFromHeaders, resolveRedirectLocation, getTrustedOidcOrigins } from "./utils";
+import { isTokenExchangeGrant, handleTokenExchange, TokenExchangeError } from "@/lib/oidc/token-exchange";
+import {
+  handleGatewayTokenExchange,
+  isGatewayTokenExchangeRequest,
+} from "@/lib/oidc/gateway-token-exchange";
+import { rotateProgrammaticRefreshToken } from "@/lib/oidc/programmatic-tokens";
 
 const RESOURCE_REQUIRED_GRANTS = new Set([
   "urn:ietf:params:oauth:grant-type:device_code",
@@ -22,6 +30,30 @@ const RESOURCE_REQUIRED_GRANTS = new Set([
 
 const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
 
+function clientCredentialsFromTokenRequest(
+  request: NextRequest,
+  params: URLSearchParams,
+): { clientId: string; clientSecret: string } {
+  const auth = request.headers.get("authorization") || "";
+  if (auth.startsWith("Basic ")) {
+    try {
+      const decoded = Buffer.from(auth.slice(6), "base64").toString("utf-8");
+      const idx = decoded.indexOf(":");
+      if (idx > 0) {
+        return {
+          clientId: decoded.slice(0, idx),
+          clientSecret: decoded.slice(idx + 1),
+        };
+      }
+    } catch {
+      /* fall through to body */
+    }
+  }
+  return {
+    clientId: params.get("client_id") || "",
+    clientSecret: params.get("client_secret") || "",
+  };
+}
 
 /**
  * Convert a Web API Request/Response to the Node.js HTTP pair that
@@ -29,6 +61,8 @@ const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
  */
 async function handleOIDC(request: NextRequest): Promise<NextResponse> {
   const provider = await getProvider();
+  const registeredRedirectOriginsList = await getRegisteredRedirectOrigins();
+  const trustedOidcOriginsSet = await getTrustedOidcOrigins();
 
   // Build the path relative to the OIDC mount point.
   // The provider is mounted at /api/v1/oidc, so strip that prefix.
@@ -49,9 +83,94 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
   // Create a Node.js IncomingMessage from the NextRequest
   let body = request.body ? Buffer.from(await request.arrayBuffer()) : null;
 
+  // Intercept RFC 8693 token exchange before node-oidc-provider
+  const contentType = request.headers.get("content-type") || "";
+  if (
+    request.method === "POST" &&
+    path === "/token" &&
+    contentType.includes("application/x-www-form-urlencoded") &&
+    body &&
+    body.length > 0
+  ) {
+    const exchangeParams = new URLSearchParams(body.toString("utf-8"));
+    const grantType = exchangeParams.get("grant_type") || "";
+
+    if (grantType === "refresh_token") {
+      const refreshToken = exchangeParams.get("refresh_token") || "";
+      const { clientId, clientSecret } = clientCredentialsFromTokenRequest(
+        request,
+        exchangeParams,
+      );
+      const refreshed = await rotateProgrammaticRefreshToken({
+        refreshToken,
+        clientId,
+        clientSecret,
+      });
+      if (refreshed) {
+        return NextResponse.json(refreshed, {
+          headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+        });
+      }
+    }
+
+    if (isTokenExchangeGrant(grantType)) {
+      const { clientId, clientSecret } = clientCredentialsFromTokenRequest(
+        request,
+        exchangeParams,
+      );
+      const subjectTokenType = exchangeParams.get("subject_token_type") || "";
+      try {
+        if (
+          isGatewayTokenExchangeRequest({
+            grantType,
+            clientId,
+            subjectTokenType,
+          })
+        ) {
+          const result = await handleGatewayTokenExchange({
+            clientId,
+            clientSecret,
+            subjectToken: exchangeParams.get("subject_token") || "",
+            subjectTokenType,
+          });
+          return NextResponse.json(result, {
+            headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+          });
+        }
+
+        const result = await handleTokenExchange({
+          clientId,
+          clientSecret,
+          subjectToken: exchangeParams.get("subject_token") || "",
+          subjectTokenType,
+          scope: exchangeParams.get("scope") || undefined,
+          resource: exchangeParams.get("resource") || undefined,
+        });
+        return NextResponse.json(result, {
+          headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+        });
+      } catch (err) {
+        if (err instanceof TokenExchangeError) {
+          console.warn("[OIDC] token exchange rejected", {
+            code: err.code,
+            detail: err.message,
+          });
+          return NextResponse.json(
+            { error: err.code, error_description: err.publicDescription },
+            { status: 400 },
+          );
+        }
+        console.error("[OIDC] token exchange error:", err);
+        return NextResponse.json(
+          { error: "server_error", error_description: "Internal error during token exchange" },
+          { status: 500 },
+        );
+      }
+    }
+  }
+
   // RFC 8707 strict mode: ensure resource indicator is present on token-issuing
   // endpoints so access tokens are always audience-bound JWTs.
-  const contentType = request.headers.get("content-type") || "";
   if (
     request.method === "POST" &&
     contentType.includes("application/x-www-form-urlencoded") &&
@@ -113,7 +232,7 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
   } as any;
 
   return new Promise<NextResponse>((resolve) => {
-    res.end = function (chunk?: any, ...args: any[]) {
+    res.end = async function (chunk?: any, ...args: any[]) {
       if (chunk) {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
@@ -142,7 +261,8 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
         if (location) {
           const allowedOrigins = new Set([
             new URL(externalOrigin).origin,
-            ...getRegisteredRedirectOrigins(),
+            ...registeredRedirectOriginsList,
+            ...trustedOidcOriginsSet,
           ]);
           const redirectResponse = NextResponse.redirect(
             resolveRedirectLocation(location, externalOrigin, allowedOrigins),
@@ -155,6 +275,13 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
               redirectResponse.headers.append("Set-Cookie", cookie);
             }
           }
+          
+          // Add security headers to redirect responses
+          const redirectSecureHeaders = getSecureHeaders(false);
+          for (const [key, value] of Object.entries(redirectSecureHeaders)) {
+            redirectResponse.headers.set(key, value);
+          }
+          
           resolve(redirectResponse);
           return originalEnd(chunk, ...args);
         }
@@ -181,6 +308,17 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
             headers.set("content-length", String(finalBody.length));
           }
         } catch { /* non-JSON body, pass through */ }
+      }
+
+      // Determine if this is a custom domain request
+      const requestHost = req.headers["x-forwarded-host"] || req.headers.host || "";
+      const hostStr = Array.isArray(requestHost) ? requestHost[0] : requestHost;
+      const isCustomDomain = await isVerifiedCustomDomain(hostStr);
+      
+      // Add security headers
+      const secureHeaders = getSecureHeaders(isCustomDomain);
+      for (const [key, value] of Object.entries(secureHeaders)) {
+        headers.set(key, value);
       }
 
       const nextResponse = new NextResponse(

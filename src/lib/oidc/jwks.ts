@@ -33,16 +33,14 @@ export async function generateKeyPair(): Promise<{
 export async function createSigningKey(): Promise<string> {
   const { kid, publicKeyPem, privateKeyPem } = await generateKeyPair();
 
-  db.insert(oidcSigningKeys)
-    .values({
-      id: uuidv4(),
-      kid,
-      algorithm: KEY_ALGORITHM,
-      publicKeyPem,
-      privateKeyPem,
-      active: 1,
-    })
-    .run();
+  await db.insert(oidcSigningKeys).values({
+    id: uuidv4(),
+    kid,
+    algorithm: KEY_ALGORITHM,
+    publicKeyPem,
+    privateKeyPem,
+    active: 1,
+  });
 
   return kid;
 }
@@ -50,21 +48,22 @@ export async function createSigningKey(): Promise<string> {
 export async function rotateSigningKey(): Promise<string> {
   const now = new Date().toISOString();
 
-  db.update(oidcSigningKeys)
+  await db
+    .update(oidcSigningKeys)
     .set({ active: 0, rotatedAt: now })
-    .where(eq(oidcSigningKeys.active, 1))
-    .run();
+    .where(eq(oidcSigningKeys.active, 1));
 
   return createSigningKey();
 }
 
 export async function getActiveSigningKey(): Promise<SigningKeyPair | null> {
-  const key = db
+  const rows = await db
     .select()
     .from(oidcSigningKeys)
     .where(eq(oidcSigningKeys.active, 1))
     .orderBy(desc(oidcSigningKeys.createdAt))
-    .get();
+    .limit(1);
+  const key = rows[0];
 
   if (!key) return null;
 
@@ -91,12 +90,11 @@ export async function ensureSigningKey(): Promise<SigningKeyPair> {
 }
 
 export async function getPublicJWKS(): Promise<jose.JSONWebKeySet> {
-  const keys = db
+  const keys = await db
     .select()
     .from(oidcSigningKeys)
     .orderBy(desc(oidcSigningKeys.createdAt))
-    .limit(5) // Include recent rotated keys for graceful rotation
-    .all();
+    .limit(5);
 
   const jwks: jose.JWK[] = [];
 
@@ -115,11 +113,12 @@ export async function getPublicJWKS(): Promise<jose.JSONWebKeySet> {
 }
 
 export async function getSigningKeyByKid(kid: string): Promise<jose.CryptoKey | null> {
-  const key = db
+  const rows = await db
     .select()
     .from(oidcSigningKeys)
     .where(eq(oidcSigningKeys.kid, kid))
-    .get();
+    .limit(1);
+  const key = rows[0];
 
   if (!key) return null;
 
