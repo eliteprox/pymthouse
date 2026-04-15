@@ -24,7 +24,7 @@
     "@privy-io/react-auth": "^3.13.1",
     "@tailwindcss/postcss": "^4.1.18",
     "dotenv": "^17.4.2",
-    "drizzle-orm": "^0.38.0",
+    "drizzle-orm": "^0.45.2",
     "jose": "^6.2.1",
     "next": "^15.1.0",
     "next-auth": "^4.24.0",
