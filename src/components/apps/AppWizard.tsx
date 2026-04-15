@@ -97,7 +97,7 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
         setAppState({
           id: data.id,
           clientId: data.clientId,
-          status: data.status || "approved",
+          status: data.status ?? "draft",
           hasSecret: false,
         });
       } else {
@@ -135,11 +135,27 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
 
   const handleFinish = useCallback(async () => {
     if (!appState.id) return;
+    setError(null);
     try {
       await saveApp();
+      const submitRes = await fetch(`/api/v1/apps/${appState.id}/submit`, {
+        method: "POST",
+      });
+      if (!submitRes.ok) {
+        const text = await submitRes.text();
+        let msg = `Could not submit for review (${submitRes.status})`;
+        try {
+          const data = text ? JSON.parse(text) : {};
+          if (data.message) msg = data.message;
+          else if (data.error) msg = data.error;
+        } catch {
+          /* keep generic */
+        }
+        throw new Error(msg);
+      }
       router.push(`/apps/${appState.id}`);
-    } catch {
-      // error already set by saveApp
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
     }
   }, [appState.id, router, saveApp]);
 

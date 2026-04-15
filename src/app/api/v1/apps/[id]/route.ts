@@ -65,6 +65,7 @@ export async function GET(
     id: canonicalClientId,
     clientId: canonicalClientId,
     canEdit: await canEditProviderApp(auth),
+    canSubmitForReview: auth.app.ownerId === auth.userId,
     oidcClient: clientInfo
       ? {
           ...clientInfo,

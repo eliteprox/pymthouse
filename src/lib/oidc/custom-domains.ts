@@ -235,11 +235,11 @@ export async function getCustomDomainStatus(
   };
 }
 
-export async function getTrustedLoginHosts(): Promise<string[]> {
-  const baseHost = process.env.NEXTAUTH_URL
-    ? new URL(process.env.NEXTAUTH_URL).host
-    : "localhost:3001";
-
+/**
+ * Custom login hostnames that are enabled and DNS-verified (`customDomainVerifiedAt`).
+ * Excludes the platform base host from `NEXTAUTH_URL`.
+ */
+export async function getVerifiedCustomLoginDomainHosts(): Promise<string[]> {
   const rows = await db
     .select({ domain: developerApps.customLoginDomain })
     .from(developerApps)
@@ -247,12 +247,19 @@ export async function getTrustedLoginHosts(): Promise<string[]> {
       and(
         eq(developerApps.customLoginEnabled, 1),
         isNotNull(developerApps.customDomainVerifiedAt),
+        isNotNull(developerApps.customLoginDomain),
       ),
     );
 
-  const verifiedDomains = rows
-    .filter((row) => row.domain)
-    .map((row) => row.domain as string);
+  return rows.map((row) => row.domain as string);
+}
 
+/** Platform login host plus {@link getVerifiedCustomLoginDomainHosts} (verified custom domains only). */
+export async function getTrustedLoginHosts(): Promise<string[]> {
+  const baseHost = process.env.NEXTAUTH_URL
+    ? new URL(process.env.NEXTAUTH_URL).host
+    : "localhost:3001";
+
+  const verifiedDomains = await getVerifiedCustomLoginDomainHosts();
   return [baseHost, ...verifiedDomains];
 }

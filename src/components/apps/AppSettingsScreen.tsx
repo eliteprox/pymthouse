@@ -20,6 +20,10 @@ interface Props {
   initialInitiateLoginUri?: string | null;
   /** When false, settings are view-only (non-admin team members). */
   canEdit?: boolean;
+  /** Only the app owner may submit for review (matches submit API). */
+  canSubmitForReview?: boolean;
+  /** Called after a successful submit so the parent can refresh status UI. */
+  onReviewSubmitted?: () => void;
 }
 
 function mergeFormData(initial: Partial<AppFormData>): AppFormData {
@@ -43,6 +47,8 @@ export default function AppSettingsScreen({
   initialPostLogoutRedirectUris = [],
   initialInitiateLoginUri = null,
   canEdit = true,
+  canSubmitForReview = false,
+  onReviewSubmitted,
 }: Props) {
   const [formData, setFormData] = useState<AppFormData>(() =>
     mergeFormData(initialData),
@@ -61,6 +67,7 @@ export default function AppSettingsScreen({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [submittingForReview, setSubmittingForReview] = useState(false);
 
   const updateFormData = useCallback(
     (updates: Partial<AppFormData>) => {
@@ -116,6 +123,37 @@ export default function AppSettingsScreen({
     }
   }, [appId, formData, postLogoutRedirectUris, initiateLoginUri, canEdit]);
 
+  const submitForReview = useCallback(async () => {
+    if (!canSubmitForReview) return;
+    setSubmittingForReview(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/v1/apps/${appId}/submit`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        let msg = `Submit failed (${res.status})`;
+        try {
+          const data = text ? JSON.parse(text) : {};
+          if (data.message) msg = data.message;
+          else if (data.error) msg = data.error;
+        } catch {
+          /* keep generic */
+        }
+        throw new Error(msg);
+      }
+      setAppState((s) => ({ ...s, status: "submitted" }));
+      onReviewSubmitted?.();
+      setMessage("App submitted for review. An administrator will approve it.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setSubmittingForReview(false);
+    }
+  }, [appId, canSubmitForReview, onReviewSubmitted]);
+
   const addPostLogoutUri = () => {
     const trimmed = newPostLogoutUri.trim();
     if (!trimmed || postLogoutRedirectUris.includes(trimmed)) return;
@@ -144,6 +182,30 @@ export default function AppSettingsScreen({
           administrators can change settings.
         </div>
       )}
+      {canEdit &&
+        canSubmitForReview &&
+        (appState.status === "draft" || appState.status === "rejected") && (
+          <div className="p-4 rounded-xl border border-blue-500/25 bg-blue-500/5 space-y-3">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-100">
+                Submit for review
+              </h2>
+              <p className="text-sm text-zinc-400 mt-1">
+                While this app is in draft, only you and platform staff can use
+                it. Submit it when you are ready so an administrator can approve
+                it for production.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void submitForReview()}
+              disabled={submittingForReview}
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {submittingForReview ? "Submitting…" : "Submit for review"}
+            </button>
+          </div>
+        )}
       {error && (
         <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
           {error}

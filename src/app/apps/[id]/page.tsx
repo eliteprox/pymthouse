@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import DashboardLayout from "@/components/DashboardLayout";
 import AppSettingsScreen from "@/components/apps/AppSettingsScreen";
@@ -26,6 +26,7 @@ export default function AppDetailPage() {
     postLogoutRedirectUris: string[];
     initiateLoginUri: string | null;
     canEdit: boolean;
+    canSubmitForReview: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -69,11 +70,23 @@ export default function AppDetailPage() {
           postLogoutRedirectUris: data.oidcClient?.postLogoutRedirectUris || [],
           initiateLoginUri: data.oidcClient?.initiateLoginUri ?? null,
           canEdit: data.canEdit === true,
+          canSubmitForReview: data.canSubmitForReview === true,
         });
       })
       .catch(() => setAppData(null))
       .finally(() => setLoading(false));
   }, [id]);
+
+  const handleReviewSubmitted = useCallback(() => {
+    setAppData((prev) =>
+      prev
+        ? {
+            ...prev,
+            state: { ...prev.state, status: "submitted" },
+          }
+        : null,
+    );
+  }, []);
 
   if (loading) {
     return (
@@ -95,7 +108,8 @@ export default function AppDetailPage() {
     );
   }
 
-  const statusInfo = STATUS_LABELS[appData.state.status] || STATUS_LABELS.draft;
+  const statusInfo =
+    STATUS_LABELS[appData.state.status] || STATUS_LABELS.draft;
 
   return (
     <DashboardLayout>
@@ -144,6 +158,8 @@ export default function AppDetailPage() {
         initialPostLogoutRedirectUris={appData.postLogoutRedirectUris}
         initialInitiateLoginUri={appData.initiateLoginUri}
         canEdit={appData.canEdit}
+        canSubmitForReview={appData.canSubmitForReview}
+        onReviewSubmitted={handleReviewSubmitted}
       />
     </DashboardLayout>
   );
