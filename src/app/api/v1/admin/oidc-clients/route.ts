@@ -5,7 +5,7 @@ import { getAllClients, getClient, updateClientConfig } from "@/lib/oidc/clients
 
 /**
  * GET /api/v1/admin/oidc-clients
- * List all OIDC clients, including seeded system clients (naap-web, naap-service, livepeer-sdk).
+ * List all registered OIDC clients.
  */
 export async function GET() {
   const session = await getServerSession(authOptions);

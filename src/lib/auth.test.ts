@@ -6,7 +6,7 @@ const run = process.env.DATABASE_URL ? test : test.skip;
 run("authenticateRequestAsync still accepts pmth bearer tokens", async () => {
   const { createSession, authenticateRequestAsync } = await import("./auth");
   const { token } = await createSession({
-    scopes: "gateway",
+    scopes: "sign:job",
     expiresInDays: 1,
   });
 
@@ -18,5 +18,5 @@ run("authenticateRequestAsync still accepts pmth bearer tokens", async () => {
 
   const auth = await authenticateRequestAsync(request);
   assert.ok(auth);
-  assert.equal(auth.scopes, "gateway");
+  assert.equal(auth.scopes, "sign:job");
 });

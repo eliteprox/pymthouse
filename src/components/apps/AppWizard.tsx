@@ -40,7 +40,7 @@ export const defaultAppFormData: AppFormData = {
   tokenEndpointAuthMethod: "none",
   redirectUris: [],
   allowedScopes: DEFAULT_OIDC_SCOPES,
-  grantTypes: ["authorization_code", "refresh_token"],
+  grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"],
 };
 
 interface Props {

@@ -14,8 +14,8 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const auth = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
   const app = auth?.app ?? null;
   if (!app) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -24,7 +24,7 @@ export async function GET(
   const domains = await db
     .select()
     .from(appAllowedDomains)
-    .where(eq(appAllowedDomains.appId, id));
+    .where(eq(appAllowedDomains.appId, app.id));
 
   return NextResponse.json({ domains });
 }
@@ -33,8 +33,8 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const auth = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
   const app = auth?.app ?? null;
   if (!auth || !app) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -69,7 +69,7 @@ export async function POST(
   const existingDomains = await db
     .select()
     .from(appAllowedDomains)
-    .where(eq(appAllowedDomains.appId, id));
+    .where(eq(appAllowedDomains.appId, app.id));
 
   const isDuplicate = existingDomains.some(
     (d) => d.domain.toLowerCase() === normalizedDomain.toLowerCase()
@@ -86,7 +86,7 @@ export async function POST(
   try {
     await db.insert(appAllowedDomains).values({
       id: domainId,
-      appId: id,
+      appId: app.id,
       domain: normalizedDomain,
     });
   } catch (err: unknown) {
@@ -107,8 +107,8 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const auth = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
   const app = auth?.app ?? null;
   if (!auth || !app) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -131,7 +131,7 @@ export async function DELETE(
   await db.delete(appAllowedDomains).where(
     and(
       eq(appAllowedDomains.id, domainId),
-      eq(appAllowedDomains.appId, id),
+      eq(appAllowedDomains.appId, app.id),
     ),
   );
 

@@ -3,9 +3,24 @@ import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/index";
 import { authOptions } from "@/lib/next-auth-options";
-import { developerApps, providerAdmins } from "@/db/schema";
+import { developerApps, oidcClients, providerAdmins } from "@/db/schema";
+
+export async function getProviderAppByClientId(clientId: string) {
+  const rows = await db
+    .select({ app: developerApps })
+    .from(developerApps)
+    .innerJoin(oidcClients, eq(developerApps.oidcClientId, oidcClients.id))
+    .where(eq(oidcClients.clientId, clientId))
+    .limit(1);
+  return rows[0]?.app ?? null;
+}
 
 export async function getProviderApp(appId: string) {
+  const byClientId = await getProviderAppByClientId(appId);
+  if (byClientId) {
+    return byClientId;
+  }
+
   const rows = await db
     .select()
     .from(developerApps)
@@ -70,7 +85,7 @@ export async function getAuthorizedProviderApp(appId: string) {
   if (
     role === "admin" ||
     app.ownerId === userId ||
-    (await isProviderAdmin(userId, appId))
+    (await isProviderAdmin(userId, app.id))
   ) {
     return { app, userId, role: role ?? "developer" };
   }

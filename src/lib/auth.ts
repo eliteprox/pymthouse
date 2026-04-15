@@ -36,7 +36,7 @@ export async function createSession(opts: {
     endUserId,
     appId,
     label,
-    scopes = "gateway",
+    scopes = "sign:job",
     expiresInDays = 90,
   } = opts;
 
@@ -63,7 +63,7 @@ export async function createShortLivedSession(opts: {
     endUserId,
     appId,
     label,
-    scopes = "gateway",
+    scopes = "sign:job",
     expiresInMinutes,
   } = opts;
 
@@ -216,12 +216,7 @@ export async function authenticateRequestAsync(request: NextRequest): Promise<Au
   return {
     userId: typeof jwtPayload.sub === "string" ? jwtPayload.sub : null,
     endUserId: null,
-    appId:
-      typeof (jwtPayload as Record<string, unknown>).app_id === "string"
-        ? ((jwtPayload as Record<string, unknown>).app_id as string)
-        : typeof jwtPayload.client_id === "string"
-          ? jwtPayload.client_id
-          : null,
+    appId: typeof jwtPayload.client_id === "string" ? jwtPayload.client_id : null,
     sessionId: typeof jwtPayload.jti === "string" ? jwtPayload.jti : `jwt_${Date.now()}`,
     scopes: effectiveScopes,
     tokenHash: "",
@@ -290,7 +285,7 @@ export async function authenticateAppClient(request: NextRequest): Promise<{
   const app = appRows[0];
   if (!app) return null;
 
-  return { clientId, appId: app.id, scopes: clientRow.allowedScopes };
+  return { clientId, appId: clientId, scopes: clientRow.allowedScopes };
 }
 
 export class AuthError extends Error {

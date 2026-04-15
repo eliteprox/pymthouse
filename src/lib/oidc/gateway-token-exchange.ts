@@ -7,18 +7,18 @@ import { TokenExchangeError } from "./token-exchange";
 export const SUBJECT_ACCESS_TOKEN_TYPE =
   "urn:ietf:params:oauth:token-type:access_token";
 
-/** RFC 8693: issued token is an access token (opaque gateway session) */
+/** RFC 8693: issued token is an access token (opaque remote signer session) */
 export const ISSUED_ACCESS_TOKEN_TYPE =
   "urn:ietf:params:oauth:token-type:access_token";
 
 /**
- * Gateway session exchange: OIDC access token (JWT from this issuer) → long-lived `pmth_*`
+ * Remote signer session exchange: OIDC access token (JWT from this issuer) -> long-lived `pmth_*`
  * session, via RFC 8693 at POST /api/v1/oidc/token.
  *
- * Any **confidential** client may call this grant if `subject_token` was issued to that same
+ * Any confidential client may call this grant if `subject_token` was issued to that same
  * `client_id` (JWT `client_id` / `azp` must match the authenticated client).
  */
-export async function handleNaapGatewayTokenExchange(params: {
+export async function handleGatewayTokenExchange(params: {
   clientId: string;
   clientSecret: string;
   subjectToken: string;
@@ -35,7 +35,7 @@ export async function handleNaapGatewayTokenExchange(params: {
   if (subjectTokenType !== SUBJECT_ACCESS_TOKEN_TYPE) {
     throw new TokenExchangeError(
       "unsupported_token_type",
-      `For NaaP gateway exchange, subject_token_type must be ${SUBJECT_ACCESS_TOKEN_TYPE}`,
+      `For remote signer session exchange, subject_token_type must be ${SUBJECT_ACCESS_TOKEN_TYPE}`,
     );
   }
 
@@ -78,17 +78,17 @@ export async function handleNaapGatewayTokenExchange(params: {
     .replace(/\s+/g, ",");
   const effectiveScopes = normalizedScopes;
 
-  if (!hasScope(effectiveScopes, "gateway")) {
+  if (!hasScope(effectiveScopes, "sign:job")) {
     throw new TokenExchangeError(
       "invalid_grant",
-      "subject_token must include gateway scope for NaaP gateway exchange",
+      "subject_token must include sign:job scope for remote signer session exchange",
     );
   }
 
   const { token } = await createSession({
     userId: payload.sub,
-    scopes: "gateway",
-    label: "naap_linked",
+    scopes: "sign:job",
+    label: "remote_signer_session_exchange",
     expiresInDays: 90,
   });
 
@@ -99,11 +99,11 @@ export async function handleNaapGatewayTokenExchange(params: {
     token_type: "Bearer",
     expires_in: expiresIn,
     issued_token_type: ISSUED_ACCESS_TOKEN_TYPE,
-    scope: "gateway",
+    scope: "sign:job",
   };
 }
 
-export function isNaapGatewayTokenExchangeRequest(params: {
+export function isGatewayTokenExchangeRequest(params: {
   grantType: string;
   clientId: string;
   subjectTokenType: string;

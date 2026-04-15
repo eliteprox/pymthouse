@@ -28,7 +28,6 @@ export async function issueProgrammaticTokens(input: {
   oauthClientId: string;
   appUserId: string;
   scopes: string[];
-  role?: string;
 }) {
   const appRows = await db
     .select({ billingPattern: developerApps.billingPattern })
@@ -56,9 +55,7 @@ export async function issueProgrammaticTokens(input: {
   const accessToken = await new SignJWT({
     scope,
     scp: input.scopes,
-    app_id: input.developerAppId,
     client_id: input.oauthClientId,
-    roles: [input.role || "user"],
     user_type: "app_user",
   })
     .setProtectedHeader({ alg: "RS256", kid: keyPair.kid, typ: "JWT" })
@@ -72,7 +69,7 @@ export async function issueProgrammaticTokens(input: {
     .sign(keyPair.privateKey);
 
   const refresh = await createSession({
-    appId: input.developerAppId,
+    appId: input.oauthClientId,
     label: `app_user_refresh:${input.appUserId}`,
     scopes: scope,
     expiresInDays: REFRESH_TOKEN_TTL_DAYS,
@@ -103,27 +100,15 @@ export async function rotateProgrammaticRefreshToken(input: {
   }
 
   const appUserId = session.label.replace("app_user_refresh:", "");
-  const appUserRows = await db
-    .select()
-    .from(appUsers)
-    .where(
-      and(
-        eq(appUsers.id, appUserId),
-        eq(appUsers.clientId, session.appId),
-      ),
-    )
-    .limit(1);
-  const appUser = appUserRows[0];
-
-  if (!appUser || appUser.status !== "active") {
-    return null;
-  }
-
   const appRows = await db
-    .select({ oauthClientId: oidcClients.clientId, billingPattern: developerApps.billingPattern })
+    .select({
+      appId: developerApps.id,
+      oauthClientId: oidcClients.clientId,
+      billingPattern: developerApps.billingPattern,
+    })
     .from(developerApps)
     .innerJoin(oidcClients, eq(developerApps.oidcClientId, oidcClients.id))
-    .where(eq(developerApps.id, session.appId))
+    .where(eq(oidcClients.clientId, session.appId))
     .limit(1);
   const app = appRows[0];
 
@@ -139,14 +124,29 @@ export async function rotateProgrammaticRefreshToken(input: {
     return null;
   }
 
+  const appUserRows = await db
+    .select()
+    .from(appUsers)
+    .where(
+      and(
+        eq(appUsers.id, appUserId),
+        eq(appUsers.clientId, app.appId),
+      ),
+    )
+    .limit(1);
+  const appUser = appUserRows[0];
+
+  if (!appUser || appUser.status !== "active") {
+    return null;
+  }
+
   await revokeSession(session.sessionId);
 
   return issueProgrammaticTokens({
-    developerAppId: session.appId,
+    developerAppId: app.appId,
     oauthClientId: app.oauthClientId,
     appUserId: appUser.id,
     scopes: session.scopes.split(/[\s,]+/).map((scope) => scope.trim()).filter(Boolean),
-    role: appUser.role,
   });
 }
 

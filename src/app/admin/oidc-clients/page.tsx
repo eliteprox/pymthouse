@@ -15,8 +15,6 @@ interface OidcClient {
   createdAt: string;
 }
 
-const SYSTEM_CLIENTS = ["naap-web", "naap-service", "livepeer-sdk"];
-
 export default function AdminOidcClientsPage() {
   const [clients, setClients] = useState<OidcClient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,13 +104,6 @@ export default function AdminOidcClientsPage() {
       setSaving(false);
     }
   }
-
-  const systemClients = clients.filter((c) =>
-    SYSTEM_CLIENTS.includes(c.clientId)
-  );
-  const appClients = clients.filter(
-    (c) => !SYSTEM_CLIENTS.includes(c.clientId)
-  );
 
   if (loading) {
     return (
@@ -264,51 +255,19 @@ export default function AdminOidcClientsPage() {
       <div className="mb-8">
         <h2 className="text-2xl font-bold tracking-tight">OIDC Clients</h2>
         <p className="text-zinc-500 mt-1">
-          Manage all OIDC clients including seeded system clients
+          Manage all registered OIDC clients
         </p>
       </div>
 
-      {/* System Clients */}
-      <div className="mb-8">
-        <h3 className="text-lg font-semibold text-zinc-200 mb-4">
-          System Clients
-          <span className="ml-2 text-sm font-normal text-zinc-500">
-            ({systemClients.length})
-          </span>
-        </h3>
-        <div className="space-y-3">
-          {systemClients.map((client) => (
-            <ClientCard
-              key={client.id}
-              client={client}
-              onEdit={startEdit}
-              isSystem
-            />
-          ))}
-        </div>
+      <div className="space-y-3">
+        {clients.map((client) => (
+          <ClientCard
+            key={client.id}
+            client={client}
+            onEdit={startEdit}
+          />
+        ))}
       </div>
-
-      {/* App Clients */}
-      {appClients.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold text-zinc-200 mb-4">
-            App Clients
-            <span className="ml-2 text-sm font-normal text-zinc-500">
-              ({appClients.length})
-            </span>
-          </h3>
-          <div className="space-y-3">
-            {appClients.map((client) => (
-              <ClientCard
-                key={client.id}
-                client={client}
-                onEdit={startEdit}
-                isSystem={false}
-              />
-            ))}
-          </div>
-        </div>
-      )}
     </DashboardLayout>
   );
 }
@@ -316,11 +275,9 @@ export default function AdminOidcClientsPage() {
 function ClientCard({
   client,
   onEdit,
-  isSystem,
 }: {
   client: OidcClient;
   onEdit: (client: OidcClient) => void;
-  isSystem: boolean;
 }) {
   return (
     <div className="border border-zinc-800 rounded-xl p-5 bg-zinc-900/30">
@@ -330,11 +287,6 @@ function ClientCard({
             <h4 className="text-base font-semibold text-zinc-200">
               {client.displayName}
             </h4>
-            {isSystem && (
-              <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded-full text-xs font-medium">
-                System
-              </span>
-            )}
             {client.hasSecret && (
               <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full text-xs font-medium">
                 Secured

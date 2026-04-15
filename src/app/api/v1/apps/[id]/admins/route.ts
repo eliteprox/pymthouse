@@ -13,20 +13,22 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const auth = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const appId = auth.app.id;
 
   const memberships = await db
     .select()
     .from(providerAdmins)
-    .where(eq(providerAdmins.clientId, id));
+    .where(eq(providerAdmins.clientId, appId));
   const adminUsers = await db.select().from(users);
   return NextResponse.json({
     admins: memberships.map((membership) => ({
       ...membership,
+      clientId,
       user: adminUsers.find((user) => user.id === membership.userId) || null,
     })),
   });
@@ -36,11 +38,12 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const auth = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const appId = auth.app.id;
 
   if (!(await canEditProviderApp(auth))) {
     return appEditForbiddenResponse();
@@ -63,7 +66,7 @@ export async function POST(
     .from(providerAdmins)
     .where(
       and(
-        eq(providerAdmins.clientId, id),
+        eq(providerAdmins.clientId, appId),
         eq(providerAdmins.userId, userId),
       ),
     )
@@ -77,24 +80,25 @@ export async function POST(
   const membership = {
     id: uuidv4(),
     userId,
-    clientId: id,
+    clientId: appId,
     role: body.role || "admin",
     createdAt: new Date().toISOString(),
   };
 
   await db.insert(providerAdmins).values(membership);
-  return NextResponse.json(membership, { status: 201 });
+  return NextResponse.json({ ...membership, clientId }, { status: 201 });
 }
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const auth = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const appId = auth.app.id;
 
   if (!(await canEditProviderApp(auth))) {
     return appEditForbiddenResponse();
@@ -108,7 +112,7 @@ export async function DELETE(
 
   await db.delete(providerAdmins).where(
     and(
-      eq(providerAdmins.clientId, id),
+      eq(providerAdmins.clientId, appId),
       eq(providerAdmins.userId, userId),
     ),
   );

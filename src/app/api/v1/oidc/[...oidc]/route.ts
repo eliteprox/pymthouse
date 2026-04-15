@@ -17,9 +17,9 @@ import { getSecureHeaders } from "@/lib/oidc/security";
 import { deriveExternalOriginFromHeaders, resolveRedirectLocation, getTrustedOidcOrigins } from "./utils";
 import { isTokenExchangeGrant, handleTokenExchange, TokenExchangeError } from "@/lib/oidc/token-exchange";
 import {
-  handleNaapGatewayTokenExchange,
-  isNaapGatewayTokenExchangeRequest,
-} from "@/lib/oidc/naap-gateway-token-exchange";
+  handleGatewayTokenExchange,
+  isGatewayTokenExchangeRequest,
+} from "@/lib/oidc/gateway-token-exchange";
 import { rotateProgrammaticRefreshToken } from "@/lib/oidc/programmatic-tokens";
 
 const RESOURCE_REQUIRED_GRANTS = new Set([
@@ -90,13 +90,13 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
       const subjectTokenType = exchangeParams.get("subject_token_type") || "";
       try {
         if (
-          isNaapGatewayTokenExchangeRequest({
+          isGatewayTokenExchangeRequest({
             grantType,
             clientId,
             subjectTokenType,
           })
         ) {
-          const result = await handleNaapGatewayTokenExchange({
+          const result = await handleGatewayTokenExchange({
             clientId,
             clientSecret: exchangeParams.get("client_secret") || "",
             subjectToken: exchangeParams.get("subject_token") || "",

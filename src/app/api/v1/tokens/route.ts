@@ -16,12 +16,12 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const scopes = body.scopes || "gateway";
+  const scopes = body.scopes || "sign:job";
   const expiresInDays = body.expiresInDays || 90;
   const endUserId = body.endUserId || undefined;
   const label = body.label || undefined;
 
-  const validScopes = ["admin", "gateway", "read"];
+  const validScopes = ["admin", "sign:job", "read"];
   const scopeList = scopes.split(",").map((s: string) => s.trim());
   for (const scope of scopeList) {
     if (!validScopes.includes(scope)) {

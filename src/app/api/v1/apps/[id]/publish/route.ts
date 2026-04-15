@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { publishProviderAndPlans } from "@/lib/naap-marketplace";
 import {
   canEditProviderApp,
   getAuthorizedProviderApp,
@@ -10,8 +9,8 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const auth = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -20,6 +19,8 @@ export async function POST(
     return appEditForbiddenResponse();
   }
 
-  const result = await publishProviderAndPlans(id);
-  return NextResponse.json(result, { status: result.published ? 200 : 202 });
+  return NextResponse.json(
+    { published: false, reason: "marketplace_publish_disabled" },
+    { status: 200 },
+  );
 }

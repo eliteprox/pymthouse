@@ -140,17 +140,15 @@ export async function handleTokenExchange(params: {
     .filter(Boolean);
   const allowedScopes = clientRow.allowedScopes.split(/[,\s]+/).filter(Boolean);
   const grantedScopes = requestedScopes.filter((s) => allowedScopes.includes(s));
-  const scopeString = grantedScopes.join(" ") || "gateway";
+  const scopeString = grantedScopes.join(" ") || "sign:job";
 
   const issuer = getIssuer();
   const signingKey = await ensureSigningKey();
   const expiresIn = 3600;
 
   const accessToken = await new jose.SignJWT({
-    app_id: app.id,
     client_id: clientId,
     scope: scopeString,
-    gateway: scopeString.includes("gateway"),
     token_exchange: true,
   })
     .setProtectedHeader({ alg: "RS256", kid: signingKey.kid })

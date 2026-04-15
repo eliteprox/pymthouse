@@ -31,10 +31,6 @@ export const findAccount: FindAccount = async (_ctx, sub) => {
           claims.name = user.name;
         }
 
-        if (scopes.includes("gateway")) {
-          claims.gateway = true;
-        }
-
         return claims;
       },
     };
@@ -63,10 +59,6 @@ export const findAccount: FindAccount = async (_ctx, sub) => {
 
         if (scopes.includes("profile")) {
           claims.name = endUser.name;
-        }
-
-        if (scopes.includes("gateway")) {
-          claims.gateway = endUser.isActive;
         }
 
         return claims;

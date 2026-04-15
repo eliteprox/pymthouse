@@ -37,21 +37,13 @@ export async function getDefaultSigner() {
 }
 
 /**
- * Resolve `developer_apps.id` from JWT/session `appId` (OIDC `client_id`, optional `app_id` claim,
- * or developer app UUID when already stored that way).
+ * Resolve `developer_apps.id` from JWT/session `appId` (OIDC `client_id`).
  */
 export async function resolveDeveloperAppIdFromAuthAppId(
   authAppId: string | null | undefined,
 ): Promise<string | null> {
   if (!authAppId?.trim()) return null;
   const trimmed = authAppId.trim();
-
-  const byPk = await db
-    .select({ id: developerApps.id })
-    .from(developerApps)
-    .where(eq(developerApps.id, trimmed))
-    .limit(1);
-  if (byPk[0]) return byPk[0].id;
 
   const byOidc = await db
     .select({ id: developerApps.id })

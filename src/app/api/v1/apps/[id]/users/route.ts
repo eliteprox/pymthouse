@@ -6,28 +6,34 @@ import { db } from "@/db/index";
 import { appUsers } from "@/db/schema";
 import {
   canEditProviderApp,
+  getProviderApp,
   getAuthorizedProviderApp,
   appEditForbiddenResponse,
 } from "@/lib/provider-apps";
 import { createCorrelationId, writeAuditLog } from "@/lib/audit";
 
-async function canAccessUsers(request: NextRequest, appId: string, requiredScope: string) {
-  const providerAuth = await getAuthorizedProviderApp(appId);
+async function canAccessUsers(request: NextRequest, clientId: string, requiredScope: string) {
+  const app = await getProviderApp(clientId);
+  if (!app) {
+    return null;
+  }
+
+  const providerAuth = await getAuthorizedProviderApp(clientId);
   if (providerAuth) {
     return { app: providerAuth.app, actorUserId: providerAuth.userId, clientId: providerAuth.app.id };
   }
 
   const bearer = await authenticateRequestAsync(request);
-  if (bearer?.appId === appId && hasScope(bearer.scopes, requiredScope)) {
-    return { app: { id: appId }, actorUserId: bearer.userId, clientId: appId };
+  if (bearer?.appId === clientId && hasScope(bearer.scopes, requiredScope)) {
+    return { app, actorUserId: bearer.userId, clientId: app.id };
   }
 
   const clientAuth = await authenticateAppClient(request);
-  if (clientAuth?.appId === appId) {
+  if (clientAuth?.appId === clientId) {
     const required = requiredScope === "users:read" ? "users:read" : "users:write";
     const allowed = hasScope(clientAuth.scopes, required);
     if (allowed) {
-      return { app: { id: appId }, actorUserId: null, clientId: appId };
+      return { app, actorUserId: null, clientId: app.id };
     }
   }
 
@@ -38,27 +44,32 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const access = await canAccessUsers(request, id, "users:read");
+  const { id: clientId } = await params;
+  const access = await canAccessUsers(request, clientId, "users:read");
   if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const users = await db.select().from(appUsers).where(eq(appUsers.clientId, id));
-  return NextResponse.json({ users });
+  const users = await db.select().from(appUsers).where(eq(appUsers.clientId, access.app.id));
+  return NextResponse.json({
+    users: users.map((user) => ({
+      ...user,
+      clientId,
+    })),
+  });
 }
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const providerAuth = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const providerAuth = await getAuthorizedProviderApp(clientId);
   if (providerAuth && !(await canEditProviderApp(providerAuth))) {
     return appEditForbiddenResponse();
   }
 
-  const access = await canAccessUsers(request, id, "users:write");
+  const access = await canAccessUsers(request, clientId, "users:write");
   if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -75,7 +86,7 @@ export async function POST(
     .from(appUsers)
     .where(
       and(
-        eq(appUsers.clientId, id),
+        eq(appUsers.clientId, access.app.id),
         eq(appUsers.externalUserId, externalUserId),
       ),
     )
@@ -94,6 +105,7 @@ export async function POST(
 
     return NextResponse.json({
       ...existing,
+      clientId,
       email,
       status: typeof body.status === "string" ? body.status : existing.status,
       role: "user",
@@ -102,7 +114,7 @@ export async function POST(
 
   const user = {
     id: uuidv4(),
-    clientId: id,
+    clientId: access.app.id,
     externalUserId,
     email,
     status: typeof body.status === "string" ? body.status : "active",
@@ -113,27 +125,33 @@ export async function POST(
   await db.insert(appUsers).values(user);
 
   await writeAuditLog({
-    clientId: id,
+    clientId: access.app.id,
     actorUserId: access.actorUserId,
     action: "app_user_upserted",
     status: "success",
     metadata: { externalUserId },
   });
 
-  return NextResponse.json(user, { status: 201 });
+  return NextResponse.json(
+    {
+      ...user,
+      clientId,
+    },
+    { status: 201 },
+  );
 }
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const providerAuthPut = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const providerAuthPut = await getAuthorizedProviderApp(clientId);
   if (providerAuthPut && !(await canEditProviderApp(providerAuthPut))) {
     return appEditForbiddenResponse();
   }
 
-  const access = await canAccessUsers(request, id, "users:write");
+  const access = await canAccessUsers(request, clientId, "users:write");
   if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -149,7 +167,7 @@ export async function PUT(
     .from(appUsers)
     .where(
       and(
-        eq(appUsers.clientId, id),
+        eq(appUsers.clientId, access.app.id),
         eq(appUsers.externalUserId, externalUserId),
       ),
     )
@@ -170,7 +188,7 @@ export async function PUT(
     .where(eq(appUsers.id, existing.id));
 
   await writeAuditLog({
-    clientId: id,
+    clientId: access.app.id,
     actorUserId: access.actorUserId,
     action: "app_user_updated",
     status: "success",
@@ -184,13 +202,13 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const providerAuthDel = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const providerAuthDel = await getAuthorizedProviderApp(clientId);
   if (providerAuthDel && !(await canEditProviderApp(providerAuthDel))) {
     return appEditForbiddenResponse();
   }
 
-  const access = await canAccessUsers(request, id, "users:write");
+  const access = await canAccessUsers(request, clientId, "users:write");
   if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -206,7 +224,7 @@ export async function DELETE(
     .from(appUsers)
     .where(
       and(
-        eq(appUsers.clientId, id),
+        eq(appUsers.clientId, access.app.id),
         eq(appUsers.externalUserId, externalUserId),
       ),
     )
@@ -221,7 +239,7 @@ export async function DELETE(
 
   const correlationId = createCorrelationId();
   await writeAuditLog({
-    clientId: id,
+    clientId: access.app.id,
     actorUserId: access.actorUserId,
     action: "app_user_deactivated",
     status: "success",

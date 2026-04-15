@@ -15,13 +15,13 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
+  const { id: clientId } = await params;
   const session = await getServerSession(authOptions);
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const auth = await getAuthorizedProviderApp(id);
+  const auth = await getAuthorizedProviderApp(clientId);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

@@ -4,10 +4,8 @@ import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
 import { developerApps, oidcClients, providerAdmins } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
-import { v4 as uuidv4 } from "uuid";
 import { createAppClient } from "@/lib/oidc/clients";
 import { ensureProviderAdminMembership } from "@/lib/provider-apps";
-import { publishProviderAndPlans } from "@/lib/naap-marketplace";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -28,7 +26,7 @@ export async function GET() {
   const memberIds = memberships.map((membership) => membership.clientId);
   const ownedApps = await db
     .select({
-      id: developerApps.id,
+      id: oidcClients.clientId,
       name: developerApps.name,
       subtitle: developerApps.subtitle,
       category: developerApps.category,
@@ -50,7 +48,7 @@ export async function GET() {
       ? []
       : await db
         .select({
-          id: developerApps.id,
+          id: oidcClients.clientId,
           name: developerApps.name,
           subtitle: developerApps.subtitle,
           category: developerApps.category,
@@ -97,7 +95,7 @@ export async function POST(request: NextRequest) {
 
   const { id: oidcRowId, clientId } = await createAppClient(name.trim());
 
-  const appId = uuidv4();
+  const appId = clientId;
   const now = new Date().toISOString();
 
   await db.insert(developerApps).values({
@@ -113,11 +111,9 @@ export async function POST(request: NextRequest) {
   });
 
   await ensureProviderAdminMembership(userId, appId);
-  // Only publish to marketplace after approval
-  // void publishProviderAndPlans(appId).catch(() => {});
 
   return NextResponse.json(
-    { id: appId, clientId, status: "draft" },
+    { id: clientId, clientId, status: "draft" },
     { status: 201 }
   );
 }

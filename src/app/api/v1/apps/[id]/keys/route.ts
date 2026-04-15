@@ -18,11 +18,12 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const auth = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const appId = auth.app.id;
 
   // Return all keys (including revoked) for audit visibility
   const keys = await db
@@ -37,19 +38,25 @@ export async function GET(
       revokedAt: apiKeys.revokedAt,
     })
     .from(apiKeys)
-    .where(eq(apiKeys.clientId, id));
-  return NextResponse.json({ keys });
+    .where(eq(apiKeys.clientId, appId));
+  return NextResponse.json({
+    keys: keys.map((key) => ({
+      ...key,
+      clientId,
+    })),
+  });
 }
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const auth = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const appId = auth.app.id;
 
   if (!(await canEditProviderApp(auth))) {
     return appEditForbiddenResponse();
@@ -67,7 +74,7 @@ export async function POST(
       .where(
         and(
           eq(subscriptions.id, subscriptionId),
-          eq(subscriptions.clientId, id),
+          eq(subscriptions.clientId, appId),
         ),
       )
       .limit(1);
@@ -82,7 +89,7 @@ export async function POST(
     id: uuidv4(),
     keyHash: hashToken(apiKeyValue),
     userId: userId || null,
-    clientId: id,
+    clientId: appId,
     subscriptionId,
     label: typeof body.label === "string" ? body.label : null,
     status: "active",
@@ -94,7 +101,7 @@ export async function POST(
 
   const correlationId = createCorrelationId();
   await writeAuditLog({
-    clientId: id,
+    clientId: appId,
     actorUserId: userId || null,
     action: "api_key_created",
     status: "success",
@@ -121,11 +128,12 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const auth = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const appId = auth.app.id;
 
   if (!(await canEditProviderApp(auth))) {
     return appEditForbiddenResponse();
@@ -146,7 +154,7 @@ export async function DELETE(
     .where(
       and(
         eq(apiKeys.id, keyId),
-        eq(apiKeys.clientId, id),
+        eq(apiKeys.clientId, appId),
       ),
     )
     .returning({ id: apiKeys.id });
@@ -159,7 +167,7 @@ export async function DELETE(
   const actorUserId = (session?.user as Record<string, unknown> | undefined)?.id as string | undefined;
   const correlationId = createCorrelationId();
   await writeAuditLog({
-    clientId: id,
+    clientId: appId,
     actorUserId: actorUserId || null,
     action: "api_key_revoked",
     status: "success",

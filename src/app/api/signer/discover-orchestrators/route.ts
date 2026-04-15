@@ -12,11 +12,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!hasScope(auth.scopes, "discover:orchestrators")) {
+    if (!hasScope(auth.scopes, "sign:job")) {
       return NextResponse.json(
         {
           error: "insufficient_scope",
-          error_description: "discover:orchestrators scope is required",
+          error_description: "sign:job scope is required",
         },
         { status: 403 }
       );

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { getScopeDefinition } from "@/lib/oidc/scopes";
+import { getScopeDefinition, OIDC_SCOPES } from "@/lib/oidc/scopes";
 
 interface Props {
   appId: string | null;
@@ -179,7 +179,16 @@ export default function TestingStep({
   );
 
   const selectedRedirectUri = redirectUris[0] || "";
-  const selectedScopes = allowedScopes
+
+  // Strip scopes that have been removed from the catalog so stale DB values
+  // never leak into displayed snippets or test URLs.
+  const validScopeValues = new Set(OIDC_SCOPES.map((s) => s.value));
+  const effectiveScopes = allowedScopes
+    .split(/\s+/)
+    .filter((s) => s && validScopeValues.has(s))
+    .join(" ");
+
+  const selectedScopes = effectiveScopes
     .split(/\s+/)
     .filter(Boolean)
     .map((scope) => getScopeDefinition(scope)?.label || scope);
@@ -189,7 +198,7 @@ export default function TestingStep({
           client_id: clientId,
           redirect_uri: selectedRedirectUri,
           response_type: "code",
-          scope: allowedScopes,
+          scope: effectiveScopes,
           state: "test",
           code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
           code_challenge_method: "S256",
@@ -202,7 +211,7 @@ export default function TestingStep({
   -d "grant_type=client_credentials" \\
   -d "client_id=${clientId}" \\
   -d "client_secret=YOUR_CLIENT_SECRET" \\
-  -d "scope=${allowedScopes}"`
+  -d "scope=${effectiveScopes}"`
     : "";
 
   return (

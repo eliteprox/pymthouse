@@ -10,7 +10,6 @@ import { PostgresOidcAdapter } from "./adapter";
 import { findAccount } from "./account";
 import { getIssuer } from "./tokens";
 import { hashClientSecret } from "./clients";
-import { isTrustedFirstPartyClientId } from "./trusted-clients";
 import { getTrustedLoginHosts, normalizeDomain } from "./custom-domains";
 import { ensureSigningKey } from "./jwks";
 import { db } from "@/db/index";
@@ -167,8 +166,7 @@ function patchHashedClientSecretComparison(provider: Provider): void {
 }
 
 /**
- * Build the interaction policy that auto-approves trusted clients
- * for trusted first-party client_ids (see `trusted-clients.ts`).
+ * Build the interaction policy with consent prompts for new scopes.
  */
 function buildInteractionPolicy() {
   const basePolicy = interactionPolicy.base();
@@ -183,10 +181,6 @@ function buildInteractionPolicy() {
         "consent required for third-party clients",
         async (ctx) => {
           const oidc = ctx.oidc;
-          if (isTrustedFirstPartyClientId(oidc.client?.clientId)) {
-            return Check.NO_NEED_TO_PROMPT;
-          }
-
           const requestedScopes = Array.from(oidc.requestParamScopes ?? []);
           const grantId = oidc.session?.grantIdFor(oidc.client!.clientId);
           if (!grantId) {
@@ -331,9 +325,7 @@ export async function getProvider(): Promise<Provider> {
 
     scopes: [
       "openid",
-      "gateway",
       "sign:job",
-      "discover:orchestrators",
       "users:read",
       "users:write",
       "users:token",
@@ -342,13 +334,11 @@ export async function getProvider(): Promise<Provider> {
 
     claims: {
       openid: ["sub"],
-      gateway: ["sub"],
-      "sign:job": ["app_id"],
-      "discover:orchestrators": ["app_id"],
-      "users:read": ["app_id"],
-      "users:write": ["app_id"],
-      "users:token": ["app_id"],
-      admin: ["app_id", "roles"],
+      "sign:job": ["sub"],
+      "users:read": ["sub"],
+      "users:write": ["sub"],
+      "users:token": ["sub"],
+      admin: ["sub"],
     },
 
     // Only support code flow
@@ -375,7 +365,7 @@ export async function getProvider(): Promise<Provider> {
       devInteractions: { enabled: false },
       clientCredentials: { enabled: true },
       deviceFlow: {
-        enabled: false,
+        enabled: true,
         charset: "base-20",
         mask: "****-****",
         // Redirect the provider's built-in device pages to our custom React UI.
@@ -413,7 +403,7 @@ export async function getProvider(): Promise<Provider> {
             throw new Error(`Unknown resource indicator: ${resourceIndicator}`);
           }
           return {
-            scope: "openid sign:job discover:orchestrators users:read users:write users:token admin",
+            scope: "openid sign:job users:read users:write users:token admin",
             audience: issuer,
             accessTokenFormat: "jwt" as const,
             accessTokenTTL: 3600,
@@ -479,18 +469,6 @@ export async function getProvider(): Promise<Provider> {
       idTokenSigningAlgValues: ["RS256"],
     },
 
-    // Add custom claims to access tokens
-    extraTokenClaims: async (_ctx, token) => {
-      if (token.kind === "AccessToken") {
-        return {
-          client_id: token.clientId,
-          app_id: token.clientId,
-          roles: ["user"],
-        };
-      }
-      return undefined;
-    },
-
     // Load existing grants for returning users
     loadExistingGrant: async (ctx) => {
       const grantId =
@@ -500,26 +478,6 @@ export async function getProvider(): Promise<Provider> {
       if (grantId) {
         const grant = await ctx.oidc.provider.Grant.find(grantId);
         if (grant) return grant;
-      }
-
-      const trustedClient = ctx.oidc.client;
-      if (
-        trustedClient &&
-        isTrustedFirstPartyClientId(trustedClient.clientId)
-      ) {
-        const grant = new ctx.oidc.provider.Grant();
-        grant.clientId = trustedClient.clientId;
-        grant.accountId = ctx.oidc.session!.accountId!;
-
-        const requestedScopes = ctx.oidc.requestParamScopes;
-        if (requestedScopes) {
-          const scopeStr = Array.from(requestedScopes).join(" ");
-          grant.addOIDCScope(scopeStr);
-          grant.addResourceScope(issuer, scopeStr);
-        }
-
-        await grant.save();
-        return grant;
       }
 
       return undefined;

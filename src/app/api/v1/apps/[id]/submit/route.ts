@@ -8,6 +8,7 @@ import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
 import { developerApps } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
+import { getProviderApp } from "@/lib/provider-apps";
 
 export async function POST(
   request: NextRequest,
@@ -19,20 +20,11 @@ export async function POST(
   }
 
   const userId = (session.user as Record<string, unknown>).id as string;
-  const { id } = await params;
-
-  // Get the app
-  const apps = await db
-    .select()
-    .from(developerApps)
-    .where(eq(developerApps.id, id))
-    .limit(1);
-
-  if (apps.length === 0) {
+  const { id: clientId } = await params;
+  const app = await getProviderApp(clientId);
+  if (!app) {
     return NextResponse.json({ error: "App not found" }, { status: 404 });
   }
-
-  const app = apps[0];
 
   // Only the owner can submit the app
   if (app.ownerId !== userId) {
@@ -53,7 +45,7 @@ export async function POST(
     })
     .where(
       and(
-        eq(developerApps.id, id),
+        eq(developerApps.id, app.id),
         inArray(developerApps.status, ["draft", "rejected"]),
       ),
     )

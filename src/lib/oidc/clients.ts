@@ -3,11 +3,7 @@ import { oidcClients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { createHash, randomBytes } from "crypto";
-import {
-  DEFAULT_OIDC_SCOPES,
-  NAAP_SERVICE_OIDC_SCOPES,
-  NAAP_WEB_OIDC_SCOPES,
-} from "@/lib/oidc/scopes";
+import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
 
 export interface OidcClientConfig {
   clientId: string;
@@ -135,7 +131,7 @@ export async function getClient(clientId: string): Promise<{
 
 /**
  * Get all OIDC clients in the database.
- * Used primarily for admin interfaces to view/manage all clients including seeded ones.
+ * Used primarily for admin interfaces to view/manage all clients.
  */
 export async function getAllClients(): Promise<Array<{
   id: string;
@@ -310,145 +306,4 @@ export async function updateClientConfig(
   await db.update(oidcClients).set(updates).where(eq(oidcClients.clientId, clientId));
 
   return true;
-}
-
-const NAAP_WEB_REDIRECT_URIS = [
-  "http://localhost:*/api/v1/auth/providers/*/callback",
-  "https://*.naap.dev/api/v1/auth/providers/*/callback",
-  "https://*.vercel.app/api/v1/auth/providers/*/callback",
-] as const;
-
-/**
- * Confidential NaaP web app: Authorization Code + refresh_token.
- * The user agent completes the authorize redirect; the code→token exchange MUST run on NaaP
- * servers with `client_id` + `client_secret` (`client_secret_post`).
- *
- * Set `NAAP_WEB_CLIENT_SECRET` to pin or rotate the secret. On first create, if unset,
- * a one-time secret is generated and printed — store it and set the env var on future runs.
- * Existing DB rows that still use `token_endpoint_auth_method: none` log a migration hint
- * until `NAAP_WEB_CLIENT_SECRET` is set and seed is re-run.
- */
-export async function seedNaapWebClient(): Promise<void> {
-  const existing = await getClient("naap-web");
-  const envSecret = process.env.NAAP_WEB_CLIENT_SECRET?.trim();
-
-  if (existing) {
-    if (envSecret) {
-      await registerClient({
-        clientId: "naap-web",
-        clientSecret: envSecret,
-        displayName: "NaaP Platform (web)",
-        redirectUris: [...NAAP_WEB_REDIRECT_URIS],
-        allowedScopes: NAAP_WEB_OIDC_SCOPES,
-        grantTypes: ["authorization_code", "refresh_token"],
-        tokenEndpointAuthMethod: "client_secret_post",
-      });
-      console.log(
-        "[oidc:seed] naap-web: updated client_secret from NAAP_WEB_CLIENT_SECRET",
-      );
-    } else {
-      await db
-        .update(oidcClients)
-        .set({
-          displayName: "NaaP Platform (web)",
-          redirectUris: JSON.stringify([...NAAP_WEB_REDIRECT_URIS]),
-          allowedScopes: NAAP_WEB_OIDC_SCOPES,
-          grantTypes: "authorization_code,refresh_token",
-        })
-        .where(eq(oidcClients.clientId, "naap-web"));
-      console.log(
-        "[oidc:seed] naap-web: synced redirect URIs, scopes, and grant types (secret unchanged)",
-      );
-      if (existing.tokenEndpointAuthMethod === "none") {
-        console.warn(
-          "[oidc:seed] naap-web is still registered as a public client; set NAAP_WEB_CLIENT_SECRET and re-run oidc:seed to migrate to confidential.",
-        );
-      }
-    }
-    return;
-  }
-
-  const secret = envSecret ?? generateClientSecret();
-  if (!envSecret) {
-    console.warn(
-      "[oidc:seed] NAAP_WEB_CLIENT_SECRET not set; generated secret for naap-web — save it and set NAAP_WEB_CLIENT_SECRET on future runs:",
-    );
-    console.warn(`[oidc:seed]   ${secret}`);
-  }
-
-  await registerClient({
-    clientId: "naap-web",
-    clientSecret: secret,
-    displayName: "NaaP Platform (web)",
-    redirectUris: [...NAAP_WEB_REDIRECT_URIS],
-    allowedScopes: NAAP_WEB_OIDC_SCOPES,
-    grantTypes: ["authorization_code", "refresh_token"],
-    tokenEndpointAuthMethod: "client_secret_post",
-  });
-}
-
-/**
- * Confidential NaaP backend: `client_credentials` only.
- * Set `NAAP_SERVICE_CLIENT_SECRET` to control the secret; on first create, if unset,
- * a one-time secret is generated and printed to stdout.
- */
-export async function seedNaapServiceClient(): Promise<void> {
-  const existing = await getClient("naap-service");
-  const envSecret = process.env.NAAP_SERVICE_CLIENT_SECRET?.trim();
-
-  if (existing) {
-    if (envSecret) {
-      await registerClient({
-        clientId: "naap-service",
-        clientSecret: envSecret,
-        displayName: "NaaP Platform (service)",
-        redirectUris: [],
-        allowedScopes: NAAP_SERVICE_OIDC_SCOPES,
-        grantTypes: ["client_credentials"],
-        tokenEndpointAuthMethod: "client_secret_post",
-      });
-      console.log(
-        "[oidc:seed] naap-service: updated client_secret from NAAP_SERVICE_CLIENT_SECRET",
-      );
-    }
-    return;
-  }
-
-  const secret = envSecret ?? generateClientSecret();
-  if (!envSecret) {
-    console.warn(
-      "[oidc:seed] NAAP_SERVICE_CLIENT_SECRET not set; generated secret for naap-service — save it:",
-    );
-    console.warn(`[oidc:seed]   ${secret}`);
-  }
-
-  await registerClient({
-    clientId: "naap-service",
-    clientSecret: secret,
-    displayName: "NaaP Platform (service)",
-    redirectUris: [],
-    allowedScopes: NAAP_SERVICE_OIDC_SCOPES,
-    grantTypes: ["client_credentials"],
-    tokenEndpointAuthMethod: "client_secret_post",
-  });
-}
-
-/** Seeds both NaaP OIDC clients (`naap-web` + `naap-service`). */
-export async function seedNaapOidcClients(): Promise<void> {
-  await seedNaapWebClient();
-  await seedNaapServiceClient();
-}
-
-export async function seedSdkClient(): Promise<void> {
-  await registerClient({
-    clientId: "livepeer-sdk",
-    displayName: "Livepeer Gateway SDK",
-    redirectUris: [
-      "http://localhost:*/callback",
-      "http://127.0.0.1:*/callback",
-    ],
-    allowedScopes: "openid sign:job discover:orchestrators",
-    grantTypes: ["authorization_code", "refresh_token"],
-    tokenEndpointAuthMethod: "none",
-  });
 }

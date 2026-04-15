@@ -98,17 +98,17 @@ If an admin already exists, the script issues a new token for the existing admin
 curl -H "Authorization: Bearer pmth_..." http://localhost:3001/api/v1/signers
 ```
 
-Once logged in, you can issue additional gateway tokens from the admin dashboard.
+Once logged in, you can issue additional remote-signer tokens from the admin dashboard.
 
-## OIDC seed (NaaP + SDK clients)
+## OIDC seed and client registration
 
-After migrations, register built-in OIDC clients (signing key, **`naap-web`**, **`naap-service`**, `livepeer-sdk`):
+After migrations, initialize OIDC signing keys:
 
 ```bash
 npm run oidc:seed
 ```
 
-Optional: set `NAAP_SERVICE_CLIENT_SECRET` in `.env` before seeding so the `naap-service` secret is known. See [docs/naap-oidc-integration.md](docs/naap-oidc-integration.md) and [docs/builder-api.md](docs/builder-api.md).
+Then register application clients through the dashboard/API and rotate secrets per app from the credentials endpoint (`/api/v1/apps/{clientId}/credentials`). See [docs/naap-oidc-integration.md](docs/naap-oidc-integration.md) and [docs/builder-api.md](docs/builder-api.md).
 
 ## Common commands
 

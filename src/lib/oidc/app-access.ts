@@ -57,10 +57,9 @@ export async function checkAppAccess(
     .limit(1);
 
   if (appRows.length === 0) {
-    // Not a developer app (might be system client like naap-web)
     return {
-      allowed: true,
-      reason: "System client",
+      allowed: false,
+      reason: "Client is not associated with a registered developer app",
     };
   }
 

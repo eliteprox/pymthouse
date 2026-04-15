@@ -5,7 +5,7 @@ import { db } from "@/db/index";
 import { developerApps, oidcClients, appAllowedDomains } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { updateClientConfig } from "@/lib/oidc/clients";
-import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
+import { DEFAULT_OIDC_SCOPES, OIDC_SCOPES } from "@/lib/oidc/scopes";
 import {
   canEditProviderApp,
   getAuthorizedProviderApp,
@@ -16,8 +16,8 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const auth = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -58,8 +58,12 @@ export async function GET(
     .from(appAllowedDomains)
     .where(eq(appAllowedDomains.appId, app.id));
 
+  const canonicalClientId = clientInfo?.clientId ?? clientId;
+  const { oidcClientId: _oidcClientId, ...appWithoutOidcClientId } = app;
   return NextResponse.json({
-    ...app,
+    ...appWithoutOidcClientId,
+    id: canonicalClientId,
+    clientId: canonicalClientId,
     canEdit: await canEditProviderApp(auth),
     oidcClient: clientInfo
       ? {
@@ -75,8 +79,8 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const auth = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -121,7 +125,14 @@ export async function PUT(
       if (body.redirectUris) clientUpdates.redirectUris = body.redirectUris;
       if (body.tokenEndpointAuthMethod)
         clientUpdates.tokenEndpointAuthMethod = body.tokenEndpointAuthMethod;
-      if (body.allowedScopes) clientUpdates.allowedScopes = body.allowedScopes;
+      if (body.allowedScopes) {
+        const validScopeValues = new Set(OIDC_SCOPES.map((s) => s.value));
+        const filtered = String(body.allowedScopes)
+          .split(/[,\s]+/)
+          .filter((s) => s && validScopeValues.has(s))
+          .join(" ");
+        clientUpdates.allowedScopes = filtered || DEFAULT_OIDC_SCOPES;
+      }
       if (body.grantTypes) clientUpdates.grantTypes = body.grantTypes;
 
       if (Object.keys(clientUpdates).length > 0) {

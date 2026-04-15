@@ -32,7 +32,7 @@ export const sessions = pgTable("sessions", {
   appId: text("app_id"), // developer app this token belongs to (nullable)
   label: text("label"),
   tokenHash: text("token_hash").notNull().unique(),
-  scopes: text("scopes").notNull().default("gateway"),
+  scopes: text("scopes").notNull().default("sign:job"),
   expiresAt: text("expires_at").notNull(),
   createdAt: text("created_at")
     .notNull()
@@ -146,7 +146,7 @@ export const oidcSigningKeys = pgTable("oidc_signing_keys", {
   rotatedAt: text("rotated_at"),
 });
 
-// OIDC client registrations (e.g. naap-web, naap-service, per-app clients)
+// OIDC client registrations for developer applications
 export const oidcClients = pgTable("oidc_clients", {
   id: text("id").primaryKey(),
   clientId: text("client_id").notNull().unique(),

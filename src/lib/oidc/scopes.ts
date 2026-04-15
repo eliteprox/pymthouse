@@ -11,18 +11,7 @@ export interface ScopeDefinition {
   required?: boolean;
 }
 
-export const DEFAULT_OIDC_SCOPES = "openid sign:job discover:orchestrators";
-
-/** Browser / Authorization Code + PKCE flows for the NaaP platform. */
-export const NAAP_WEB_OIDC_SCOPES = "openid gateway sign:job discover:orchestrators";
-
-/**
- * Server-side `client_credentials` for NaaP services (no interactive login).
- * `gateway` is included so naap-service JWT tokens work with the
- * POST /api/v1/naap/link-user endpoint and gateway-scoped operations.
- */
-export const NAAP_SERVICE_OIDC_SCOPES =
-  "gateway sign:job discover:orchestrators users:read users:write users:token";
+export const DEFAULT_OIDC_SCOPES = "openid sign:job";
 
 export const OIDC_SCOPES: ScopeDefinition[] = [
   {
@@ -32,19 +21,9 @@ export const OIDC_SCOPES: ScopeDefinition[] = [
     required: true,
   },
   {
-    value: "gateway",
-    label: "Gateway Access",
-    description: "Access gateway endpoints for signing jobs and orchestrator operations",
-  },
-  {
     value: "sign:job",
     label: "Sign Jobs",
-    description: "Request payment signatures from the configured remote signer",
-  },
-  {
-    value: "discover:orchestrators",
-    label: "Discover Orchestrators",
-    description: "Query the provider signer for allowed orchestrator candidates",
+    description: "Access all remote signer endpoints, including discovery and payment signing",
   },
   {
     value: "users:read",

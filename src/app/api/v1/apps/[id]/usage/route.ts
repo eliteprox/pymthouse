@@ -3,16 +3,20 @@ import { authenticateAppClient } from "@/lib/auth";
 import { db } from "@/db/index";
 import { appUsers, usageRecords } from "@/db/schema";
 import { and, eq, gte, inArray, lte } from "drizzle-orm";
-import { getAuthorizedProviderApp } from "@/lib/provider-apps";
+import { getAuthorizedProviderApp, getProviderApp } from "@/lib/provider-apps";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
+  const { id: clientId } = await params;
   const clientAuth = await authenticateAppClient(request);
-  const providerAuth = await getAuthorizedProviderApp(id);
-  if (!providerAuth && clientAuth?.appId !== id) {
+  const providerAuth = await getAuthorizedProviderApp(clientId);
+  if (!providerAuth && clientAuth?.appId !== clientId) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  const app = providerAuth?.app ?? (await getProviderApp(clientId));
+  if (!app) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -30,7 +34,7 @@ export async function GET(
     return NextResponse.json({ error: "Invalid endDate format" }, { status: 400 });
   }
 
-  const conditions = [eq(usageRecords.clientId, id)];
+  const conditions = [eq(usageRecords.clientId, app.id)];
   if (startDate) conditions.push(gte(usageRecords.createdAt, startDate));
   if (endDate) conditions.push(lte(usageRecords.createdAt, endDate));
   if (filterUserId) conditions.push(eq(usageRecords.userId, filterUserId));
@@ -53,7 +57,7 @@ export async function GET(
   };
 
   const response: Record<string, unknown> = {
-    appId: id,
+    clientId,
     period: {
       start: startDate || null,
       end: endDate || null,

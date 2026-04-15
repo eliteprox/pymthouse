@@ -16,5 +16,6 @@ test("discovery metadata advertises implemented endpoints", async () => {
   assert.equal(payload.device_authorization_endpoint, `${issuer}${PROVIDER_ENDPOINT_PATHS.deviceAuthorization}`);
   assert.equal(payload.introspection_endpoint, `${issuer}${PROVIDER_ENDPOINT_PATHS.introspection}`);
   assert.equal(payload.revocation_endpoint, `${issuer}${PROVIDER_ENDPOINT_PATHS.revocation}`);
-  assert.ok((payload.claims_supported as string[]).includes("gateway"));
+  assert.ok((payload.scopes_supported as string[]).includes("sign:job"));
+  assert.ok(!(payload.claims_supported as string[]).includes("gateway"));
 });

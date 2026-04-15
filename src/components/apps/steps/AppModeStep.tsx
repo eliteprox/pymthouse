@@ -18,8 +18,8 @@ function deriveMode(data: AppFormData): AppMode {
   return isM2M ? "m2m" : "user_login";
 }
 
-const M2M_SCOPES = "users:read users:write users:token gateway sign:job discover:orchestrators";
-const USER_LOGIN_SCOPES = "openid sign:job discover:orchestrators";
+const M2M_SCOPES = "users:read users:write users:token sign:job";
+const USER_LOGIN_SCOPES = "openid sign:job";
 
 const MODE_CARDS: {
   key: AppMode;
@@ -56,10 +56,10 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
   const mode = deriveMode(data);
   const scopes = data.allowedScopes.split(/\s+/).filter(Boolean);
   const interactiveScopes = OIDC_SCOPES.filter((scope) =>
-    ["openid", "sign:job", "discover:orchestrators", "admin"].includes(scope.value),
+    ["openid", "sign:job", "admin"].includes(scope.value),
   );
   const machineScopes = OIDC_SCOPES.filter((scope) =>
-    ["users:read", "users:write", "users:token", "gateway", "sign:job", "discover:orchestrators"].includes(scope.value),
+    ["users:read", "users:write", "users:token", "sign:job"].includes(scope.value),
   );
 
   const applyMode = (nextMode: AppMode) => {
@@ -67,7 +67,7 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
     if (nextMode === "user_login") {
       onChange({
         tokenEndpointAuthMethod: "none",
-        grantTypes: ["authorization_code", "refresh_token"],
+        grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"],
         allowedScopes: USER_LOGIN_SCOPES,
       });
       return;
@@ -160,7 +160,7 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
                     Authorization Code + PKCE
                     <span className="ml-1.5 text-[10px] font-normal text-zinc-500 uppercase tracking-wide">(required)</span>
                   </p>
-                  <p className="text-xs text-zinc-500">Standards-based interactive provider access.</p>
+                  <p className="text-xs text-zinc-500">Browser redirect flow — the foundation of interactive sign-in. Always required.</p>
                 </div>
               </label>
               <label className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
@@ -179,6 +179,27 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
                   <p className="text-sm font-medium text-zinc-200">Refresh Token</p>
                   <p className="text-xs text-zinc-500 mt-0.5">
                     Allow direct refresh at the token endpoint after the initial interactive sign-in.
+                  </p>
+                </div>
+              </label>
+              <label className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
+                data.grantTypes.includes("urn:ietf:params:oauth:grant-type:device_code")
+                  ? "border-emerald-500/30 bg-emerald-500/5"
+                  : "border-zinc-800 bg-zinc-800/20 hover:border-zinc-600"
+              }`}>
+                <input
+                  type="checkbox"
+                  checked={data.grantTypes.includes("urn:ietf:params:oauth:grant-type:device_code")}
+                  onChange={() => toggleGrant("urn:ietf:params:oauth:grant-type:device_code")}
+                  disabled={readOnly}
+                  className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 mt-0.5 shrink-0 disabled:opacity-50"
+                />
+                <div>
+                  <p className="text-sm font-medium text-zinc-200">Device Authorization Flow
+                    <span className="ml-1.5 text-[10px] font-normal text-zinc-500 uppercase tracking-wide">(RFC 8628)</span>
+                  </p>
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    Allow CLI tools, SDKs, and headless clients to authenticate via a user code on a secondary device.
                   </p>
                 </div>
               </label>
@@ -270,7 +291,7 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
             <ol className="text-xs text-zinc-500 space-y-1 list-decimal list-inside">
               <li>Your backend authenticates with client credentials.</li>
               <li>You provision users via the app user management API.</li>
-              <li>You request a short-lived token for a provisioned app user (include <code className="font-mono">sign:job discover:orchestrators</code> for gateway access).</li>
+              <li>You request a short-lived token for a provisioned app user (include <code className="font-mono">sign:job</code> for remote signer access).</li>
               <li>The SDK uses that user-bound token for discovery and signing.</li>
             </ol>
           </div>

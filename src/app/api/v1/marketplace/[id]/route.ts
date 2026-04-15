@@ -7,11 +7,11 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
+  const { id: clientId } = await params;
 
   const results = await db
     .select({
-      id: developerApps.id,
+      id: oidcClients.clientId,
       name: developerApps.name,
       subtitle: developerApps.subtitle,
       description: developerApps.description,
@@ -28,8 +28,8 @@ export async function GET(
       createdAt: developerApps.createdAt,
     })
     .from(developerApps)
-    .leftJoin(oidcClients, eq(developerApps.oidcClientId, oidcClients.id))
-    .where(and(eq(developerApps.id, id), eq(developerApps.status, "approved")))
+    .innerJoin(oidcClients, eq(developerApps.oidcClientId, oidcClients.id))
+    .where(and(eq(oidcClients.clientId, clientId), eq(developerApps.status, "approved")))
     .limit(1);
 
   const app = results[0];

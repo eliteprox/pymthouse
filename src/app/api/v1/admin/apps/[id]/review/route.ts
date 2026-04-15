@@ -5,13 +5,13 @@ import { db } from "@/db/index";
 import { developerApps, oidcClients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { updateClientConfig } from "@/lib/oidc/clients";
-import { publishProviderAndPlans } from "@/lib/naap-marketplace";
+import { getProviderApp } from "@/lib/provider-apps";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
+  const { id: clientId } = await params;
   const session = await getServerSession(authOptions);
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -24,13 +24,7 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const appResults = await db
-    .select()
-    .from(developerApps)
-    .where(eq(developerApps.id, id))
-    .limit(1);
-
-  const app = appResults[0];
+  const app = await getProviderApp(clientId);
 
   if (!app) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -79,7 +73,7 @@ export async function POST(
         reviewerNotes: action === "reject" ? notes || null : null,
         updatedAt: now,
       })
-      .where(eq(developerApps.id, id));
+      .where(eq(developerApps.id, app.id));
 
     return NextResponse.json({
       success: true,
@@ -107,14 +101,7 @@ export async function POST(
       publishedAt: action === "approve" ? now : null,
       updatedAt: now,
     })
-    .where(eq(developerApps.id, id));
-
-  // Publish to marketplace when approved
-  if (action === "approve") {
-    void publishProviderAndPlans(id).catch((err) => {
-      console.error("Failed to publish app to marketplace:", err);
-    });
-  }
+    .where(eq(developerApps.id, app.id));
 
   return NextResponse.json({ success: true, status: newStatus });
 }

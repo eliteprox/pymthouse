@@ -5,12 +5,13 @@ import { db } from "@/db/index";
 import { appUsers } from "@/db/schema";
 import { createCorrelationId, writeAuditLog } from "@/lib/audit";
 import { issueProgrammaticTokens, ProgrammaticTokenError } from "@/lib/oidc/programmatic-tokens";
+import { getProviderApp } from "@/lib/provider-apps";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; externalUserId: string }> },
 ) {
-  const { id, externalUserId } = await params;
+  const { id: clientId, externalUserId } = await params;
   const correlationId = createCorrelationId();
   const client = await authenticateAppClient(request);
 
@@ -25,9 +26,10 @@ export async function POST(
     );
   }
 
-  if (client.appId !== id) {
+  if (client.appId !== clientId) {
+    const app = await getProviderApp(clientId);
     await writeAuditLog({
-      clientId: id,
+      clientId: app?.id ?? null,
       action: "programmatic_token_issued",
       status: "forbidden",
       correlationId,
@@ -54,6 +56,18 @@ export async function POST(
     );
   }
 
+  const app = await getProviderApp(clientId);
+  if (!app) {
+    return NextResponse.json(
+      {
+        error: "not_found",
+        error_description: "developer app was not found for this client_id",
+        correlation_id: correlationId,
+      },
+      { status: 404 },
+    );
+  }
+
   const body = await request.json().catch(() => ({}));
   const requestedScopes = String(body.scope || "")
     .split(/\s+/)
@@ -62,14 +76,14 @@ export async function POST(
 
   const scopes = requestedScopes.length > 0
     ? requestedScopes
-    : ["sign:job", "discover:orchestrators"];
+    : ["sign:job"];
 
   const invalidScope = scopes.find(
     (scope) => !hasScope(client.scopes, scope) || scope === "admin",
   );
   if (invalidScope) {
     await writeAuditLog({
-      clientId: id,
+      clientId: app.id,
       action: "programmatic_token_issued",
       status: "invalid_scope",
       correlationId,
@@ -90,7 +104,7 @@ export async function POST(
     .from(appUsers)
     .where(
       and(
-        eq(appUsers.clientId, id),
+        eq(appUsers.clientId, app.id),
         eq(appUsers.externalUserId, externalUserId),
       ),
     )
@@ -99,7 +113,7 @@ export async function POST(
 
   if (!appUser || appUser.status !== "active") {
     await writeAuditLog({
-      clientId: id,
+      clientId: app.id,
       action: "programmatic_token_issued",
       status: "not_found",
       correlationId,
@@ -118,16 +132,15 @@ export async function POST(
   let tokens;
   try {
     tokens = await issueProgrammaticTokens({
-      developerAppId: id,
+      developerAppId: app.id,
       oauthClientId: client.clientId,
       appUserId: appUser.id,
       scopes,
-      role: "user",
     });
   } catch (err) {
     if (err instanceof ProgrammaticTokenError) {
       await writeAuditLog({
-        clientId: id,
+        clientId: app.id,
         action: "programmatic_token_issued",
         status: err.code,
         correlationId,
@@ -146,7 +159,7 @@ export async function POST(
   }
 
   await writeAuditLog({
-    clientId: id,
+    clientId: app.id,
     action: "programmatic_token_issued",
     status: "success",
     correlationId,

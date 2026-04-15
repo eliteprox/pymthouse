@@ -8,7 +8,6 @@ import {
   getAuthorizedProviderApp,
   appEditForbiddenResponse,
 } from "@/lib/provider-apps";
-import { publishProviderAndPlans } from "@/lib/naap-marketplace";
 
 function parseCapabilities(input: unknown): {
   capabilities: Array<{
@@ -79,22 +78,29 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const auth = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const appId = auth.app.id;
 
-  const rows = await db.select().from(plans).where(eq(plans.clientId, id));
+  const rows = await db.select().from(plans).where(eq(plans.clientId, appId));
   const bundles = await db
     .select()
     .from(planCapabilityBundles)
-    .where(eq(planCapabilityBundles.clientId, id));
+    .where(eq(planCapabilityBundles.clientId, appId));
 
   return NextResponse.json({
     plans: rows.map((plan) => ({
       ...plan,
-      capabilities: bundles.filter((bundle) => bundle.planId === plan.id),
+      clientId,
+      capabilities: bundles
+        .filter((bundle) => bundle.planId === plan.id)
+        .map((bundle) => ({
+          ...bundle,
+          clientId,
+        })),
     })),
   });
 }
@@ -103,8 +109,8 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const auth = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -135,10 +141,11 @@ export async function POST(
 
   const planId = uuidv4();
   const now = new Date().toISOString();
+  const appId = auth.app.id;
   await db.transaction(async (tx) => {
     await tx.insert(plans).values({
       id: planId,
-      clientId: id,
+      clientId: appId,
       name,
       type: body.type || "free",
       priceAmount: String(body.priceAmount || "0"),
@@ -152,7 +159,7 @@ export async function POST(
       await tx.insert(planCapabilityBundles).values({
         id: uuidv4(),
         planId,
-        clientId: id,
+        clientId: appId,
         pipeline: capability.pipeline,
         modelId: capability.modelId,
         slaTargetScore: capability.slaTargetScore ?? null,
@@ -163,8 +170,6 @@ export async function POST(
     }
   });
 
-  void publishProviderAndPlans(id).catch(() => {});
-
   return NextResponse.json({ id: planId }, { status: 201 });
 }
 
@@ -172,8 +177,8 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const auth = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -184,6 +189,7 @@ export async function PUT(
 
   const body = await request.json();
   const planId = String(body.id || "");
+  const appId = auth.app.id;
   if (!planId) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
   }
@@ -191,7 +197,7 @@ export async function PUT(
   const existingRows = await db
     .select()
     .from(plans)
-    .where(and(eq(plans.id, planId), eq(plans.clientId, id)))
+    .where(and(eq(plans.id, planId), eq(plans.clientId, appId)))
     .limit(1);
   const existing = existingRows[0];
 
@@ -235,14 +241,14 @@ export async function PUT(
         .where(
           and(
             eq(planCapabilityBundles.planId, planId),
-            eq(planCapabilityBundles.clientId, id),
+            eq(planCapabilityBundles.clientId, appId),
           ),
         );
       for (const capability of parsedCapabilities.capabilities) {
         await tx.insert(planCapabilityBundles).values({
           id: uuidv4(),
           planId,
-          clientId: id,
+          clientId: appId,
           pipeline: capability.pipeline,
           modelId: capability.modelId,
           slaTargetScore: capability.slaTargetScore ?? null,
@@ -254,8 +260,6 @@ export async function PUT(
     }
   });
 
-  void publishProviderAndPlans(id).catch(() => {});
-
   return NextResponse.json({ success: true });
 }
 
@@ -263,8 +267,8 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-  const auth = await getAuthorizedProviderApp(id);
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
   if (!auth) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -275,6 +279,7 @@ export async function DELETE(
 
   const { searchParams } = new URL(request.url);
   const planId = searchParams.get("planId");
+  const appId = auth.app.id;
   if (!planId) {
     return NextResponse.json({ error: "planId is required" }, { status: 400 });
   }
@@ -282,7 +287,7 @@ export async function DELETE(
   const planRows = await db
     .select({ id: plans.id })
     .from(plans)
-    .where(and(eq(plans.id, planId), eq(plans.clientId, id)))
+    .where(and(eq(plans.id, planId), eq(plans.clientId, appId)))
     .limit(1);
 
   if (!planRows[0]) {
@@ -295,10 +300,10 @@ export async function DELETE(
       .where(
         and(
           eq(planCapabilityBundles.planId, planId),
-          eq(planCapabilityBundles.clientId, id),
+          eq(planCapabilityBundles.clientId, appId),
         ),
       );
-    await tx.delete(plans).where(and(eq(plans.id, planId), eq(plans.clientId, id)));
+    await tx.delete(plans).where(and(eq(plans.id, planId), eq(plans.clientId, appId)));
   });
 
   return NextResponse.json({ success: true });

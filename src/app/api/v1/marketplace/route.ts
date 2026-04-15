@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 export async function GET() {
   const apps = await db
     .select({
-      id: developerApps.id,
+      id: oidcClients.clientId,
       name: developerApps.name,
       subtitle: developerApps.subtitle,
       description: developerApps.description,

@@ -19,7 +19,7 @@ export async function GET() {
   try {
     const apps = await db
       .select({
-        id: developerApps.id,
+        id: oidcClients.clientId,
         name: developerApps.name,
         subtitle: developerApps.subtitle,
         category: developerApps.category,
