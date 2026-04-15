@@ -47,6 +47,33 @@ export async function issueProgrammaticTokens(input: {
     );
   }
 
+  const bindingRows = await db
+    .select({
+      oauthClientId: oidcClients.clientId,
+      appUserId: appUsers.id,
+    })
+    .from(developerApps)
+    .innerJoin(oidcClients, eq(developerApps.oidcClientId, oidcClients.id))
+    .innerJoin(
+      appUsers,
+      and(eq(appUsers.clientId, developerApps.id), eq(appUsers.id, input.appUserId)),
+    )
+    .where(
+      and(
+        eq(developerApps.id, input.developerAppId),
+        eq(oidcClients.clientId, input.oauthClientId),
+        eq(appUsers.status, "active"),
+      ),
+    )
+    .limit(1);
+  const binding = bindingRows[0];
+  if (!binding) {
+    throw new ProgrammaticTokenError(
+      "invalid_request",
+      "OAuth client, app, and app user are not bound as expected",
+    );
+  }
+
   const issuer = getIssuer();
   const keyPair = await ensureSigningKey();
   const nowSeconds = Math.floor(Date.now() / 1000);
@@ -55,13 +82,13 @@ export async function issueProgrammaticTokens(input: {
   const accessToken = await new SignJWT({
     scope,
     scp: input.scopes,
-    client_id: input.oauthClientId,
+    client_id: binding.oauthClientId,
     user_type: "app_user",
   })
     .setProtectedHeader({ alg: "RS256", kid: keyPair.kid, typ: "JWT" })
     .setIssuer(issuer)
     .setAudience(issuer)
-    .setSubject(input.appUserId)
+    .setSubject(binding.appUserId)
     .setJti(uuidv4())
     .setIssuedAt(nowSeconds)
     .setNotBefore(nowSeconds)
@@ -69,8 +96,8 @@ export async function issueProgrammaticTokens(input: {
     .sign(keyPair.privateKey);
 
   const refresh = await createSession({
-    appId: input.oauthClientId,
-    label: `app_user_refresh:${input.appUserId}`,
+    appId: binding.oauthClientId,
+    label: `app_user_refresh:${binding.appUserId}`,
     scopes: scope,
     expiresInDays: REFRESH_TOKEN_TTL_DAYS,
   });
@@ -140,7 +167,10 @@ export async function rotateProgrammaticRefreshToken(input: {
     return null;
   }
 
-  await revokeSession(session.sessionId);
+  const revoked = await revokeSession(session.sessionId);
+  if (!revoked) {
+    return null;
+  }
 
   return issueProgrammaticTokens({
     developerAppId: app.appId,

@@ -123,6 +123,8 @@ export async function fetchPlatformJWKS(jwksUri: string): Promise<jose.JSONWebKe
   const res = await fetch(jwksUri, {
     headers: { Accept: "application/json" },
     signal: AbortSignal.timeout(10_000),
+    // Do not follow redirects: DNS was validated for the original host only.
+    redirect: "error",
   });
 
   if (!res.ok) {
