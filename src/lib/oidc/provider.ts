@@ -496,7 +496,9 @@ export async function getProvider(): Promise<Provider> {
   // Run periodic cleanup of expired adapter rows (deduplicated)
   if (_cleanupInterval) clearInterval(_cleanupInterval);
   _cleanupInterval = setInterval(() => {
-    void PostgresOidcAdapter.cleanup();
+    PostgresOidcAdapter.cleanup().catch((err) =>
+      console.error("Oidc cleanup failed", err),
+    );
   }, 10 * 60 * 1000);
 
   return _provider;

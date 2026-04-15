@@ -135,6 +135,13 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
+  if (!/^\d+$/.test(String(amountWei))) {
+    return NextResponse.json(
+      { error: "amountWei must be a non-negative integer string" },
+      { status: 400 }
+    );
+  }
+
   const amount = BigInt(amountWei);
 
   if (action === "add_credits") {

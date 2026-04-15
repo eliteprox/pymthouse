@@ -30,6 +30,7 @@ export default function AdminOidcClientsPage() {
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadClients();
@@ -38,12 +39,21 @@ export default function AdminOidcClientsPage() {
   async function loadClients() {
     try {
       const res = await fetch("/api/v1/admin/oidc-clients");
-      if (res.ok) {
-        const data = await res.json();
-        setClients(data.clients || []);
+      if (!res.ok) {
+        let errMsg = `Failed to load clients (${res.status} ${res.statusText})`;
+        try {
+          const data = await res.json();
+          if (data?.message) errMsg = data.message;
+        } catch {
+          /* ignore parse error */
+        }
+        throw new Error(errMsg);
       }
+      const data = await res.json();
+      setClients(data.clients || []);
     } catch (err) {
       console.error("Failed to load clients:", err);
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
@@ -110,6 +120,16 @@ export default function AdminOidcClientsPage() {
       <DashboardLayout>
         <div className="animate-pulse text-zinc-500 text-center py-12">
           Loading OIDC clients...
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout>
+        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
+          {error}
         </div>
       </DashboardLayout>
     );

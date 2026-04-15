@@ -42,6 +42,9 @@ export async function GET() {
     return NextResponse.json({ apps: apps || [] });
   } catch (error) {
     console.error("Admin apps API error:", error);
-    return NextResponse.json({ apps: [] });
+    return NextResponse.json(
+      { error: "Failed to load apps", apps: [] },
+      { status: 500 },
+    );
   }
 }

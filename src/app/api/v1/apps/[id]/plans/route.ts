@@ -119,7 +119,12 @@ export async function POST(
     return appEditForbiddenResponse();
   }
 
-  const body = await request.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
+  }
   const name = String(body.name || "").trim();
   if (!name) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
@@ -147,10 +152,10 @@ export async function POST(
       id: planId,
       clientId: appId,
       name,
-      type: body.type || "free",
+      type: String(body.type || "free"),
       priceAmount: String(body.priceAmount || "0"),
-      priceCurrency: body.priceCurrency || "USD",
-      status: body.status || "active",
+      priceCurrency: String(body.priceCurrency || "USD"),
+      status: String(body.status || "active"),
       createdAt: now,
       updatedAt: now,
     });
@@ -187,8 +192,16 @@ export async function PUT(
     return appEditForbiddenResponse();
   }
 
-  const body = await request.json();
-  const planId = String(body.id || "");
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
+  }
+  if (!body || typeof body.id !== "string" || !body.id.trim()) {
+    return NextResponse.json({ error: "id is required and must be a string" }, { status: 400 });
+  }
+  const planId = String(body.id);
   const appId = auth.app.id;
   if (!planId) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
@@ -226,11 +239,11 @@ export async function PUT(
     await tx
       .update(plans)
       .set({
-        name: body.name ?? existing.name,
-        type: body.type ?? existing.type,
+        name: body.name !== undefined ? String(body.name) : existing.name,
+        type: body.type !== undefined ? String(body.type) : existing.type,
         priceAmount: body.priceAmount !== undefined ? String(body.priceAmount) : existing.priceAmount,
-        priceCurrency: body.priceCurrency ?? existing.priceCurrency,
-        status: body.status ?? existing.status,
+        priceCurrency: body.priceCurrency !== undefined ? String(body.priceCurrency) : existing.priceCurrency,
+        status: body.status !== undefined ? String(body.status) : existing.status,
         updatedAt: now,
       })
       .where(eq(plans.id, planId));

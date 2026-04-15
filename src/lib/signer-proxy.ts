@@ -237,18 +237,7 @@ export async function proxyGenerateLivePayment(
         || (requestBody.ManifestID as string | undefined)
         || uuidv4();
 
-      await db.insert(transactions).values({
-        id: uuidv4(),
-        endUserId: auth.endUserId || null,
-        appId: providerAppId ?? auth.appId ?? null,
-        clientId: providerAppId,
-        type: "usage",
-        amountWei: feeWei.toString(),
-        platformCutPercent: signer.defaultCutPercent,
-        platformCutWei: platformCutWei.toString(),
-        status: "confirmed",
-      });
-
+      // Check for an existing usage record first to prevent duplicate inserts on retries
       let existingUsage = null;
       if (providerAppId) {
         const usageRows = await db
@@ -264,17 +253,31 @@ export async function proxyGenerateLivePayment(
         existingUsage = usageRows[0] ?? null;
       }
 
-      if (providerAppId && !existingUsage) {
-        await db.insert(usageRecords).values({
+      if (!existingUsage) {
+        await db.insert(transactions).values({
           id: uuidv4(),
-          requestId,
-          userId: auth.userId || auth.endUserId || null,
+          endUserId: auth.endUserId || null,
+          appId: providerAppId ?? auth.appId ?? null,
           clientId: providerAppId,
-          modelId: typeof requestBody.modelId === "string" ? requestBody.modelId : null,
-          units: pixels.toString(),
-          fee: feeWei.toString(),
-          createdAt: new Date().toISOString(),
+          type: "usage",
+          amountWei: feeWei.toString(),
+          platformCutPercent: signer.defaultCutPercent,
+          platformCutWei: platformCutWei.toString(),
+          status: "confirmed",
         });
+
+        if (providerAppId) {
+          await db.insert(usageRecords).values({
+            id: uuidv4(),
+            requestId,
+            userId: auth.userId || auth.endUserId || null,
+            clientId: providerAppId,
+            modelId: typeof requestBody.modelId === "string" ? requestBody.modelId : null,
+            units: pixels.toString(),
+            fee: feeWei.toString(),
+            createdAt: new Date().toISOString(),
+          });
+        }
       }
     }
 

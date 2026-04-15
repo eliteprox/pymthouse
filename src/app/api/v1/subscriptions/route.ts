@@ -71,8 +71,30 @@ export async function POST(request: NextRequest) {
     cancelledAt: null,
   };
 
-  await db.insert(subscriptions).values(subscription);
-  return NextResponse.json(subscription, { status: 201 });
+  const result = await db.transaction(async (tx) => {
+    // Re-check inside transaction to reduce the TOCTOU window
+    const recheck = await tx
+      .select()
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.userId, userId),
+          eq(subscriptions.clientId, plan.clientId),
+          eq(subscriptions.status, "active"),
+        ),
+      )
+      .limit(1);
+    if (recheck[0]) {
+      return { row: recheck[0], isNew: false };
+    }
+    await tx.insert(subscriptions).values(subscription);
+    return { row: subscription, isNew: true };
+  });
+
+  if (!result.isNew) {
+    return NextResponse.json(result.row);
+  }
+  return NextResponse.json(result.row, { status: 201 });
 }
 
 export async function DELETE(request: NextRequest) {

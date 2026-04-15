@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import DashboardLayout from "@/components/DashboardLayout";
 
 interface UsageData {
-  appId: string;
+  clientId: string;
   period: { start: string | null; end: string | null };
   totals: {
     requestCount: number;
@@ -20,6 +20,7 @@ interface UsageData {
 }
 
 function formatWei(wei: string): string {
+  if (!wei || !/^\d+$/.test(wei)) return "0";
   const value = BigInt(wei);
   if (value === 0n) return "0";
   // Use BigInt division to avoid floating-point precision loss

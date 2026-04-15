@@ -103,6 +103,14 @@ export async function POST(
       })
       .where(eq(appUsers.id, existing.id));
 
+    await writeAuditLog({
+      clientId: access.app.id,
+      actorUserId: access.actorUserId,
+      action: "app_user_upserted",
+      status: "success",
+      metadata: { externalUserId },
+    });
+
     return NextResponse.json({
       ...existing,
       clientId,

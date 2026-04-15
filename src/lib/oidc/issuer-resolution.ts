@@ -46,9 +46,18 @@ export async function resolveIssuerForApp(appId: string): Promise<IssuerConfig> 
   }
 
   if (app.customIssuerEnabled && app.customIssuerUrl) {
+    let origin = "";
+    try {
+      origin = new URL(app.customIssuerUrl).origin;
+    } catch (err) {
+      console.error(
+        `[issuer-resolution] Malformed customIssuerUrl for app ${app.id}: ${app.customIssuerUrl}`,
+        err,
+      );
+    }
     return {
       issuer: app.customIssuerUrl,
-      origin: new URL(app.customIssuerUrl).origin,
+      origin,
       isCanonical: false,
       appId: app.id,
       appName: app.name,

@@ -11,20 +11,35 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const branding = await resolveAppBrandingByClientId(clientId);
+  try {
+    const branding = await resolveAppBrandingByClientId(clientId);
 
-  return NextResponse.json(
-    { 
-      branding: {
-        mode: branding.mode,
-        displayName: branding.displayName,
-        logoUrl: branding.logoUrl,
-        primaryColor: branding.primaryColor,
-        privacyPolicyUrl: branding.privacyPolicyUrl,
-        tosUrl: branding.tosUrl,
-        supportUrl: branding.supportUrl,
-      }
-    },
-    { headers: { "Cache-Control": "public, max-age=60" } }
-  );
+    if (!branding) {
+      return NextResponse.json(
+        { branding: getDefaultBranding() },
+        { status: 404, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+
+    return NextResponse.json(
+      { 
+        branding: {
+          mode: branding.mode,
+          displayName: branding.displayName,
+          logoUrl: branding.logoUrl,
+          primaryColor: branding.primaryColor,
+          privacyPolicyUrl: branding.privacyPolicyUrl,
+          tosUrl: branding.tosUrl,
+          supportUrl: branding.supportUrl,
+        }
+      },
+      { headers: { "Cache-Control": "public, max-age=60" } }
+    );
+  } catch (err) {
+    console.error("[branding] Failed to resolve branding:", err);
+    return NextResponse.json(
+      { error: "Failed to resolve branding" },
+      { status: 500, headers: { "Cache-Control": "no-store" } }
+    );
+  }
 }

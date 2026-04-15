@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     .limit(1);
   const apiKey = apiKeyRows[0];
   if (!apiKey || apiKey.status !== "active") {
-    return NextResponse.json({ valid: false });
+    return NextResponse.json({ valid: false }, { status: 401 });
   }
 
   if (!apiKey.subscriptionId) {
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
   const subscription = subRows[0];
 
   if (!subscription || subscription.status !== "active") {
-    return NextResponse.json({ valid: false });
+    return NextResponse.json({ valid: false }, { status: 401 });
   }
 
   const planRows = await db
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     .limit(1);
   const plan = planRows[0];
   if (!plan) {
-    return NextResponse.json({ valid: false });
+    return NextResponse.json({ valid: false }, { status: 401 });
   }
 
   const capabilities = await db

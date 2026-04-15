@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { db } from "@/db/index";
 import { providerAdmins, users } from "@/db/schema";
@@ -24,7 +24,13 @@ export async function GET(
     .select()
     .from(providerAdmins)
     .where(eq(providerAdmins.clientId, appId));
-  const adminUsers = await db.select().from(users);
+
+  const userIds = memberships.map((m) => m.userId);
+  const adminUsers =
+    userIds.length > 0
+      ? await db.select().from(users).where(inArray(users.id, userIds))
+      : [];
+
   return NextResponse.json({
     admins: memberships.map((membership) => ({
       ...membership,

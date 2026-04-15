@@ -39,6 +39,10 @@ export default function ConsentForm({ uid, branding = getDefaultBranding() }: Co
   const handleAuthorize = () => submitConsent("approve");
   const handleDeny = () => submitConsent("deny");
 
+  const safePrimaryColor = /^#[0-9a-fA-F]{6}$/.test(branding.primaryColor)
+    ? branding.primaryColor
+    : "#10b981";
+
   return (
     <div className="space-y-3">
       {error && (
@@ -60,7 +64,7 @@ export default function ConsentForm({ uid, branding = getDefaultBranding() }: Co
           onClick={handleAuthorize}
           disabled={loading}
           className="flex-1 px-4 py-2.5 text-sm font-medium text-white rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2 hover:opacity-90"
-          style={{ backgroundColor: branding.primaryColor }}
+          style={{ backgroundColor: safePrimaryColor }}
         >
           {loading ? (
             <>

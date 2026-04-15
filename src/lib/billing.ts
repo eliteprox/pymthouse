@@ -42,18 +42,12 @@ export async function addCredits(
   endUserId: string,
   amountWei: bigint,
 ): Promise<void> {
-  const rows = await db
-    .select()
-    .from(endUsers)
-    .where(eq(endUsers.id, endUserId))
-    .limit(1);
-  const user = rows[0];
-  if (!user) return;
-
-  const newBalance = BigInt(user.creditBalanceWei) + amountWei;
   await db
     .update(endUsers)
-    .set({ creditBalanceWei: newBalance.toString() })
+    .set({
+      creditBalanceWei:
+        sql`(((COALESCE(${endUsers.creditBalanceWei}, '0'))::numeric + ${amountWei.toString()}::numeric)::text)`,
+    })
     .where(eq(endUsers.id, endUserId));
 }
 
@@ -78,14 +72,36 @@ export async function findOrCreateAppEndUser(
   }
 
   const id = uuidv4();
-  await db.insert(endUsers).values({
-    id,
-    appId,
-    externalUserId,
-    creditBalanceWei: "0",
-  });
-
-  return { id, isNew: true };
+  try {
+    await db.insert(endUsers).values({
+      id,
+      appId,
+      externalUserId,
+      creditBalanceWei: "0",
+    });
+    return { id, isNew: true };
+  } catch (err) {
+    // Handle unique constraint violation (concurrent insert race)
+    const msg = err instanceof Error ? err.message : String(err);
+    const isUniqueViolation =
+      msg.includes("unique") ||
+      msg.includes("duplicate") ||
+      (err as Record<string, unknown>).code === "23505";
+    if (isUniqueViolation) {
+      const retryRows = await db
+        .select()
+        .from(endUsers)
+        .where(
+          and(
+            eq(endUsers.appId, appId),
+            eq(endUsers.externalUserId, externalUserId),
+          ),
+        )
+        .limit(1);
+      if (retryRows[0]) return { id: retryRows[0].id, isNew: false };
+    }
+    throw err;
+  }
 }
 
 export async function getTransactions(

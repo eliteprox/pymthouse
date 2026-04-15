@@ -45,6 +45,20 @@ export async function isProviderAdmin(userId: string, appId: string): Promise<bo
 }
 
 export async function ensureProviderAdminMembership(userId: string, appId: string) {
+  const membership = {
+    id: crypto.randomUUID(),
+    userId,
+    clientId: appId,
+    role: "owner",
+    createdAt: new Date().toISOString(),
+  } as const;
+
+  await db
+    .insert(providerAdmins)
+    .values(membership)
+    .onConflictDoNothing();
+
+  // Return the existing or newly created row
   const rows = await db
     .select()
     .from(providerAdmins)
@@ -55,20 +69,7 @@ export async function ensureProviderAdminMembership(userId: string, appId: strin
       ),
     )
     .limit(1);
-  const existing = rows[0];
-
-  if (existing) return existing;
-
-  const membership = {
-    id: crypto.randomUUID(),
-    userId,
-    clientId: appId,
-    role: "owner",
-    createdAt: new Date().toISOString(),
-  } as const;
-
-  await db.insert(providerAdmins).values(membership);
-  return membership;
+  return rows[0] ?? membership;
 }
 
 export async function getAuthorizedProviderApp(appId: string) {

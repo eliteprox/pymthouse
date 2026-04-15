@@ -29,6 +29,7 @@ export default function AppPlansPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [canEdit, setCanEdit] = useState(true);
+  const [planError, setPlanError] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: "",
     type: "free",
@@ -60,44 +61,73 @@ export default function AppPlansPage() {
   const createPlan = async () => {
     if (!canEdit || !form.name.trim()) return;
     setSaving(true);
-    await fetch(`/api/v1/apps/${id}/plans`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: form.name,
-        type: form.type,
-        priceAmount: form.priceAmount,
-        priceCurrency: form.priceCurrency,
-        status: "active",
-        capabilities: form.modelId
-          ? [
-              {
-                modelId: form.modelId,
-                pipeline: form.pipeline,
-                slaTargetP95Ms: form.slaTargetP95Ms ? Number(form.slaTargetP95Ms) : null,
-              },
-            ]
-          : [],
-      }),
-    });
-    setForm({
-      name: "",
-      type: "free",
-      priceAmount: "0",
-      priceCurrency: "USD",
-      modelId: "",
-      pipeline: "video",
-      slaTargetP95Ms: "",
-    });
-    setSaving(false);
-    load();
+    setPlanError(null);
+    try {
+      const res = await fetch(`/api/v1/apps/${id}/plans`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name,
+          type: form.type,
+          priceAmount: form.priceAmount,
+          priceCurrency: form.priceCurrency,
+          status: "active",
+          capabilities: form.modelId
+            ? [
+                {
+                  modelId: form.modelId,
+                  pipeline: form.pipeline,
+                  slaTargetP95Ms: form.slaTargetP95Ms ? Number(form.slaTargetP95Ms) : null,
+                },
+              ]
+            : [],
+        }),
+      });
+      if (!res.ok) {
+        let msg = `Failed to create plan (${res.status})`;
+        try {
+          const data = await res.json();
+          if (data?.error) msg = data.error;
+        } catch {
+          /* ignore */
+        }
+        setPlanError(msg);
+        return;
+      }
+      setForm({
+        name: "",
+        type: "free",
+        priceAmount: "0",
+        priceCurrency: "USD",
+        modelId: "",
+        pipeline: "video",
+        slaTargetP95Ms: "",
+      });
+      setPlanError(null);
+      load();
+    } catch (err) {
+      setPlanError(err instanceof Error ? err.message : "Failed to create plan");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const deletePlan = async (planId: string) => {
     if (!canEdit) return;
-    await fetch(`/api/v1/apps/${id}/plans?planId=${encodeURIComponent(planId)}`, {
+    const res = await fetch(`/api/v1/apps/${id}/plans?planId=${encodeURIComponent(planId)}`, {
       method: "DELETE",
     });
+    if (!res.ok) {
+      let msg = `Failed to delete plan (${res.status})`;
+      try {
+        const data = await res.json();
+        if (data?.error) msg = data.error;
+      } catch {
+        /* ignore */
+      }
+      setPlanError(msg);
+      return;
+    }
     load();
   };
 
@@ -121,6 +151,11 @@ export default function AppPlansPage() {
           <p className="text-sm text-amber-400/90 mt-2">
             View only — only platform or app administrators can create or delete
             plans.
+          </p>
+        )}
+        {planError && (
+          <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 mt-2">
+            {planError}
           </p>
         )}
       </div>

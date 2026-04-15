@@ -21,7 +21,8 @@ function PrivyLoginButton({ primaryColor = "#10b981" }: { primaryColor?: string 
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  const rawCallbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  const callbackUrl = rawCallbackUrl.startsWith("/") ? rawCallbackUrl : "/dashboard";
 
   useEffect(() => {
     if (bridgeRequested && authenticated && !bridging && !failed) {
@@ -97,6 +98,7 @@ export function LoginForm() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [branding, setBranding] = useState<AppBranding | null>(null);
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  const safeCallbackUrl = callbackUrl.startsWith("/") ? callbackUrl : "/dashboard";
   const clientId = searchParams.get("client_id");
   const isAdmin = searchParams.get("admin") === "1";
   const isOidcFlow = callbackUrl.includes("/oidc/");
@@ -119,9 +121,9 @@ export function LoginForm() {
 
   useEffect(() => {
     if (status === "authenticated" && session) {
-      router.push(callbackUrl);
+      router.push(safeCallbackUrl);
     }
-  }, [session, status, router, callbackUrl]);
+  }, [session, status, router, safeCallbackUrl]);
 
   useEffect(() => {
     if (isAdmin) setShowAdmin(true);
@@ -143,7 +145,7 @@ export function LoginForm() {
       setError("Invalid token or insufficient permissions.");
       setLoading(false);
     } else if (result?.ok) {
-      router.push(callbackUrl);
+      router.push(safeCallbackUrl);
     }
   }
 

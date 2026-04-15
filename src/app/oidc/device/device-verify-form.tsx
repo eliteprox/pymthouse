@@ -23,7 +23,8 @@ export default function DeviceVerifyForm() {
     prefilled ? "confirm" : "enter"
   );
 
-  const primaryColor = deviceInfo?.primaryColor || "#10b981";
+  const rawPrimaryColor = deviceInfo?.primaryColor || "#10b981";
+  const primaryColor = /^#[0-9a-fA-F]{6}$/.test(rawPrimaryColor) ? rawPrimaryColor : "#10b981";
 
   // If prefilled, immediately look up the device code
   useEffect(() => {
@@ -104,8 +105,7 @@ export default function DeviceVerifyForm() {
             backgroundColor: `${primaryColor}1a`, 
             borderWidth: 1, 
             borderColor: `${primaryColor}33` 
-          }}
-        >
+          }}        >
           <svg className="w-8 h-8" style={{ color: primaryColor }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>

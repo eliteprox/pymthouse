@@ -43,12 +43,25 @@ export function validateRedirectUri(
     
     for (const allowedUri of allowedUris) {
       if (allowedUri.includes("*")) {
-        const pattern = allowedUri
-          .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
-          .replace(/\*/g, ".*");
-        const regex = new RegExp(`^${pattern}$`);
-        if (regex.test(redirectUri)) {
-          return true;
+        // Only allow a single wildcard; reject entries with multiple wildcards
+        const wildcardCount = (allowedUri.match(/\*/g) || []).length;
+        if (wildcardCount !== 1) continue;
+
+        const starIdx = allowedUri.indexOf("*");
+        const prefix = allowedUri.slice(0, starIdx);
+        const suffix = allowedUri.slice(starIdx + 1);
+
+        // Wildcard must not appear in the middle (only prefix or suffix allowed)
+        if (prefix && suffix && prefix.length > 0 && suffix.length > 0) {
+          // Both prefix and suffix exist — allow only if redirect starts with prefix and ends with suffix
+          if (redirectUri.startsWith(prefix) && redirectUri.endsWith(suffix) &&
+              redirectUri.length >= prefix.length + suffix.length) {
+            return true;
+          }
+        } else if (prefix) {
+          if (redirectUri.startsWith(prefix)) return true;
+        } else if (suffix) {
+          if (redirectUri.endsWith(suffix)) return true;
         }
       } else if (redirectUri === allowedUri) {
         return true;
