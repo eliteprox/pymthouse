@@ -40,18 +40,22 @@ async function getAdminUser(request: NextRequest) {
         .from(users)
         .where(eq(users.id, sessionUser.id as string))
         .limit(1);
-      return rows[0];
+      const user = rows[0];
+      if (user?.role !== "admin") return null;
+      return user;
     }
   }
 
   const auth = await authenticateRequest(request);
-  if (auth && hasScope(auth.scopes, "read") && auth.userId) {
+  if (auth && hasScope(auth.scopes, "admin") && auth.userId) {
     const rows = await db
       .select()
       .from(users)
       .where(eq(users.id, auth.userId))
       .limit(1);
-    return rows[0];
+    const user = rows[0];
+    if (user?.role !== "admin") return null;
+    return user;
   }
 
   return null;
