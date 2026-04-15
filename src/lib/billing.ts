@@ -21,6 +21,9 @@ export async function deductCredits(
   endUserId: string,
   amountWei: bigint,
 ): Promise<boolean> {
+  if (amountWei < 0n) {
+    throw new RangeError("amountWei must be a non-negative bigint");
+  }
   const updated = await db
     .update(endUsers)
     .set({
@@ -42,6 +45,9 @@ export async function addCredits(
   endUserId: string,
   amountWei: bigint,
 ): Promise<void> {
+  if (amountWei < 0n) {
+    throw new RangeError("amountWei must be a non-negative bigint");
+  }
   await db
     .update(endUsers)
     .set({

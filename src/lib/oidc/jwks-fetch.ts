@@ -1,4 +1,6 @@
 import * as jose from "jose";
+import * as http from "node:http";
+import * as https from "node:https";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 
@@ -10,6 +12,17 @@ interface CachedJWKS {
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const CACHE_MAX_ENTRIES = 128;
 const cache = new Map<string, CachedJWKS>();
+
+const MAX_REDIRECTS = 5;
+
+/** Upper bound on JWKS HTTP response bodies to avoid unbounded memory use. */
+const DEFAULT_MAX_RESPONSE_BODY_BYTES = 1 * 1024 * 1024;
+
+/** Result of JWKS URI safety checks; HTTP must use only `dnsRecords` as TCP targets. */
+export interface SafeJwksResolution {
+  url: URL;
+  dnsRecords: { family: 4 | 6; address: string }[];
+}
 
 function isPrivateOrReservedIpv4(ip: string): boolean {
   const octets = ip.split(".").map((part) => Number.parseInt(part, 10));
@@ -70,7 +83,26 @@ function isPrivateOrReservedIp(ip: string): boolean {
   return true;
 }
 
-async function assertSafeJwksUri(jwksUri: string): Promise<void> {
+function assertDnsRecordsSafe(
+  records: { family: number; address: string }[],
+): { family: 4 | 6; address: string }[] {
+  const out: { family: 4 | 6; address: string }[] = [];
+  for (const record of records) {
+    if (record.family !== 4 && record.family !== 6) continue;
+    if (isPrivateOrReservedIp(record.address)) {
+      throw new Error("JWKS URI resolves to a disallowed IP range");
+    }
+    out.push({ family: record.family, address: record.address });
+  }
+  return out;
+}
+
+/**
+ * Parse and validate a JWKS URL, resolve the hostname to A/AAAA records, and
+ * ensure every resolved address is a non-private IP. Callers must connect only
+ * to addresses in `dnsRecords` while preserving `url` for Host / TLS SNI.
+ */
+export async function assertSafeJwksUri(jwksUri: string): Promise<SafeJwksResolution> {
   let parsed: URL;
   try {
     parsed = new URL(jwksUri);
@@ -96,8 +128,15 @@ async function assertSafeJwksUri(jwksUri: string): Promise<void> {
     throw new Error("JWKS URI points to a disallowed host");
   }
 
-  if (isIP(hostname) && isPrivateOrReservedIp(hostname)) {
-    throw new Error("JWKS URI resolves to a disallowed IP range");
+  const ipKind = isIP(hostname);
+  if (ipKind === 4 || ipKind === 6) {
+    if (isPrivateOrReservedIp(hostname)) {
+      throw new Error("JWKS URI resolves to a disallowed IP range");
+    }
+    return {
+      url: parsed,
+      dnsRecords: [{ family: ipKind, address: hostname }],
+    };
   }
 
   const records = await lookup(hostname, { all: true, verbatim: true });
@@ -105,33 +144,153 @@ async function assertSafeJwksUri(jwksUri: string): Promise<void> {
     throw new Error("JWKS URI host has no DNS records");
   }
 
-  for (const record of records) {
-    if (isPrivateOrReservedIp(record.address)) {
-      throw new Error("JWKS URI resolves to a disallowed IP range");
+  const dnsRecords = assertDnsRecordsSafe(records);
+  if (dnsRecords.length === 0) {
+    throw new Error("JWKS URI host has no usable DNS records");
+  }
+
+  return { url: parsed, dnsRecords };
+}
+
+async function readResponseBody(
+  res: http.IncomingMessage,
+  maxBytes: number = DEFAULT_MAX_RESPONSE_BODY_BYTES,
+): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of res) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    if (total + buf.length > maxBytes) {
+      res.destroy();
+      throw new Error("Response body too large");
+    }
+    chunks.push(buf);
+    total += buf.length;
+  }
+  return Buffer.concat(chunks);
+}
+
+function requestOnceBound(
+  target: SafeJwksResolution,
+  record: { family: 4 | 6; address: string },
+): Promise<{ statusCode: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
+  const { url } = target;
+  const isHttps = url.protocol === "https:";
+  const defaultPort = isHttps ? 443 : 80;
+  const port = url.port ? Number(url.port) : defaultPort;
+  const path = `${url.pathname}${url.search}` || "/";
+  const hostHeader = url.host || url.hostname;
+  const tcpHost = record.family === 6 ? `[${record.address}]` : record.address;
+  const sniHostname = isIP(url.hostname) === 0 ? url.hostname : undefined;
+
+  return new Promise((resolve, reject) => {
+    const lib = isHttps ? https : http;
+    const req = lib.request(
+      {
+        method: "GET",
+        host: tcpHost,
+        port,
+        path,
+        ...(isHttps && sniHostname ? { servername: sniHostname } : {}),
+        headers: {
+          Host: hostHeader,
+          Accept: "application/json",
+        },
+        timeout: 10_000,
+        ...(isHttps ? { rejectUnauthorized: true } : {}),
+      },
+      (res) => {
+        void readResponseBody(res)
+          .then((body) => {
+            resolve({
+              statusCode: res.statusCode ?? 0,
+              headers: res.headers,
+              body,
+            });
+          })
+          .catch(reject);
+      },
+    );
+    req.on("error", reject);
+    req.on("timeout", () => {
+      req.destroy();
+      reject(new Error("JWKS request timed out"));
+    });
+    req.end();
+  });
+}
+
+/**
+ * HTTPS/HTTP GET using only validated `dnsRecords` as the TCP peer, with
+ * Host and (for TLS) SNI taken from `target.url`.
+ */
+async function fetchJwksBoundToValidatedAddresses(
+  target: SafeJwksResolution,
+): Promise<{ statusCode: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
+  let lastErr: Error | null = null;
+  let lastHttp: { statusCode: number; headers: http.IncomingHttpHeaders; body: Buffer } | null =
+    null;
+
+  for (const record of target.dnsRecords) {
+    try {
+      const res = await requestOnceBound(target, record);
+      if (res.statusCode >= 200 && res.statusCode < 400) {
+        return res;
+      }
+      lastHttp = res;
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
     }
   }
+
+  if (lastHttp) {
+    return lastHttp;
+  }
+  throw lastErr ?? new Error("JWKS fetch failed for all resolved addresses");
+}
+
+function isRedirectStatus(code: number): boolean {
+  return code === 301 || code === 302 || code === 303 || code === 307 || code === 308;
+}
+
+async function fetchJwksBodyFollowingRedirects(startUri: string): Promise<Buffer> {
+  let current = startUri;
+  for (let hop = 0; hop < MAX_REDIRECTS; hop++) {
+    const target = await assertSafeJwksUri(current);
+    const res = await fetchJwksBoundToValidatedAddresses(target);
+
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      return res.body;
+    }
+
+    if (isRedirectStatus(res.statusCode)) {
+      const loc = res.headers.location;
+      if (!loc || typeof loc !== "string") {
+        throw new Error(`JWKS redirect from ${current} missing Location`);
+      }
+      current = new URL(loc, target.url).href;
+      continue;
+    }
+
+    throw new Error(`Failed to fetch JWKS from ${current}: ${res.statusCode}`);
+  }
+
+  throw new Error(`JWKS fetch exceeded ${MAX_REDIRECTS} redirects`);
 }
 
 export async function fetchPlatformJWKS(jwksUri: string): Promise<jose.JSONWebKeySet> {
-  await assertSafeJwksUri(jwksUri);
-
   const cached = cache.get(jwksUri);
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
     return cached.jwks;
   }
 
-  const res = await fetch(jwksUri, {
-    headers: { Accept: "application/json" },
-    signal: AbortSignal.timeout(10_000),
-    // Do not follow redirects: DNS was validated for the original host only.
-    redirect: "error",
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to fetch JWKS from ${jwksUri}: ${res.status}`);
+  const bodyBuffer = await fetchJwksBodyFollowingRedirects(jwksUri);
+  let body: jose.JSONWebKeySet;
+  try {
+    body = JSON.parse(bodyBuffer.toString("utf-8")) as jose.JSONWebKeySet;
+  } catch {
+    throw new Error(`Invalid JWKS JSON from ${jwksUri}`);
   }
-
-  const body = await res.json() as jose.JSONWebKeySet;
 
   if (!body.keys || !Array.isArray(body.keys) || body.keys.length === 0) {
     throw new Error(`Invalid JWKS from ${jwksUri}: no keys found`);

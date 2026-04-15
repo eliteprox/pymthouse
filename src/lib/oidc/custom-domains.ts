@@ -1,6 +1,6 @@
 import { db } from "@/db/index";
 import { developerApps } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNotNull } from "drizzle-orm";
 import { randomBytes } from "crypto";
 
 export interface CustomDomainConfig {
@@ -243,7 +243,12 @@ export async function getTrustedLoginHosts(): Promise<string[]> {
   const rows = await db
     .select({ domain: developerApps.customLoginDomain })
     .from(developerApps)
-    .where(eq(developerApps.customLoginEnabled, 1));
+    .where(
+      and(
+        eq(developerApps.customLoginEnabled, 1),
+        isNotNull(developerApps.customDomainVerifiedAt),
+      ),
+    );
 
   const verifiedDomains = rows
     .filter((row) => row.domain)

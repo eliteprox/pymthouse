@@ -30,6 +30,30 @@ const RESOURCE_REQUIRED_GRANTS = new Set([
 
 const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
 
+function clientCredentialsFromTokenRequest(
+  request: NextRequest,
+  params: URLSearchParams,
+): { clientId: string; clientSecret: string } {
+  const auth = request.headers.get("authorization") || "";
+  if (auth.startsWith("Basic ")) {
+    try {
+      const decoded = Buffer.from(auth.slice(6), "base64").toString("utf-8");
+      const idx = decoded.indexOf(":");
+      if (idx > 0) {
+        return {
+          clientId: decoded.slice(0, idx),
+          clientSecret: decoded.slice(idx + 1),
+        };
+      }
+    } catch {
+      /* fall through to body */
+    }
+  }
+  return {
+    clientId: params.get("client_id") || "",
+    clientSecret: params.get("client_secret") || "",
+  };
+}
 
 /**
  * Convert a Web API Request/Response to the Node.js HTTP pair that
@@ -73,10 +97,14 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
 
     if (grantType === "refresh_token") {
       const refreshToken = exchangeParams.get("refresh_token") || "";
+      const { clientId, clientSecret } = clientCredentialsFromTokenRequest(
+        request,
+        exchangeParams,
+      );
       const refreshed = await rotateProgrammaticRefreshToken({
         refreshToken,
-        clientId: exchangeParams.get("client_id") || "",
-        clientSecret: exchangeParams.get("client_secret") || "",
+        clientId,
+        clientSecret,
       });
       if (refreshed) {
         return NextResponse.json(refreshed, {
@@ -86,7 +114,10 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
     }
 
     if (isTokenExchangeGrant(grantType)) {
-      const clientId = exchangeParams.get("client_id") || "";
+      const { clientId, clientSecret } = clientCredentialsFromTokenRequest(
+        request,
+        exchangeParams,
+      );
       const subjectTokenType = exchangeParams.get("subject_token_type") || "";
       try {
         if (
@@ -98,7 +129,7 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
         ) {
           const result = await handleGatewayTokenExchange({
             clientId,
-            clientSecret: exchangeParams.get("client_secret") || "",
+            clientSecret,
             subjectToken: exchangeParams.get("subject_token") || "",
             subjectTokenType,
           });
@@ -109,7 +140,7 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
 
         const result = await handleTokenExchange({
           clientId,
-          clientSecret: exchangeParams.get("client_secret") || "",
+          clientSecret,
           subjectToken: exchangeParams.get("subject_token") || "",
           subjectTokenType,
           scope: exchangeParams.get("scope") || undefined,

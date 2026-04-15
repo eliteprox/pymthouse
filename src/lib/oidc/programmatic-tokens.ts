@@ -3,7 +3,11 @@ import { v4 as uuidv4 } from "uuid";
 import { SignJWT } from "jose";
 import { ensureSigningKey } from "@/lib/oidc/jwks";
 import { getIssuer } from "@/lib/oidc/tokens";
-import { createSession, revokeSession, validateBearerToken } from "@/lib/auth";
+import {
+  consumeSessionByIdAndToken,
+  createSession,
+  validateBearerToken,
+} from "@/lib/auth";
 import { db } from "@/db/index";
 import { appUsers, developerApps, oidcClients } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -69,7 +73,7 @@ export async function issueProgrammaticTokens(input: {
   const binding = bindingRows[0];
   if (!binding) {
     throw new ProgrammaticTokenError(
-      "invalid_request",
+      "invalid_client",
       "OAuth client, app, and app user are not bound as expected",
     );
   }
@@ -167,8 +171,11 @@ export async function rotateProgrammaticRefreshToken(input: {
     return null;
   }
 
-  const revoked = await revokeSession(session.sessionId);
-  if (!revoked) {
+  const consumed = await consumeSessionByIdAndToken(
+    session.sessionId,
+    input.refreshToken,
+  );
+  if (!consumed) {
     return null;
   }
 

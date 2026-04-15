@@ -114,6 +114,44 @@ export async function revokeSession(sessionId: string): Promise<boolean> {
   return deleted.length > 0;
 }
 
+/**
+ * Delete a session only if id, bearer token hash, and expiry still match.
+ * Used to consume refresh tokens exactly once (two callers: one delete wins).
+ */
+export async function consumeSessionByIdAndToken(
+  sessionId: string,
+  token: string,
+): Promise<AuthResult | null> {
+  if (!token.startsWith(TOKEN_PREFIX)) return null;
+
+  const hash = hashToken(token);
+  const now = new Date().toISOString();
+
+  const rows = await db
+    .delete(sessions)
+    .where(
+      and(
+        eq(sessions.id, sessionId),
+        eq(sessions.tokenHash, hash),
+        gt(sessions.expiresAt, now),
+      ),
+    )
+    .returning();
+
+  const row = rows[0];
+  if (!row) return null;
+
+  return {
+    userId: row.userId,
+    endUserId: row.endUserId,
+    appId: row.appId || null,
+    sessionId: row.id,
+    label: row.label || null,
+    scopes: row.scopes,
+    tokenHash: hash,
+  };
+}
+
 export interface AuthResult {
   userId: string | null;
   endUserId: string | null;

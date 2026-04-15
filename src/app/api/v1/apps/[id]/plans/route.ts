@@ -207,17 +207,6 @@ export async function PUT(
     return NextResponse.json({ error: "id is required" }, { status: 400 });
   }
 
-  const existingRows = await db
-    .select()
-    .from(plans)
-    .where(and(eq(plans.id, planId), eq(plans.clientId, appId)))
-    .limit(1);
-  const existing = existingRows[0];
-
-  if (!existing) {
-    return NextResponse.json({ error: "Plan not found" }, { status: 404 });
-  }
-
   let parsedCapabilities: ReturnType<typeof parseCapabilities> | null = null;
   if (body.capabilities !== undefined) {
     try {
@@ -235,8 +224,18 @@ export async function PUT(
   }
 
   const now = new Date().toISOString();
-  await db.transaction(async (tx) => {
-    await tx
+  const txnResult = await db.transaction(async (tx) => {
+    const existingRows = await tx
+      .select()
+      .from(plans)
+      .where(and(eq(plans.id, planId), eq(plans.clientId, appId)))
+      .limit(1);
+    const existing = existingRows[0];
+    if (!existing) {
+      return false;
+    }
+
+    const updated = await tx
       .update(plans)
       .set({
         name: body.name !== undefined ? String(body.name) : existing.name,
@@ -246,7 +245,12 @@ export async function PUT(
         status: body.status !== undefined ? String(body.status) : existing.status,
         updatedAt: now,
       })
-      .where(eq(plans.id, planId));
+      .where(and(eq(plans.id, planId), eq(plans.clientId, appId)))
+      .returning({ id: plans.id });
+
+    if (updated.length === 0) {
+      return false;
+    }
 
     if (parsedCapabilities) {
       await tx
@@ -271,7 +275,13 @@ export async function PUT(
         });
       }
     }
+
+    return true;
   });
+
+  if (!txnResult) {
+    return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+  }
 
   return NextResponse.json({ success: true });
 }
@@ -297,17 +307,17 @@ export async function DELETE(
     return NextResponse.json({ error: "planId is required" }, { status: 400 });
   }
 
-  const planRows = await db
-    .select({ id: plans.id })
-    .from(plans)
-    .where(and(eq(plans.id, planId), eq(plans.clientId, appId)))
-    .limit(1);
+  const deleted = await db.transaction(async (tx) => {
+    const planRows = await tx
+      .select({ id: plans.id })
+      .from(plans)
+      .where(and(eq(plans.id, planId), eq(plans.clientId, appId)))
+      .limit(1);
 
-  if (!planRows[0]) {
-    return NextResponse.json({ error: "Plan not found" }, { status: 404 });
-  }
+    if (!planRows[0]) {
+      return false;
+    }
 
-  await db.transaction(async (tx) => {
     await tx
       .delete(planCapabilityBundles)
       .where(
@@ -316,8 +326,16 @@ export async function DELETE(
           eq(planCapabilityBundles.clientId, appId),
         ),
       );
-    await tx.delete(plans).where(and(eq(plans.id, planId), eq(plans.clientId, appId)));
+    const removed = await tx
+      .delete(plans)
+      .where(and(eq(plans.id, planId), eq(plans.clientId, appId)))
+      .returning({ id: plans.id });
+    return removed.length > 0;
   });
+
+  if (!deleted) {
+    return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+  }
 
   return NextResponse.json({ success: true });
 }
