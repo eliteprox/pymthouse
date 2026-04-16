@@ -44,8 +44,5 @@ next-env.d.ts
 *.db-wal
 *.db-shm
 
-# drizzle
-/drizzle/
-
 # proto generated
 src/lib/proto-generated.*
