@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useInsideDashboard } from "@/context/MarketplaceLayoutContext";
+import { sanitizeUrl } from "@braintree/sanitize-url";
 
 interface AppDetail {
   id: string;
@@ -98,6 +99,10 @@ export default function MarketplaceAppDetailPage() {
   }
 
   const grants = app.grantTypes?.split(",").filter(Boolean) || [];
+  const safeWebsiteUrl = toSafeHref(app.websiteUrl);
+  const safeSupportUrl = toSafeHref(app.supportUrl);
+  const safePrivacyPolicyUrl = toSafeHref(app.privacyPolicyUrl);
+  const safeTosUrl = toSafeHref(app.tosUrl);
 
   return (
     <PageShell>
@@ -247,26 +252,26 @@ export default function MarketplaceAppDetailPage() {
           )}
 
           {/* Links */}
-          {(app.websiteUrl || app.supportUrl || app.privacyPolicyUrl || app.tosUrl) && (
+          {(safeWebsiteUrl || safeSupportUrl || safePrivacyPolicyUrl || safeTosUrl) && (
             <div className="border border-zinc-800 rounded-xl p-5 bg-zinc-900/30">
               <h3 className="text-xs text-zinc-500 uppercase tracking-wider mb-3">
                 Links
               </h3>
               <div className="space-y-2">
-                {app.websiteUrl && (
-                  <ExternalLink href={app.websiteUrl} label="Website" />
+                {safeWebsiteUrl && (
+                  <ExternalLink href={safeWebsiteUrl} label="Website" />
                 )}
-                {app.supportUrl && (
-                  <ExternalLink href={app.supportUrl} label="Support" />
+                {safeSupportUrl && (
+                  <ExternalLink href={safeSupportUrl} label="Support" />
                 )}
-                {app.privacyPolicyUrl && (
+                {safePrivacyPolicyUrl && (
                   <ExternalLink
-                    href={app.privacyPolicyUrl}
+                    href={safePrivacyPolicyUrl}
                     label="Privacy Policy"
                   />
                 )}
-                {app.tosUrl && (
-                  <ExternalLink href={app.tosUrl} label="Terms of Service" />
+                {safeTosUrl && (
+                  <ExternalLink href={safeTosUrl} label="Terms of Service" />
                 )}
               </div>
             </div>
@@ -345,4 +350,11 @@ function ExternalLink({ href, label }: { href: string; label: string }) {
       {label}
     </a>
   );
+}
+
+/** Returns a sanitized http/https URL, or null for anything unsafe. */
+function toSafeHref(href: string | null | undefined): string | null {
+  if (!href) return null;
+  const safe = sanitizeUrl(href);
+  return safe === "about:blank" ? null : safe;
 }

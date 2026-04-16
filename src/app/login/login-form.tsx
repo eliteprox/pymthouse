@@ -1,5 +1,6 @@
 "use client";
 
+import { sanitizeUrl } from "@braintree/sanitize-url";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -119,6 +120,7 @@ export function LoginForm() {
 
   const isWhiteLabel = branding?.mode === "whiteLabel";
   const primaryColor = branding?.primaryColor || "#10b981";
+  const logoUrl = toSafeLogoUrl(branding?.logoUrl ?? null);
 
   useEffect(() => {
     if (status === "authenticated" && session) {
@@ -167,9 +169,9 @@ export function LoginForm() {
         <div className="text-center mb-8">
           {isWhiteLabel && branding ? (
             <>
-              {branding.logoUrl && (
+              {logoUrl && (
                 <img
-                  src={branding.logoUrl}
+                  src={logoUrl}
                   alt={branding.displayName}
                   className="h-12 w-auto mx-auto mb-4"
                 />
@@ -255,13 +257,13 @@ export function LoginForm() {
                 <p className="text-xs text-zinc-500 mb-3">OAuth providers</p>
                 <div className="space-y-2">
                   <button
-                    onClick={() => signIn("google", { callbackUrl })}
+                    onClick={() => signIn("google", { callbackUrl: safeCallbackUrl })}
                     className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-zinc-700 rounded-lg hover:bg-zinc-800/50 transition-colors text-sm font-medium text-zinc-300"
                   >
                     Google
                   </button>
                   <button
-                    onClick={() => signIn("github", { callbackUrl })}
+                    onClick={() => signIn("github", { callbackUrl: safeCallbackUrl })}
                     className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-zinc-700 rounded-lg hover:bg-zinc-800/50 transition-colors text-sm font-medium text-zinc-300"
                   >
                     GitHub
@@ -325,4 +327,15 @@ export function LoginForm() {
       </div>
     </div>
   );
+}
+
+/** Returns a sanitized URL, or null for anything unsafe. */
+function toSafeLogoUrl(url: string | null): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  // Reject protocol-relative URLs (//evil.com) — sanitizeUrl does not block these.
+  if (trimmed.startsWith("//")) return null;
+  const safe = sanitizeUrl(trimmed);
+  return safe === "about:blank" ? null : safe;
 }

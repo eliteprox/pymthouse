@@ -5,10 +5,11 @@ import { db } from "@/db/index";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { authenticateRequest, hasScope } from "@/lib/auth";
-import { exec } from "child_process";
-import { promisify } from "util";
+import { spawn } from "child_process";
 
-const execAsync = promisify(exec);
+const DEFAULT_TAIL = 50;
+const MAX_TAIL = 1000;
+const LOG_FETCH_TIMEOUT_MS = 10000;
 
 /**
  * GET /api/v1/signer/logs -- Fetch recent container logs
@@ -19,21 +20,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const url = new URL(request.url);
-  const tail = url.searchParams.get("tail") || "50";
+  const responseTail = parseTail(request.nextUrl.searchParams.get("tail"));
 
   try {
-    const { stdout, stderr } = await execAsync(
-      `docker compose logs --no-color --tail=${tail} go-livepeer 2>&1`,
-      { cwd: process.cwd(), timeout: 10000 }
-    );
+    const { stdout, stderr } = await getSignerLogs();
 
-    const raw = stdout || stderr || "";
+    const raw = `${stdout || ""}${stderr || ""}`;
     // Strip the container name prefix from each line for cleaner output
     const lines = raw
       .split("\n")
       .map((line) => line.replace(/^go-livepeer-\d+\s+\|\s*/, ""))
-      .filter((line) => line.trim());
+      .filter((line) => line.trim())
+      .slice(-responseTail);
 
     return NextResponse.json({ lines, count: lines.length });
   } catch (error) {
@@ -41,6 +39,76 @@ export async function GET(request: NextRequest) {
       error instanceof Error ? error.message : "Failed to fetch logs";
     return NextResponse.json({ lines: [message], count: 1, error: true });
   }
+}
+
+function parseTail(value: string | null): number {
+  if (!value || !/^\d+$/.test(value)) {
+    return DEFAULT_TAIL;
+  }
+
+  const parsedTail = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsedTail) || parsedTail < 1) {
+    return DEFAULT_TAIL;
+  }
+
+  return Math.min(parsedTail, MAX_TAIL);
+}
+
+function getSignerLogs(): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "docker",
+      [
+        "compose",
+        "logs",
+        "--no-color",
+        "--tail",
+        String(MAX_TAIL),
+        "go-livepeer",
+      ],
+      {
+        cwd: process.cwd(),
+        stdio: ["ignore", "pipe", "pipe"],
+      }
+    );
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      reject(new Error("Timed out while fetching signer logs"));
+    }, LOG_FETCH_TIMEOUT_MS);
+
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+
+      const details =
+        stderr.trim() ||
+        stdout.trim() ||
+        `docker compose logs exited with code ${String(code)}`;
+      reject(new Error(details));
+    });
+  });
 }
 
 async function getAdminUser(request: NextRequest) {

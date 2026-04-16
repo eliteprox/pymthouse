@@ -23,6 +23,7 @@
     "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@braintree/sanitize-url": "^7.1.2",
     "@privy-io/node": "^0.9.0",
     "@privy-io/react-auth": "^3.13.1",
     "@tailwindcss/postcss": "^4.1.18",
