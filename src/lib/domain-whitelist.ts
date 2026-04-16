@@ -25,6 +25,13 @@ type NormalizeResult = NormalizationResult | NormalizationError;
 const DEFAULT_HTTP_PORT = 80;
 const DEFAULT_HTTPS_PORT = 443;
 
+// Cap attacker-controlled input length before any pattern matching to eliminate
+// ReDoS / polynomial-regex surface (OWASP ReDoS guidance, CWE-1333).
+// A legitimate origin is scheme (8) + host (max 253 per RFC 1035) + port (6) +
+// brackets/colons, so 512 is a generous upper bound.
+const MAX_INPUT_LENGTH = 512;
+const SLASH_CHAR_CODE = 47;
+
 function isLocalhost(host: string): boolean {
   const h = host.toLowerCase();
   return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "[::1]";
@@ -35,14 +42,32 @@ function getDefaultPort(scheme: string): number {
 }
 
 export function normalizeDomainWhitelist(input: string): NormalizeResult {
+  if (typeof input !== "string") {
+    return { success: false, error: "Domain must be a string" };
+  }
+
+  // Reject oversize input before running any regex-based parsing so that
+  // attacker-controlled strings cannot trigger super-linear backtracking.
+  if (input.length > MAX_INPUT_LENGTH) {
+    return { success: false, error: `Domain exceeds max length of ${MAX_INPUT_LENGTH} characters` };
+  }
+
   let trimmed = input.trim();
 
   if (!trimmed) {
     return { success: false, error: "Domain cannot be empty" };
   }
 
-  // Remove trailing slashes for bare host input like "example.com///"
-  trimmed = trimmed.replace(/\/+$/, "");
+  // Strip trailing slashes without a regex (e.g. "example.com///").
+  // Using a bounded index scan guarantees O(n) worst case and avoids the
+  // polynomial-regex ReDoS surface flagged by CodeQL (js/polynomial-redos).
+  let end = trimmed.length;
+  while (end > 0 && trimmed.charCodeAt(end - 1) === SLASH_CHAR_CODE) {
+    end--;
+  }
+  if (end !== trimmed.length) {
+    trimmed = trimmed.slice(0, end);
+  }
 
   // Parse scheme and host:port
   let scheme: string | null = null;
