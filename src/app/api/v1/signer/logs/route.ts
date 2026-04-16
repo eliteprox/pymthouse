@@ -25,7 +25,9 @@ export async function GET(request: NextRequest) {
   try {
     const { stdout, stderr } = await getSignerLogs();
 
-    const raw = `${stdout || ""}${stderr || ""}`;
+    const out = stdout || "";
+    const err = stderr || "";
+    const raw = out && err ? `${out}\n${err}` : `${out}${err}`;
     // Strip the container name prefix from each line for cleaner output
     const lines = raw
       .split("\n")
@@ -95,17 +97,20 @@ function getSignerLogs(): Promise<{ stdout: string; stderr: string }> {
       reject(error);
     });
 
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
       clearTimeout(timeout);
       if (code === 0) {
         resolve({ stdout, stderr });
         return;
       }
 
-      const details =
-        stderr.trim() ||
-        stdout.trim() ||
-        `docker compose logs exited with code ${String(code)}`;
+      const trimmedStderr = stderr.trim();
+      const trimmedStdout = stdout.trim();
+      const exitDetails =
+        code === null && signal
+          ? `docker compose logs terminated by signal ${signal}`
+          : `docker compose logs exited with code ${String(code)}`;
+      const details = trimmedStderr || trimmedStdout || exitDetails;
       reject(new Error(details));
     });
   });

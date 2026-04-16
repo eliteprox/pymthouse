@@ -355,6 +355,10 @@ function ExternalLink({ href, label }: { href: string; label: string }) {
 /** Returns a sanitized http/https URL, or null for anything unsafe. */
 function toSafeHref(href: string | null | undefined): string | null {
   if (!href) return null;
-  const safe = sanitizeUrl(href);
+  const trimmed = href.trim();
+  if (!trimmed) return null;
+  // Reject protocol-relative URLs (//evil.com) — sanitizeUrl does not block these.
+  if (trimmed.startsWith("//")) return null;
+  const safe = sanitizeUrl(trimmed);
   return safe === "about:blank" ? null : safe;
 }
