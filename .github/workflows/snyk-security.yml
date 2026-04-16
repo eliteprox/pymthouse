@@ -1,0 +1,153 @@
+# Snyk Security workflow hardened for PCI DSS compliance.
+#
+# Maps to PCI DSS v4.0 requirements:
+#   - 6.2.3 / 6.2.4  Software security throughout the SDLC (SAST and SCA on every change)
+#   - 6.3.1          Identify and rank vulnerabilities using an industry-recognized source
+#   - 6.3.3          Patch known vulnerabilities within the risk-based timeframes (break build on high/critical)
+#   - 11.3.1         Perform internal vulnerability scans at least once every three months and after significant changes
+#   - 12.10.5        Detection systems feed incident response (SARIF -> GitHub Code Scanning)
+#
+# Fails the pipeline on High/Critical findings so vulnerable code cannot be merged
+# to a protected branch or deployed to the cardholder data environment (CDE).
+
+name: Snyk Security
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  # PCI DSS 11.3.1 / 6.3.3: continuous monitoring for newly disclosed CVEs
+  # in already-deployed dependencies. Daily scan catches drift between commits.
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+# Least-privilege default token for the whole workflow.
+permissions:
+  contents: read
+
+concurrency:
+  group: snyk-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # `secrets` cannot be used in job-level `if` (GitHub rejects it). This job only
+  # reads the token inside a step and exposes a boolean output for the real scan job.
+  snyk-eligibility:
+    name: Snyk eligibility
+    runs-on: ubuntu-latest
+    outputs:
+      run_snyk: ${{ steps.decide.outputs.run_snyk }}
+    steps:
+      - id: decide
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+            echo "run_snyk=false" >> "$GITHUB_OUTPUT"
+            echo "Fork PR — skip authenticated Snyk (secrets not available to fork workflows)."
+            exit 0
+          fi
+          if [ -z "${SNYK_TOKEN:-}" ]; then
+            echo "run_snyk=false" >> "$GITHUB_OUTPUT"
+            echo "SNYK_TOKEN is unset — skip Snyk scans."
+            exit 0
+          fi
+          echo "run_snyk=true" >> "$GITHUB_OUTPUT"
+
+  snyk:
+    name: Snyk Code and Open Source
+    needs: snyk-eligibility
+    if: needs.snyk-eligibility.outputs.run_snyk == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read           # actions/checkout
+      security-events: write   # upload-sarif -> GitHub Code Scanning
+      actions: read            # codeql-action needs run status for private repos
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      # PCI DSS 6.3.1: treat any high/critical as a blocking finding.
+      SNYK_SEVERITY_THRESHOLD: high
+
+    steps:
+      # Third-party actions pinned to immutable SHAs (comments note the semver tag they correspond to).
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # Full history lets Snyk attribute findings to specific commits (audit trail).
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies (locked)
+        # `npm ci` enforces package-lock.json — required for reproducible,
+        # auditable builds under PCI DSS 6.3.2 (inventory of bespoke/custom software).
+        run: npm ci --ignore-scripts
+
+      - name: Set up Snyk CLI
+        uses: snyk/actions/setup@9adf32b1121593767fc3c057af55b55db032dc04 # v1
+
+      - name: Snyk authenticate
+        run: snyk auth "$SNYK_TOKEN"
+
+      # ---------------------------------------------------------------------
+      # SAST — Snyk Code
+      # PCI DSS 6.2.4: review custom code for common coding vulnerabilities.
+      # SARIF output is uploaded to GitHub Code Scanning for tracking & evidence.
+      # ---------------------------------------------------------------------
+      - name: Snyk Code (SAST)
+        run: |
+          snyk code test \
+            --severity-threshold="$SNYK_SEVERITY_THRESHOLD" \
+            --sarif-file-output=snyk-code.sarif
+        continue-on-error: false
+
+      - name: Upload Snyk Code SARIF
+        if: always() && hashFiles('snyk-code.sarif') != ''
+        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4
+        with:
+          sarif_file: snyk-code.sarif
+          category: snyk-code
+
+      # ---------------------------------------------------------------------
+      # SCA — Snyk Open Source
+      # PCI DSS 6.3.1 / 6.3.3: identify vulnerable third-party components
+      # and rank them so patches land inside required remediation windows.
+      # ---------------------------------------------------------------------
+      - name: Snyk Open Source test (SCA)
+        run: |
+          snyk test \
+            --all-projects \
+            --severity-threshold="$SNYK_SEVERITY_THRESHOLD" \
+            --sarif-file-output=snyk-oss.sarif
+
+      - name: Upload Snyk Open Source SARIF
+        if: always() && hashFiles('snyk-oss.sarif') != ''
+        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4
+        with:
+          sarif_file: snyk-oss.sarif
+          category: snyk-open-source
+
+      - name: Snyk Open Source monitor (baseline for continuous alerts)
+        # Publishes the dependency graph to Snyk so new CVEs disclosed after
+        # this run still generate alerts (PCI DSS 6.3.1 continuous awareness).
+        if: github.event_name == 'push' || github.event_name == 'schedule'
+        run: snyk monitor --all-projects --target-reference="${{ github.ref_name }}"
+
+      # ---------------------------------------------------------------------
+      # Retain scan artifacts for PCI evidence (auditors frequently request
+      # dated scan output as proof of 6.3.x / 11.3.x compliance).
+      # ---------------------------------------------------------------------
+      - name: Archive Snyk SARIF reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: snyk-sarif-${{ github.run_id }}
+          path: snyk-*.sarif
+          retention-days: 90

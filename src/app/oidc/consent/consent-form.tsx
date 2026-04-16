@@ -10,30 +10,24 @@ interface ConsentFormProps {
 
 export default function ConsentForm({ uid, branding = getDefaultBranding() }: ConsentFormProps) {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  async function submitConsent(action: "approve" | "deny") {
+  function submitConsent(action: "approve" | "deny") {
     setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/v1/oidc/interaction/${uid}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error_description || data.error || "Failed");
-        setLoading(false);
-        return;
-      }
-      if (data.redirectTo) {
-        window.location.href = data.redirectTo;
-      }
-    } catch {
-      setError("Something went wrong. Please try again.");
-      setLoading(false);
-    }
+
+    // Submit a native form so the browser follows the server-issued 302 directly.
+    // No client-side URL handling — the redirect destination never touches JavaScript.
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = `/api/v1/oidc/interaction/${uid}`;
+
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = "action";
+    input.value = action;
+    form.appendChild(input);
+
+    document.body.appendChild(form);
+    form.submit();
   }
 
   const handleAuthorize = () => submitConsent("approve");
@@ -45,11 +39,6 @@ export default function ConsentForm({ uid, branding = getDefaultBranding() }: Co
 
   return (
     <div className="space-y-3">
-      {error && (
-        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
-          {error}
-        </div>
-      )}
       <div className="flex gap-3">
         <button
           type="button"

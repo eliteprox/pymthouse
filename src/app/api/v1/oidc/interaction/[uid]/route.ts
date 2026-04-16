@@ -84,7 +84,16 @@ export async function POST(
   const provider = await getProvider();
   let body: { action?: "approve" | "deny" } = {};
   try {
-    body = await request.json();
+    const contentType = request.headers.get("content-type") ?? "";
+    if (contentType.includes("application/x-www-form-urlencoded")) {
+      const formData = await request.formData();
+      const action = formData.get("action");
+      if (action === "approve" || action === "deny") {
+        body = { action };
+      }
+    } else {
+      body = await request.json();
+    }
   } catch {
     // Allow login interactions that do not provide a JSON body.
   }
@@ -155,7 +164,7 @@ export async function POST(
       mergeWithLastSubmission: false,
     });
 
-    return NextResponse.json({ redirectTo });
+    return NextResponse.redirect(redirectTo, { status: 302 });
   } catch (err) {
     if (DEBUG_OIDC_LOGS) {
       console.warn("[OIDC] interaction POST failed", { uid, err });

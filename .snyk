@@ -1,0 +1,5 @@
+# Snyk policy — exclude third-party trees from Snyk Code analysis (CLI + import).
+version: v1.25.0
+exclude:
+  global:
+    - node_modules/**
