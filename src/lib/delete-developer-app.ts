@@ -30,12 +30,14 @@ export async function deleteDeveloperAppAndRelatedData(
   appInternalId: string,
   oidcClientPk: string | null,
 ): Promise<void> {
-  const oauthClientIdPublic = appInternalId;
+  const oauthClientIdInternal = oidcClientPk;
 
   await db.transaction(async (tx) => {
-    await tx.delete(oidcAuthCodes).where(eq(oidcAuthCodes.clientId, oauthClientIdPublic));
-    await tx.delete(oidcRefreshTokens).where(eq(oidcRefreshTokens.clientId, oauthClientIdPublic));
-    await tx.delete(oidcDeviceCodes).where(eq(oidcDeviceCodes.clientId, oauthClientIdPublic));
+    if (oauthClientIdInternal) {
+      await tx.delete(oidcAuthCodes).where(eq(oidcAuthCodes.clientId, oauthClientIdInternal));
+      await tx.delete(oidcRefreshTokens).where(eq(oidcRefreshTokens.clientId, oauthClientIdInternal));
+      await tx.delete(oidcDeviceCodes).where(eq(oidcDeviceCodes.clientId, oauthClientIdInternal));
+    }
 
     await tx.delete(apiKeys).where(eq(apiKeys.clientId, appInternalId));
     await tx.delete(subscriptions).where(eq(subscriptions.clientId, appInternalId));
