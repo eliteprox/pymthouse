@@ -46,14 +46,14 @@ const requiredVars = {
 };
 
 const optionalVars = {
-  GOOGLE_CLIENT_ID: "Google OAuth client ID (for admin login)",
-  GOOGLE_CLIENT_SECRET: "Google OAuth client secret",
-  GITHUB_CLIENT_ID: "GitHub OAuth client ID (for admin login)",
-  GITHUB_CLIENT_SECRET: "GitHub OAuth client secret",
-  NEXT_PUBLIC_PRIVY_APP_ID: "Privy app ID (for end-user wallets)",
-  PRIVY_APP_SECRET: "Privy app secret",
-  NAAP_METRICS_URL: "NaaP metrics endpoint (optional)",
-  SIGNER_CLI_URL: "Signer CLI URL (defaults to SIGNER_INTERNAL_URL)",
+  GOOGLE_CLIENT_ID: "",
+  GOOGLE_CLIENT_SECRET: "",
+  GITHUB_CLIENT_ID: "",
+  GITHUB_CLIENT_SECRET: "",
+  NEXT_PUBLIC_PRIVY_APP_ID: "",
+  PRIVY_APP_SECRET: "",
+  NAAP_METRICS_URL: "",
+  SIGNER_CLI_URL: "",
 };
 
 console.log("🔍 Validating environment configuration for Vercel deployment...\n");
@@ -91,7 +91,7 @@ console.log("\n📋 Optional Variables:");
 let hasOAuth = false;
 let hasPrivy = false;
 
-for (const [key, desc] of Object.entries(optionalVars)) {
+for (const key of Object.keys(optionalVars)) {
   const value = process.env[key];
   
   if (value) {
