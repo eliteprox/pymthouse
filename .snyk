@@ -1,6 +1,4 @@
 # Snyk policy — exclude third-party trees from Snyk Code analysis (CLI + import).
-# `snyk iac test` is not run in CI: compose/Render manifests are not Snyk IaC inputs
-# (SNYK-CLI-0012); see `.github/workflows/snyk-security.yml`.
 version: v1.25.0
 exclude:
   global:

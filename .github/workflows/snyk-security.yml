@@ -1,7 +1,7 @@
 # Snyk Security workflow hardened for PCI DSS compliance.
 #
 # Maps to PCI DSS v4.0 requirements:
-#   - 6.2.3 / 6.2.4  Software security throughout the SDLC (SAST, SCA, container scans on every change; compose/Render YAML not in Snyk IaC catalog)
+#   - 6.2.3 / 6.2.4  Software security throughout the SDLC (SAST, SCA, container scans on every change)
 #   - 6.3.1          Identify and rank vulnerabilities using an industry-recognized source
 #   - 6.3.3          Patch known vulnerabilities within the risk-based timeframes (break build on high/critical)
 #   - 11.3.1         Perform internal vulnerability scans at least once every three months and after significant changes
@@ -141,19 +141,6 @@ jobs:
         # this run still generate alerts (PCI DSS 6.3.1 continuous awareness).
         if: github.event_name == 'push' || github.event_name == 'schedule'
         run: snyk monitor --all-projects --target-reference="${{ github.ref_name }}"
-
-      # ---------------------------------------------------------------------
-      # IaC — not run: `snyk iac test` rejects our manifests (SNYK-CLI-0012 exit 3).
-      # docker-compose.yml uses Compose file format v2 (no top-level `version:`);
-      # render.yaml is a Render Blueprint. Neither is a supported Snyk IaC input type.
-      # A bare `snyk iac test` on the repo also walks node_modules and hits parse errors.
-      # PCI DSS 1.x / 2.2 style config review for the deployed signer is covered by
-      # Snyk Container on Dockerfile.signer + built image (below).
-      # ---------------------------------------------------------------------
-      - name: Snyk IaC (skipped — unsupported manifest kinds)
-        run: |
-          echo "Skipping snyk iac test: compose + Render blueprint are outside Snyk IaC catalog."
-          echo "See https://docs.snyk.io/scan-with-snyk/error-catalog#snyk-cli-0012"
 
       # ---------------------------------------------------------------------
       # Container — scan the signer image actually deployed to production.
