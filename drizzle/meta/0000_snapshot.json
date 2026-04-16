@@ -45,29 +45,7 @@
           "notNull": true
         }
       },
-      "indexes": {
-        "app_allowed_domains_app_id_domain_unique": {
-          "name": "app_allowed_domains_app_id_domain_unique",
-          "columns": [
-            {
-              "expression": "app_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "domain",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "admin_invites_created_by_users_id_fk": {
           "name": "admin_invites_created_by_users_id_fk",
@@ -281,7 +259,29 @@
           "notNull": true
         }
       },
-      "indexes": {},
+      "indexes": {
+        "app_allowed_domains_app_id_domain_unique": {
+          "name": "app_allowed_domains_app_id_domain_unique",
+          "columns": [
+            {
+              "expression": "app_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "domain",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "app_allowed_domains_app_id_developer_apps_id_fk": {
           "name": "app_allowed_domains_app_id_developer_apps_id_fk",
