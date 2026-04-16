@@ -25,43 +25,44 @@ function PrivyLoginButton({ primaryColor = "#10b981" }: { primaryColor?: string 
   const callbackUrl = rawCallbackUrl.startsWith("/") && !rawCallbackUrl.startsWith("//") ? rawCallbackUrl : "/dashboard";
 
   useEffect(() => {
-    if (bridgeRequested && authenticated && !bridging && !failed) {
+    if (!bridgeRequested || !authenticated || bridging || failed) {
+      return;
+    }
+
+    (async () => {
       setBridging(true);
       setError(null);
-
-      (async () => {
-        try {
-          const token = await getAccessToken();
-          if (!token) {
-            setError("Could not get access token");
-            setFailed(true);
-            setBridgeRequested(false);
-            setBridging(false);
-            return;
-          }
-
-          const result = await signIn("privy-wallet", {
-            privyToken: token,
-            redirect: false,
-          });
-
-          if (result?.error) {
-            setError("Authentication failed — check server logs");
-            setFailed(true);
-            setBridgeRequested(false);
-            setBridging(false);
-          } else if (result?.ok) {
-            setBridgeRequested(false);
-            router.push(callbackUrl);
-          }
-        } catch {
-          setError("Authentication failed");
+      try {
+        const token = await getAccessToken();
+        if (!token) {
+          setError("Could not get access token");
           setFailed(true);
           setBridgeRequested(false);
           setBridging(false);
+          return;
         }
-      })();
-    }
+
+        const result = await signIn("privy-wallet", {
+          privyToken: token,
+          redirect: false,
+        });
+
+        if (result?.error) {
+          setError("Authentication failed — check server logs");
+          setFailed(true);
+          setBridgeRequested(false);
+          setBridging(false);
+        } else if (result?.ok) {
+          setBridgeRequested(false);
+          router.push(callbackUrl);
+        }
+      } catch {
+        setError("Authentication failed");
+        setFailed(true);
+        setBridgeRequested(false);
+        setBridging(false);
+      }
+    })();
   }, [bridgeRequested, authenticated, bridging, failed, getAccessToken, router, callbackUrl]);
 
   return (
@@ -126,7 +127,10 @@ export function LoginForm() {
   }, [session, status, router, safeCallbackUrl]);
 
   useEffect(() => {
-    if (isAdmin) setShowAdmin(true);
+    if (!isAdmin) return;
+    queueMicrotask(() => {
+      setShowAdmin(true);
+    });
   }, [isAdmin]);
 
   async function handleTokenLogin(e: React.FormEvent) {

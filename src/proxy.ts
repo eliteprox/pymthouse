@@ -9,7 +9,7 @@ const SESSION_COOKIE_NAMES = [
 
 const nextAuthSecret = getNextAuthSecret({ suppressDevWarning: true });
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const hasSessionCookie = SESSION_COOKIE_NAMES.some((name) =>
     Boolean(request.cookies.get(name)?.value),
   );
