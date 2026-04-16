@@ -4,25 +4,9 @@ import { eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db/index";
 import {
-  apiKeys,
-  appAllowedDomains,
   appUsers,
-  authAuditLog,
   developerApps,
-  endUsers,
-  oidcAuthCodes,
-  oidcClients,
-  oidcDeviceCodes,
-  oidcRefreshTokens,
-  planCapabilityBundles,
-  plans,
-  providerAdmins,
-  sessions,
   signerConfig,
-  streamSessions,
-  subscriptions,
-  transactions,
-  usageRecords,
   users,
 } from "@/db/schema";
 import { createAppClient, rotateClientSecret } from "@/lib/oidc/clients";
@@ -179,66 +163,76 @@ export async function ensureRunningSigner(): Promise<() => Promise<void>> {
  * oidc client row, the owner user, usage rows, and any test sessions scoped
  * to the client). Safe to call even when some of the related rows are missing.
  */
-export async function cleanupTestApp(app: SeededDeveloperApp): Promise<void> {
+export async function cleanupTestApp(
+  app: SeededDeveloperApp | undefined | null,
+): Promise<void> {
+  if (!app?.clientId || !app.oidcClientRowId || !app.userId) {
+    return;
+  }
+
+  // Dynamic import avoids rare ESM circular-init cases where top-level named
+  // table imports are still undefined when `t.after` teardown runs (seen on CI).
+  const m = await import("@/db/schema");
+
   const appId = app.clientId;
   const oidcClientPublic = app.clientId;
   const oidcClientPk = app.oidcClientRowId;
   const ownerId = app.userId;
 
-  await db.delete(sessions).where(eq(sessions.appId, oidcClientPublic));
+  await db.delete(m.sessions).where(eq(m.sessions.appId, oidcClientPublic));
 
-  await db.delete(oidcAuthCodes).where(eq(oidcAuthCodes.clientId, oidcClientPublic));
-  await db.delete(oidcRefreshTokens).where(eq(oidcRefreshTokens.clientId, oidcClientPublic));
-  await db.delete(oidcDeviceCodes).where(eq(oidcDeviceCodes.clientId, oidcClientPublic));
+  await db.delete(m.oidcAuthCodes).where(eq(m.oidcAuthCodes.clientId, oidcClientPublic));
+  await db.delete(m.oidcRefreshTokens).where(eq(m.oidcRefreshTokens.clientId, oidcClientPublic));
+  await db.delete(m.oidcDeviceCodes).where(eq(m.oidcDeviceCodes.clientId, oidcClientPublic));
 
-  await db.delete(apiKeys).where(eq(apiKeys.clientId, appId));
-  await db.delete(subscriptions).where(eq(subscriptions.clientId, appId));
-  await db.delete(planCapabilityBundles).where(eq(planCapabilityBundles.clientId, appId));
-  await db.delete(plans).where(eq(plans.clientId, appId));
+  await db.delete(m.apiKeys).where(eq(m.apiKeys.clientId, appId));
+  await db.delete(m.subscriptions).where(eq(m.subscriptions.clientId, appId));
+  await db.delete(m.planCapabilityBundles).where(eq(m.planCapabilityBundles.clientId, appId));
+  await db.delete(m.plans).where(eq(m.plans.clientId, appId));
 
-  await db.delete(usageRecords).where(eq(usageRecords.clientId, appId));
-  await db.delete(authAuditLog).where(eq(authAuditLog.clientId, appId));
-  await db.delete(appAllowedDomains).where(eq(appAllowedDomains.appId, appId));
+  await db.delete(m.usageRecords).where(eq(m.usageRecords.clientId, appId));
+  await db.delete(m.authAuditLog).where(eq(m.authAuditLog.clientId, appId));
+  await db.delete(m.appAllowedDomains).where(eq(m.appAllowedDomains.appId, appId));
 
   const appUserRows = await db
-    .select({ id: appUsers.id })
-    .from(appUsers)
-    .where(eq(appUsers.clientId, appId));
+    .select({ id: m.appUsers.id })
+    .from(m.appUsers)
+    .where(eq(m.appUsers.clientId, appId));
   const appUserIds = appUserRows.map((row) => row.id);
   if (appUserIds.length > 0) {
     await db
-      .delete(sessions)
-      .where(inArray(sessions.userId, appUserIds));
+      .delete(m.sessions)
+      .where(inArray(m.sessions.userId, appUserIds));
   }
-  await db.delete(appUsers).where(eq(appUsers.clientId, appId));
-  await db.delete(providerAdmins).where(eq(providerAdmins.clientId, appId));
+  await db.delete(m.appUsers).where(eq(m.appUsers.clientId, appId));
+  await db.delete(m.providerAdmins).where(eq(m.providerAdmins.clientId, appId));
 
   const endUserRows = await db
-    .select({ id: endUsers.id })
-    .from(endUsers)
-    .where(eq(endUsers.appId, appId));
+    .select({ id: m.endUsers.id })
+    .from(m.endUsers)
+    .where(eq(m.endUsers.appId, appId));
   const endUserIds = endUserRows.map((row) => row.id);
 
   if (endUserIds.length > 0) {
     await db
-      .delete(transactions)
-      .where(inArray(transactions.endUserId, endUserIds));
+      .delete(m.transactions)
+      .where(inArray(m.transactions.endUserId, endUserIds));
     await db
-      .delete(streamSessions)
-      .where(inArray(streamSessions.endUserId, endUserIds));
+      .delete(m.streamSessions)
+      .where(inArray(m.streamSessions.endUserId, endUserIds));
   }
 
-  await db.delete(streamSessions).where(eq(streamSessions.appId, appId));
-  await db.delete(transactions).where(eq(transactions.clientId, appId));
-  await db.delete(transactions).where(eq(transactions.appId, appId));
-  await db.delete(endUsers).where(eq(endUsers.appId, appId));
+  await db.delete(m.streamSessions).where(eq(m.streamSessions.appId, appId));
+  await db.delete(m.transactions).where(eq(m.transactions.clientId, appId));
+  await db.delete(m.transactions).where(eq(m.transactions.appId, appId));
+  await db.delete(m.endUsers).where(eq(m.endUsers.appId, appId));
 
-  await db.delete(developerApps).where(eq(developerApps.id, appId));
-  await db.delete(oidcClients).where(eq(oidcClients.id, oidcClientPk));
+  await db.delete(m.developerApps).where(eq(m.developerApps.id, appId));
+  await db.delete(m.oidcClients).where(eq(m.oidcClients.id, oidcClientPk));
   if (appUserIds.length > 0) {
-    await db.delete(users).where(inArray(users.id, appUserIds));
+    await db.delete(m.users).where(inArray(m.users.id, appUserIds));
   }
-  await db.delete(users).where(eq(users.id, ownerId));
+  await db.delete(m.users).where(eq(m.users.id, ownerId));
 }
 
 export function basicAuthHeader(clientId: string, clientSecret: string): string {
