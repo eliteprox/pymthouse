@@ -2,6 +2,9 @@
   "name": "pymthouse",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "predev": "npm run db:prepare",
     "dev": "next dev -p 3001",
