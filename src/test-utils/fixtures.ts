@@ -144,45 +144,34 @@ export async function createAppUser(opts: {
  * forward requests. Returns a restore function that resets any captured state.
  */
 export async function ensureRunningSigner(): Promise<() => Promise<void>> {
-  const existingRows = await db
+  const defaultSignerRows = await db
     .select()
     .from(signerConfig)
     .where(eq(signerConfig.id, "default"))
     .limit(1);
-  const existing = existingRows[0];
-
-  if (existing) {
+  const defaultSigner = defaultSignerRows[0];
+  if (defaultSigner) {
     await db
       .update(signerConfig)
       .set({ status: "running", signerUrl: "http://test-signer.invalid" })
       .where(eq(signerConfig.id, "default"));
-
-    return async () => {
-      await db
-        .update(signerConfig)
-        .set({
-          status: existing.status,
-          signerUrl: existing.signerUrl,
-        })
-        .where(eq(signerConfig.id, "default"));
-    };
+  } else {
+    await db.insert(signerConfig).values({
+      id: "default",
+      name: "pymthouse test signer",
+      signerUrl: "http://test-signer.invalid",
+      status: "running",
+      network: "arbitrum-one-mainnet",
+      ethRpcUrl: "https://arb1.arbitrum.io/rpc",
+      signerPort: 8081,
+      defaultCutPercent: 15,
+      billingMode: "delegated",
+    });
   }
 
-  await db.insert(signerConfig).values({
-    id: "default",
-    name: "pymthouse test signer",
-    signerUrl: "http://test-signer.invalid",
-    status: "running",
-    network: "arbitrum-one-mainnet",
-    ethRpcUrl: "https://arb1.arbitrum.io/rpc",
-    signerPort: 8081,
-    defaultCutPercent: 15,
-    billingMode: "delegated",
-  });
-
-  return async () => {
-    await db.delete(signerConfig).where(eq(signerConfig.id, "default"));
-  };
+  // Tests run in parallel; restoring signer status in each test can flip a
+  // shared row back to "stopped" while another test still needs it.
+  return async () => {};
 }
 
 /**
