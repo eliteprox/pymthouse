@@ -23,6 +23,11 @@ const requiredVars = {
     example: "Run: openssl rand -base64 32",
     validate: (val) => val.length >= 32,
   },
+  AUTH_TOKEN_PEPPER: {
+    desc: "Server-side pepper for PBKDF2 token hashing (min 32 chars)",
+    example: "Run: openssl rand -base64 48",
+    validate: (val) => val.length >= 32,
+  },
   SIGNER_INTERNAL_URL: {
     desc: "URL of deployed go-livepeer signer",
     example: "https://your-signer.up.railway.app",

@@ -1,18 +1,17 @@
 import { db } from "@/db/index";
 import { sessions, oidcClients, developerApps } from "@/db/schema";
 import { eq, and, gt } from "drizzle-orm";
-import { createHash, randomBytes } from "crypto";
+import { randomBytes } from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import type { NextRequest } from "next/server";
 import { verifyAccessToken } from "@/lib/oidc/tokens";
 import { validateClientSecret } from "@/lib/oidc/clients";
+import { hashToken } from "@/lib/token-hash";
+
+export { hashToken };
 
 const TOKEN_PREFIX = "pmth_";
 const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
-
-export function hashToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
 
 export function generateBearerToken(): { token: string; hash: string } {
   const raw = randomBytes(32).toString("hex");

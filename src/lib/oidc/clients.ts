@@ -2,8 +2,9 @@ import { db } from "@/db/index";
 import { oidcClients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
-import { createHash, randomBytes } from "crypto";
+import { randomBytes } from "crypto";
 import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
+import { hashToken } from "@/lib/token-hash";
 
 export interface OidcClientConfig {
   clientId: string;
@@ -16,7 +17,7 @@ export interface OidcClientConfig {
 }
 
 export function hashClientSecret(secret: string): string {
-  return createHash("sha256").update(secret).digest("hex");
+  return hashToken(secret);
 }
 
 export async function registerClient(config: OidcClientConfig): Promise<void> {

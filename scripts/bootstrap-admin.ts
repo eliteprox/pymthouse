@@ -11,11 +11,12 @@
 import "./load-env-first";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { createHash, randomBytes } from "crypto";
+import { randomBytes } from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import { eq } from "drizzle-orm";
 import * as schema from "../src/db/schema";
 import { users, sessions, signerConfig } from "../src/db/schema";
+import { hashToken } from "../src/lib/token-hash";
 
 async function main() {
   const databaseUrl = process.env.DATABASE_URL?.trim();
@@ -69,7 +70,7 @@ async function main() {
 
   const raw = randomBytes(32).toString("hex");
   const token = `pmth_${raw}`;
-  const hash = createHash("sha256").update(token).digest("hex");
+  const hash = hashToken(token);
   const sessionId = uuidv4();
   const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
 
