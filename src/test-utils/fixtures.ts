@@ -1,16 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { TestContext } from "node:test";
-import { eq, inArray } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { db } from "@/db/index";
-// Namespace import (not named imports / dynamic import): matches the pattern in
-// `src/db/index.ts` that drizzle uses reliably. On CI we saw named and dynamic
-// forms intermittently return a module with missing bindings from `tsx`'s path
-// alias resolution inside the node --test subprocess, which caused
-// `m.oidcAuthCodes` to be undefined in `cleanupTestApp`'s teardown hook.
-import * as schema from "@/db/schema";
-
-const { appUsers, developerApps, signerConfig, users } = schema;
+import { appUsers, developerApps, signerConfig, users } from "@/db/schema";
 import { createAppClient, rotateClientSecret } from "@/lib/oidc/clients";
 import { createSession } from "@/lib/auth";
 
@@ -192,60 +185,76 @@ export async function cleanupTestApp(
   const oidcClientPk = app.oidcClientRowId;
   const ownerId = app.userId;
 
-  await db.delete(schema.sessions).where(eq(schema.sessions.appId, oidcClientPublic));
-
-  await db.delete(schema.oidcAuthCodes).where(eq(schema.oidcAuthCodes.clientId, oidcClientPublic));
-  await db.delete(schema.oidcRefreshTokens).where(eq(schema.oidcRefreshTokens.clientId, oidcClientPublic));
-  await db.delete(schema.oidcDeviceCodes).where(eq(schema.oidcDeviceCodes.clientId, oidcClientPublic));
-
-  await db.delete(schema.apiKeys).where(eq(schema.apiKeys.clientId, appId));
-  await db.delete(schema.subscriptions).where(eq(schema.subscriptions.clientId, appId));
-  await db.delete(schema.planCapabilityBundles).where(eq(schema.planCapabilityBundles.clientId, appId));
-  await db.delete(schema.plans).where(eq(schema.plans.clientId, appId));
-
-  await db.delete(schema.usageRecords).where(eq(schema.usageRecords.clientId, appId));
-  await db.delete(schema.authAuditLog).where(eq(schema.authAuditLog.clientId, appId));
-  await db.delete(schema.appAllowedDomains).where(eq(schema.appAllowedDomains.appId, appId));
-
-  const appUserRows = await db
-    .select({ id: schema.appUsers.id })
-    .from(schema.appUsers)
-    .where(eq(schema.appUsers.clientId, appId));
+  // Use raw SQL (via drizzle's `sql` tag) rather than schema object references.
+  // On the GitHub Actions runner, named and namespace `@/db/schema` imports
+  // have intermittently produced a module with `oidcAuthCodes` (and other
+  // exports) undefined inside `node --test` subprocesses under tsx, which
+  // caused this teardown to crash. Raw DELETEs are immune: they do not touch
+  // the schema module namespace at all, only the `db` client and plain table
+  // names. Order matches the previous FK-safe sequence.
+  const appUserRows = await db.execute<{ id: string }>(
+    sql`SELECT id FROM app_users WHERE client_id = ${appId}`,
+  );
   const appUserIds = appUserRows.map((row) => row.id);
-  if (appUserIds.length > 0) {
-    await db
-      .delete(schema.sessions)
-      .where(inArray(schema.sessions.userId, appUserIds));
-  }
-  await db.delete(schema.appUsers).where(eq(schema.appUsers.clientId, appId));
-  await db.delete(schema.providerAdmins).where(eq(schema.providerAdmins.clientId, appId));
 
-  const endUserRows = await db
-    .select({ id: schema.endUsers.id })
-    .from(schema.endUsers)
-    .where(eq(schema.endUsers.appId, appId));
+  const endUserRows = await db.execute<{ id: string }>(
+    sql`SELECT id FROM end_users WHERE app_id = ${appId}`,
+  );
   const endUserIds = endUserRows.map((row) => row.id);
 
-  if (endUserIds.length > 0) {
-    await db
-      .delete(schema.transactions)
-      .where(inArray(schema.transactions.endUserId, endUserIds));
-    await db
-      .delete(schema.streamSessions)
-      .where(inArray(schema.streamSessions.endUserId, endUserIds));
-  }
-
-  await db.delete(schema.streamSessions).where(eq(schema.streamSessions.appId, appId));
-  await db.delete(schema.transactions).where(eq(schema.transactions.clientId, appId));
-  await db.delete(schema.transactions).where(eq(schema.transactions.appId, appId));
-  await db.delete(schema.endUsers).where(eq(schema.endUsers.appId, appId));
-
-  await db.delete(schema.developerApps).where(eq(schema.developerApps.id, appId));
-  await db.delete(schema.oidcClients).where(eq(schema.oidcClients.id, oidcClientPk));
+  await db.execute(sql`DELETE FROM sessions WHERE app_id = ${oidcClientPublic}`);
   if (appUserIds.length > 0) {
-    await db.delete(schema.users).where(inArray(schema.users.id, appUserIds));
+    await db.execute(
+      sql`DELETE FROM sessions WHERE user_id = ANY(${sql.raw(arrayLiteral(appUserIds))})`,
+    );
   }
-  await db.delete(schema.users).where(eq(schema.users.id, ownerId));
+
+  await db.execute(sql`DELETE FROM oidc_auth_codes WHERE client_id = ${oidcClientPublic}`);
+  await db.execute(sql`DELETE FROM oidc_refresh_tokens WHERE client_id = ${oidcClientPublic}`);
+  await db.execute(sql`DELETE FROM oidc_device_codes WHERE client_id = ${oidcClientPublic}`);
+
+  await db.execute(sql`DELETE FROM api_keys WHERE client_id = ${appId}`);
+  await db.execute(sql`DELETE FROM subscriptions WHERE client_id = ${appId}`);
+  await db.execute(sql`DELETE FROM plan_capability_bundles WHERE client_id = ${appId}`);
+  await db.execute(sql`DELETE FROM plans WHERE client_id = ${appId}`);
+
+  await db.execute(sql`DELETE FROM usage_records WHERE client_id = ${appId}`);
+  await db.execute(sql`DELETE FROM auth_audit_log WHERE client_id = ${appId}`);
+  await db.execute(sql`DELETE FROM app_allowed_domains WHERE app_id = ${appId}`);
+
+  await db.execute(sql`DELETE FROM app_users WHERE client_id = ${appId}`);
+  await db.execute(sql`DELETE FROM provider_admins WHERE client_id = ${appId}`);
+
+  if (endUserIds.length > 0) {
+    const arr = sql.raw(arrayLiteral(endUserIds));
+    await db.execute(sql`DELETE FROM transactions WHERE end_user_id = ANY(${arr})`);
+    await db.execute(sql`DELETE FROM stream_sessions WHERE end_user_id = ANY(${arr})`);
+  }
+
+  await db.execute(sql`DELETE FROM stream_sessions WHERE app_id = ${appId}`);
+  await db.execute(sql`DELETE FROM transactions WHERE client_id = ${appId}`);
+  await db.execute(sql`DELETE FROM transactions WHERE app_id = ${appId}`);
+  await db.execute(sql`DELETE FROM end_users WHERE app_id = ${appId}`);
+
+  await db.execute(sql`DELETE FROM developer_apps WHERE id = ${appId}`);
+  await db.execute(sql`DELETE FROM oidc_clients WHERE id = ${oidcClientPk}`);
+  if (appUserIds.length > 0) {
+    await db.execute(
+      sql`DELETE FROM users WHERE id = ANY(${sql.raw(arrayLiteral(appUserIds))})`,
+    );
+  }
+  await db.execute(sql`DELETE FROM users WHERE id = ${ownerId}`);
+}
+
+/**
+ * Build a Postgres text-array literal (e.g. `ARRAY['a','b']::text[]`) safely
+ * from a list of strings. Ids here come from the caller's test fixture and
+ * previously-inserted rows, never from untrusted input, but we still escape
+ * single quotes defensively to keep the SQL well-formed.
+ */
+function arrayLiteral(ids: string[]): string {
+  const escaped = ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(",");
+  return `ARRAY[${escaped}]::text[]`;
 }
 
 export function basicAuthHeader(clientId: string, clientSecret: string): string {
