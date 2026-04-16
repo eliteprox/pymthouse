@@ -82,8 +82,8 @@ jobs:
         continue-on-error: false
 
       - name: Upload Snyk Code SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('snyk-code.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: snyk-code.sarif
           category: snyk-code
@@ -102,8 +102,8 @@ jobs:
             --sarif-file-output=snyk-oss.sarif
 
       - name: Upload Snyk Open Source SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('snyk-oss.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: snyk-oss.sarif
           category: snyk-open-source
@@ -119,16 +119,26 @@ jobs:
       # PCI DSS 1.x / 2.2: secure configuration of system components.
       # Scans Dockerfile.signer, vercel.json, docker-compose.yml, render.yaml, etc.
       # ---------------------------------------------------------------------
+      # Scope IaC to known config files only. A bare `snyk iac test` walks the whole
+      # tree and can try to parse JSON under node_modules (SNYK-CLI-0012 / exit 2).
       - name: Snyk IaC test
         run: |
-          snyk iac test \
+          set -euo pipefail
+          IAC_FILES=()
+          [[ -f docker-compose.yml ]] && IAC_FILES+=(docker-compose.yml)
+          [[ -f render.yaml ]] && IAC_FILES+=(render.yaml)
+          if [[ ${#IAC_FILES[@]} -eq 0 ]]; then
+            echo "No IaC files to scan; skipping."
+            exit 0
+          fi
+          snyk iac test "${IAC_FILES[@]}" \
             --severity-threshold="$SNYK_SEVERITY_THRESHOLD" \
             --report \
             --sarif-file-output=snyk-iac.sarif
 
       - name: Upload Snyk IaC SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('snyk-iac.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: snyk-iac.sarif
           category: snyk-iac
@@ -149,8 +159,8 @@ jobs:
             --sarif-file-output=snyk-container.sarif
 
       - name: Upload Snyk Container SARIF
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('snyk-container.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: snyk-container.sarif
           category: snyk-container

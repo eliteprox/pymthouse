@@ -1,0 +1,7 @@
+# Snyk policy — exclude third-party trees from Snyk Code analysis (CLI + import).
+# IaC is additionally scoped to explicit files in `.github/workflows/snyk-security.yml`
+# so `snyk iac test` never walks `node_modules` (avoids SNYK-CLI-0012 parse failures).
+version: v1.25.0
+exclude:
+  global:
+    - node_modules/**
