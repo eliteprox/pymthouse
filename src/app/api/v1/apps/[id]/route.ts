@@ -11,6 +11,7 @@ import {
   getAuthorizedProviderApp,
   appEditForbiddenResponse,
 } from "@/lib/provider-apps";
+import { deleteDeveloperAppAndRelatedData } from "@/lib/delete-developer-app";
 
 export async function GET(
   _request: NextRequest,
@@ -143,4 +144,33 @@ export async function PUT(
   }
 
   return NextResponse.json({ success: true });
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id: clientId } = await params;
+  const auth = await getAuthorizedProviderApp(clientId);
+  if (!auth) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (auth.app.ownerId !== auth.userId) {
+    return NextResponse.json(
+      { error: "Only the app owner can delete this app." },
+      { status: 403 },
+    );
+  }
+
+  if (auth.app.status !== "draft") {
+    return NextResponse.json(
+      { error: "Only draft apps can be deleted." },
+      { status: 400 },
+    );
+  }
+
+  await deleteDeveloperAppAndRelatedData(auth.app.id, auth.app.oidcClientId ?? null);
+
+  return new NextResponse(null, { status: 204 });
 }
