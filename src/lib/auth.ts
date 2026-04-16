@@ -1,71 +1,17 @@
 import { db } from "@/db/index";
 import { sessions, oidcClients, developerApps } from "@/db/schema";
 import { eq, and, gt } from "drizzle-orm";
-import {
-  createHash,
-  pbkdf2Sync,
-  randomBytes,
-  timingSafeEqual,
-} from "crypto";
+import { randomBytes } from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import type { NextRequest } from "next/server";
 import { verifyAccessToken } from "@/lib/oidc/tokens";
 import { validateClientSecret } from "@/lib/oidc/clients";
+import { hashToken } from "@/lib/token-hash";
+
+export { hashToken };
 
 const TOKEN_PREFIX = "pmth_";
 const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
-const TOKEN_HASH_SCHEME = "pbkdf2_sha256";
-const TOKEN_HASH_ITERATIONS = 210000;
-const TOKEN_HASH_KEYLEN = 32;
-const TOKEN_HASH_DIGEST = "sha256";
-
-export function hashToken(token: string): string {
-  const salt = randomBytes(16).toString("hex");
-  const derivedKey = pbkdf2Sync(
-    token,
-    salt,
-    TOKEN_HASH_ITERATIONS,
-    TOKEN_HASH_KEYLEN,
-    TOKEN_HASH_DIGEST,
-  ).toString("hex");
-  return `${TOKEN_HASH_SCHEME}$${TOKEN_HASH_ITERATIONS}$${salt}$${derivedKey}`;
-}
-
-export function verifyTokenHash(token: string, storedHash: string): boolean {
-  const parts = storedHash.split("$");
-  if (parts.length === 4 && parts[0] === TOKEN_HASH_SCHEME) {
-    const iterations = Number(parts[1]);
-    const salt = parts[2];
-    const expected = parts[3];
-    if (!Number.isFinite(iterations) || iterations <= 0 || !salt || !expected) {
-      return false;
-    }
-
-    const actual = pbkdf2Sync(
-      token,
-      salt,
-      iterations,
-      TOKEN_HASH_KEYLEN,
-      TOKEN_HASH_DIGEST,
-    ).toString("hex");
-
-    const expectedBuf = Buffer.from(expected, "hex");
-    const actualBuf = Buffer.from(actual, "hex");
-    return (
-      expectedBuf.length === actualBuf.length &&
-      timingSafeEqual(expectedBuf, actualBuf)
-    );
-  }
-
-  // Backward compatibility for existing stored SHA-256 hashes.
-  const legacy = createHash("sha256").update(token).digest("hex");
-  const legacyExpectedBuf = Buffer.from(storedHash, "hex");
-  const legacyActualBuf = Buffer.from(legacy, "hex");
-  return (
-    legacyExpectedBuf.length === legacyActualBuf.length &&
-    timingSafeEqual(legacyExpectedBuf, legacyActualBuf)
-  );
-}
 
 export function generateBearerToken(): { token: string; hash: string } {
   const raw = randomBytes(32).toString("hex");
