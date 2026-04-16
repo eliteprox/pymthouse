@@ -88,6 +88,17 @@ export default function AppDetailPage() {
     );
   }, []);
 
+  const handleRevertedToDraft = useCallback(() => {
+    setAppData((prev) =>
+      prev
+        ? {
+            ...prev,
+            state: { ...prev.state, status: "draft" },
+          }
+        : null,
+    );
+  }, []);
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -160,6 +171,7 @@ export default function AppDetailPage() {
         canEdit={appData.canEdit}
         canSubmitForReview={appData.canSubmitForReview}
         onReviewSubmitted={handleReviewSubmitted}
+        onRevertedToDraft={handleRevertedToDraft}
       />
     </DashboardLayout>
   );

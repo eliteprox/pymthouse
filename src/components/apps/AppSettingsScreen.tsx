@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import AppInfoStep from "./steps/AppInfoStep";
 import AppModeStep from "./steps/AppModeStep";
 import TestingStep from "./steps/TestingStep";
@@ -24,6 +25,8 @@ interface Props {
   canSubmitForReview?: boolean;
   /** Called after a successful submit so the parent can refresh status UI. */
   onReviewSubmitted?: () => void;
+  /** Called after reverting from submitted to draft (header badge, etc.). */
+  onRevertedToDraft?: () => void;
 }
 
 function mergeFormData(initial: Partial<AppFormData>): AppFormData {
@@ -49,7 +52,9 @@ export default function AppSettingsScreen({
   canEdit = true,
   canSubmitForReview = false,
   onReviewSubmitted,
+  onRevertedToDraft,
 }: Props) {
+  const router = useRouter();
   const [formData, setFormData] = useState<AppFormData>(() =>
     mergeFormData(initialData),
   );
@@ -68,6 +73,8 @@ export default function AppSettingsScreen({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [submittingForReview, setSubmittingForReview] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [reverting, setReverting] = useState(false);
 
   const updateFormData = useCallback(
     (updates: Partial<AppFormData>) => {
@@ -154,6 +161,74 @@ export default function AppSettingsScreen({
     }
   }, [appId, canSubmitForReview, onReviewSubmitted]);
 
+  const deleteDraftApp = useCallback(async () => {
+    if (!canSubmitForReview || appState.status !== "draft") return;
+    if (
+      !confirm(
+        `Delete "${formData.name.trim() || "this app"}"? This permanently removes the draft app and cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/v1/apps/${appId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof body.error === "string"
+            ? body.error
+            : `Delete failed (${res.status})`,
+        );
+      }
+      router.push("/apps");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  }, [appId, appState.status, canSubmitForReview, formData.name, router]);
+
+  const revertToDraft = useCallback(async () => {
+    if (!canSubmitForReview || appState.status !== "submitted") return;
+    if (
+      !confirm(
+        "Revert this app to draft? It will leave the review queue until you submit again.",
+      )
+    ) {
+      return;
+    }
+    setReverting(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/v1/apps/${appId}/revert-draft`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        let msg = `Revert failed (${res.status})`;
+        try {
+          const data = text ? JSON.parse(text) : {};
+          if (data.message) msg = data.message;
+          else if (data.error) msg = data.error;
+        } catch {
+          /* keep generic */
+        }
+        throw new Error(msg);
+      }
+      setAppState((s) => ({ ...s, status: "draft" }));
+      onRevertedToDraft?.();
+      setMessage("App is back in draft. You can edit and submit again when ready.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Revert failed");
+    } finally {
+      setReverting(false);
+    }
+  }, [appId, appState.status, canSubmitForReview, onRevertedToDraft]);
+
   const addPostLogoutUri = () => {
     const trimmed = newPostLogoutUri.trim();
     if (!trimmed || postLogoutRedirectUris.includes(trimmed)) return;
@@ -203,6 +278,29 @@ export default function AppSettingsScreen({
               className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {submittingForReview ? "Submitting…" : "Submit for review"}
+            </button>
+          </div>
+        )}
+      {canEdit &&
+        canSubmitForReview &&
+        appState.status === "submitted" && (
+          <div className="p-4 rounded-xl border border-amber-500/25 bg-amber-500/5 space-y-3">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-100">
+                Revert to draft
+              </h2>
+              <p className="text-sm text-zinc-400 mt-1">
+                This app is waiting for administrator review. You can withdraw it
+                from the queue to make changes, then submit again.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void revertToDraft()}
+              disabled={reverting}
+              className="px-4 py-2 text-sm font-medium rounded-lg border border-amber-500/40 text-amber-200 hover:bg-amber-500/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {reverting ? "Reverting…" : "Revert to draft"}
             </button>
           </div>
         )}
@@ -331,6 +429,24 @@ export default function AppSettingsScreen({
         <EndpointField label="Authorize" value={authorizeUrl} />
         <EndpointField label="Token" value={tokenUrl} />
       </section>
+
+      {canSubmitForReview && appState.status === "draft" && (
+        <section className="rounded-xl border border-red-500/25 bg-red-500/5 p-6 space-y-3">
+          <h2 className="text-sm font-semibold text-zinc-100">Delete draft app</h2>
+          <p className="text-sm text-zinc-400">
+            Permanently remove this app, its OIDC client, and related data. This
+            cannot be undone.
+          </p>
+          <button
+            type="button"
+            onClick={() => void deleteDraftApp()}
+            disabled={deleting}
+            className="px-4 py-2 text-sm font-medium rounded-lg border border-red-500/40 text-red-300 hover:bg-red-500/15 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-fit"
+          >
+            {deleting ? "Deleting…" : "Delete app"}
+          </button>
+        </section>
+      )}
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-2 border-t border-zinc-800">
         <p className="text-xs text-zinc-500 max-w-xl">
