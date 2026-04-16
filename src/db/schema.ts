@@ -167,59 +167,6 @@ export const oidcClients = pgTable("oidc_clients", {
     .$defaultFn(() => new Date().toISOString()),
 });
 
-// Authorization codes (short-lived, one-time use)
-export const oidcAuthCodes = pgTable("oidc_auth_codes", {
-  id: text("id").primaryKey(),
-  code: text("code").notNull().unique(),
-  clientId: text("client_id").notNull(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id),
-  scopes: text("scopes").notNull(),
-  nonce: text("nonce"),
-  codeChallenge: text("code_challenge"),
-  codeChallengeMethod: text("code_challenge_method"), // S256 | plain
-  redirectUri: text("redirect_uri").notNull(),
-  expiresAt: text("expires_at").notNull(),
-  consumedAt: text("consumed_at"),
-  createdAt: text("created_at")
-    .notNull()
-    .$defaultFn(() => new Date().toISOString()),
-});
-
-// Refresh tokens for token renewal
-export const oidcRefreshTokens = pgTable("oidc_refresh_tokens", {
-  id: text("id").primaryKey(),
-  tokenHash: text("token_hash").notNull().unique(),
-  clientId: text("client_id").notNull(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id),
-  scopes: text("scopes").notNull(),
-  expiresAt: text("expires_at").notNull(),
-  revokedAt: text("revoked_at"),
-  createdAt: text("created_at")
-    .notNull()
-    .$defaultFn(() => new Date().toISOString()),
-});
-
-// Device authorization codes (RFC 8628)
-export const oidcDeviceCodes = pgTable("oidc_device_codes", {
-  id: text("id").primaryKey(),
-  deviceCode: text("device_code").notNull().unique(),
-  userCode: text("user_code").notNull().unique(),
-  clientId: text("client_id").notNull(),
-  scopes: text("scopes").notNull(),
-  verificationUri: text("verification_uri").notNull(),
-  expiresAt: text("expires_at").notNull(),
-  interval: integer("interval").notNull().default(5), // polling interval in seconds
-  status: text("status").notNull().default("pending"), // pending | authorized | denied | expired
-  userId: text("user_id").references(() => users.id), // set when user authorizes
-  createdAt: text("created_at")
-    .notNull()
-    .$defaultFn(() => new Date().toISOString()),
-});
-
 // ============================================
 // Developer App Tables
 // ============================================
@@ -494,9 +441,6 @@ export type StreamSession = typeof streamSessions.$inferSelect;
 export type Transaction = typeof transactions.$inferSelect;
 export type OidcSigningKey = typeof oidcSigningKeys.$inferSelect;
 export type OidcClient = typeof oidcClients.$inferSelect;
-export type OidcAuthCode = typeof oidcAuthCodes.$inferSelect;
-export type OidcRefreshToken = typeof oidcRefreshTokens.$inferSelect;
-export type OidcDeviceCode = typeof oidcDeviceCodes.$inferSelect;
 export type DeveloperApp = typeof developerApps.$inferSelect;
 export type NewDeveloperApp = typeof developerApps.$inferInsert;
 export type AdminInvite = typeof adminInvites.$inferSelect;

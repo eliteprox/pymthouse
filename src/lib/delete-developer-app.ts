@@ -6,10 +6,8 @@ import {
   authAuditLog,
   developerApps,
   endUsers,
-  oidcAuthCodes,
   oidcClients,
-  oidcDeviceCodes,
-  oidcRefreshTokens,
+  oidcPayloads,
   planCapabilityBundles,
   plans,
   providerAdmins,
@@ -20,7 +18,7 @@ import {
   transactions,
   usageRecords,
 } from "@/db/schema";
-import { eq, inArray, or } from "drizzle-orm";
+import { eq, inArray, or, sql } from "drizzle-orm";
 
 /**
  * Permanently removes a developer app row and dependent records.
@@ -30,13 +28,22 @@ export async function deleteDeveloperAppAndRelatedData(
   appInternalId: string,
   oidcClientPk: string | null,
 ): Promise<void> {
-  const oauthClientIdInternal = oidcClientPk;
-
   await db.transaction(async (tx) => {
-    if (oauthClientIdInternal) {
-      await tx.delete(oidcAuthCodes).where(eq(oidcAuthCodes.clientId, oauthClientIdInternal));
-      await tx.delete(oidcRefreshTokens).where(eq(oidcRefreshTokens.clientId, oauthClientIdInternal));
-      await tx.delete(oidcDeviceCodes).where(eq(oidcDeviceCodes.clientId, oauthClientIdInternal));
+    if (oidcClientPk) {
+      const clientRows = await tx
+        .select({ clientId: oidcClients.clientId })
+        .from(oidcClients)
+        .where(eq(oidcClients.id, oidcClientPk))
+        .limit(1);
+      const oauthClientId = clientRows[0]?.clientId;
+      if (oauthClientId) {
+        await tx.delete(oidcPayloads).where(
+          or(
+            sql`(${oidcPayloads.payload})::jsonb->>'clientId' = ${oauthClientId}`,
+            sql`(${oidcPayloads.payload})::jsonb->>'client_id' = ${oauthClientId}`,
+          ),
+        );
+      }
     }
 
     await tx.delete(apiKeys).where(eq(apiKeys.clientId, appInternalId));
