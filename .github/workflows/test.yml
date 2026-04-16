@@ -31,6 +31,8 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/pymthouse_test
+      AUTH_TOKEN_PEPPER: ci-test-auth-token-pepper-value-please-change
+      NEXTAUTH_SECRET: ci-test-nextauth-secret-please-change
 
     steps:
       - name: Checkout
