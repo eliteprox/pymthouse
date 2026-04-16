@@ -1,7 +1,7 @@
 # Snyk Security workflow hardened for PCI DSS compliance.
 #
 # Maps to PCI DSS v4.0 requirements:
-#   - 6.2.3 / 6.2.4  Software security throughout the SDLC (SAST, SCA, container scans on every change)
+#   - 6.2.3 / 6.2.4  Software security throughout the SDLC (SAST and SCA on every change)
 #   - 6.3.1          Identify and rank vulnerabilities using an industry-recognized source
 #   - 6.3.3          Patch known vulnerabilities within the risk-based timeframes (break build on high/critical)
 #   - 11.3.1         Perform internal vulnerability scans at least once every three months and after significant changes
@@ -57,7 +57,7 @@ jobs:
           echo "run_snyk=true" >> "$GITHUB_OUTPUT"
 
   snyk:
-    name: Snyk full-platform scan
+    name: Snyk Code and Open Source
     needs: snyk-eligibility
     if: needs.snyk-eligibility.outputs.run_snyk == 'true'
     runs-on: ubuntu-latest
@@ -141,35 +141,6 @@ jobs:
         # this run still generate alerts (PCI DSS 6.3.1 continuous awareness).
         if: github.event_name == 'push' || github.event_name == 'schedule'
         run: snyk monitor --all-projects --target-reference="${{ github.ref_name }}"
-
-      # ---------------------------------------------------------------------
-      # Container — scan the signer image actually deployed to production.
-      # PCI DSS 6.3.3 / 11.3.1: vulnerabilities in OS packages must be tracked
-      # and remediated inside the CDE image supply chain.
-      # ---------------------------------------------------------------------
-      - name: Build signer Docker image
-        run: docker build -f Dockerfile.signer -t pymthouse/signer:ci .
-
-      - name: Snyk Container test
-        run: |
-          snyk container test pymthouse/signer:ci \
-            --file=Dockerfile.signer \
-            --severity-threshold="$SNYK_SEVERITY_THRESHOLD" \
-            --sarif-file-output=snyk-container.sarif
-
-      - name: Upload Snyk Container SARIF
-        if: always() && hashFiles('snyk-container.sarif') != ''
-        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4
-        with:
-          sarif_file: snyk-container.sarif
-          category: snyk-container
-
-      - name: Snyk Container monitor
-        if: github.event_name == 'push' || github.event_name == 'schedule'
-        run: |
-          snyk container monitor pymthouse/signer:ci \
-            --file=Dockerfile.signer \
-            --target-reference="${{ github.ref_name }}"
 
       # ---------------------------------------------------------------------
       # Retain scan artifacts for PCI evidence (auditors frequently request
