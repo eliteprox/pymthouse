@@ -32,10 +32,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # `secrets` cannot be used in job-level `if` (GitHub rejects it). This job only
+  # reads the token inside a step and exposes a boolean output for the real scan job.
+  snyk-eligibility:
+    name: Snyk eligibility
+    runs-on: ubuntu-latest
+    outputs:
+      run_snyk: ${{ steps.decide.outputs.run_snyk }}
+    steps:
+      - id: decide
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+            echo "run_snyk=false" >> "$GITHUB_OUTPUT"
+            echo "Fork PR — skip authenticated Snyk (secrets not available to fork workflows)."
+            exit 0
+          fi
+          if [ -z "${SNYK_TOKEN:-}" ]; then
+            echo "run_snyk=false" >> "$GITHUB_OUTPUT"
+            echo "SNYK_TOKEN is unset — skip Snyk scans."
+            exit 0
+          fi
+          echo "run_snyk=true" >> "$GITHUB_OUTPUT"
+
   snyk:
     name: Snyk full-platform scan
-    # Short-circuit: no SNYK_TOKEN, or fork PR (secrets not available to fork workflows — avoid empty `snyk auth`).
-    if: secrets.SNYK_TOKEN != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    needs: snyk-eligibility
+    if: needs.snyk-eligibility.outputs.run_snyk == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read           # actions/checkout
