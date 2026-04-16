@@ -46,13 +46,13 @@ export function normalizeDomainWhitelist(input: string): NormalizeResult {
     return { success: false, error: "Domain must be a string" };
   }
 
+  let trimmed = input.trim();
+
   // Reject oversize input before running any regex-based parsing so that
   // attacker-controlled strings cannot trigger super-linear backtracking.
-  if (input.length > MAX_INPUT_LENGTH) {
+  if (trimmed.length > MAX_INPUT_LENGTH) {
     return { success: false, error: `Domain exceeds max length of ${MAX_INPUT_LENGTH} characters` };
   }
-
-  let trimmed = input.trim();
 
   if (!trimmed) {
     return { success: false, error: "Domain cannot be empty" };
