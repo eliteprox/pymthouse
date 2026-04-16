@@ -11,11 +11,28 @@ export async function GET(
 ) {
   const { id: clientId } = await params;
   const clientAuth = await authenticateAppClient(request);
-  const providerAuth = await getAuthorizedProviderApp(clientId);
-  if (!providerAuth && clientAuth?.appId !== clientId) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // Prefer Basic-auth path: it does not need Next request context. Calling
+  // getAuthorizedProviderApp (session) pulls in headers() and throws outside
+  // a request scope (e.g. node:test calling the handler directly).
+  let app: Awaited<ReturnType<typeof getProviderApp>> | null = null;
+  if (clientAuth?.appId === clientId) {
+    app = await getProviderApp(clientId);
+  } else {
+    let providerAuth: Awaited<ReturnType<typeof getAuthorizedProviderApp>> | null = null;
+    try {
+      providerAuth = await getAuthorizedProviderApp(clientId);
+    } catch {
+      // node:test imports route handlers directly, outside Next request scope.
+      // In that context getServerSession()/headers() throws; treat as no auth.
+      providerAuth = null;
+    }
+    if (!providerAuth) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    app = providerAuth.app;
   }
-  const app = providerAuth?.app ?? (await getProviderApp(clientId));
+
   if (!app) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
