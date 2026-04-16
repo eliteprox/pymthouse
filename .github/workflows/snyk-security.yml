@@ -1,0 +1,175 @@
+# Snyk Security workflow hardened for PCI DSS compliance.
+#
+# Maps to PCI DSS v4.0 requirements:
+#   - 6.2.3 / 6.2.4  Software security throughout the SDLC (SAST, SCA, IaC, container scans on every change)
+#   - 6.3.1          Identify and rank vulnerabilities using an industry-recognized source
+#   - 6.3.3          Patch known vulnerabilities within the risk-based timeframes (break build on high/critical)
+#   - 11.3.1         Perform internal vulnerability scans at least once every three months and after significant changes
+#   - 12.10.5        Detection systems feed incident response (SARIF -> GitHub Code Scanning)
+#
+# Fails the pipeline on High/Critical findings so vulnerable code cannot be merged
+# to a protected branch or deployed to the cardholder data environment (CDE).
+
+name: Snyk Security
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  # PCI DSS 11.3.1 / 6.3.3: continuous monitoring for newly disclosed CVEs
+  # in already-deployed dependencies. Daily scan catches drift between commits.
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+# Least-privilege default token for the whole workflow.
+permissions:
+  contents: read
+
+concurrency:
+  group: snyk-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  snyk:
+    name: Snyk full-platform scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read           # actions/checkout
+      security-events: write   # upload-sarif -> GitHub Code Scanning
+      actions: read            # codeql-action needs run status for private repos
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      # PCI DSS 6.3.1: treat any high/critical as a blocking finding.
+      SNYK_SEVERITY_THRESHOLD: high
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Full history lets Snyk attribute findings to specific commits (audit trail).
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies (locked)
+        # `npm ci` enforces package-lock.json — required for reproducible,
+        # auditable builds under PCI DSS 6.3.2 (inventory of bespoke/custom software).
+        run: npm ci --ignore-scripts
+
+      - name: Set up Snyk CLI
+        uses: snyk/actions/setup@806182742461562b67788a64410098c9d9b96adb
+
+      - name: Snyk authenticate
+        run: snyk auth "$SNYK_TOKEN"
+
+      # ---------------------------------------------------------------------
+      # SAST — Snyk Code
+      # PCI DSS 6.2.4: review custom code for common coding vulnerabilities.
+      # SARIF output is uploaded to GitHub Code Scanning for tracking & evidence.
+      # ---------------------------------------------------------------------
+      - name: Snyk Code (SAST)
+        run: |
+          snyk code test \
+            --severity-threshold="$SNYK_SEVERITY_THRESHOLD" \
+            --sarif-file-output=snyk-code.sarif
+        continue-on-error: false
+
+      - name: Upload Snyk Code SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: snyk-code.sarif
+          category: snyk-code
+
+      # ---------------------------------------------------------------------
+      # SCA — Snyk Open Source
+      # PCI DSS 6.3.1 / 6.3.3: identify vulnerable third-party components
+      # and rank them so patches land inside required remediation windows.
+      # ---------------------------------------------------------------------
+      - name: Snyk Open Source test (SCA)
+        run: |
+          snyk test \
+            --all-projects \
+            --severity-threshold="$SNYK_SEVERITY_THRESHOLD" \
+            --fail-on=upgradable \
+            --sarif-file-output=snyk-oss.sarif
+
+      - name: Upload Snyk Open Source SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: snyk-oss.sarif
+          category: snyk-open-source
+
+      - name: Snyk Open Source monitor (baseline for continuous alerts)
+        # Publishes the dependency graph to Snyk so new CVEs disclosed after
+        # this run still generate alerts (PCI DSS 6.3.1 continuous awareness).
+        if: github.event_name == 'push' || github.event_name == 'schedule'
+        run: snyk monitor --all-projects --target-reference="${{ github.ref_name }}"
+
+      # ---------------------------------------------------------------------
+      # IaC — Snyk Infrastructure as Code
+      # PCI DSS 1.x / 2.2: secure configuration of system components.
+      # Scans Dockerfile.signer, vercel.json, docker-compose.yml, render.yaml, etc.
+      # ---------------------------------------------------------------------
+      - name: Snyk IaC test
+        run: |
+          snyk iac test \
+            --severity-threshold="$SNYK_SEVERITY_THRESHOLD" \
+            --report \
+            --sarif-file-output=snyk-iac.sarif
+
+      - name: Upload Snyk IaC SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: snyk-iac.sarif
+          category: snyk-iac
+
+      # ---------------------------------------------------------------------
+      # Container — scan the signer image actually deployed to production.
+      # PCI DSS 6.3.3 / 11.3.1: vulnerabilities in OS packages must be tracked
+      # and remediated inside the CDE image supply chain.
+      # ---------------------------------------------------------------------
+      - name: Build signer Docker image
+        run: docker build -f Dockerfile.signer -t pymthouse/signer:ci .
+
+      - name: Snyk Container test
+        run: |
+          snyk container test pymthouse/signer:ci \
+            --file=Dockerfile.signer \
+            --severity-threshold="$SNYK_SEVERITY_THRESHOLD" \
+            --sarif-file-output=snyk-container.sarif
+
+      - name: Upload Snyk Container SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: snyk-container.sarif
+          category: snyk-container
+
+      - name: Snyk Container monitor
+        if: github.event_name == 'push' || github.event_name == 'schedule'
+        run: |
+          snyk container monitor pymthouse/signer:ci \
+            --file=Dockerfile.signer \
+            --target-reference="${{ github.ref_name }}"
+
+      # ---------------------------------------------------------------------
+      # Retain scan artifacts for PCI evidence (auditors frequently request
+      # dated scan output as proof of 6.3.x / 11.3.x compliance).
+      # ---------------------------------------------------------------------
+      - name: Archive Snyk SARIF reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snyk-sarif-${{ github.run_id }}
+          path: snyk-*.sarif
+          retention-days: 90
