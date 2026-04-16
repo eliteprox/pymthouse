@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { TestContext } from "node:test";
 import { eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db/index";
@@ -50,6 +51,22 @@ export async function createTestUser(opts?: { id?: string; role?: string }): Pro
     oauthProvider: "bootstrap",
     oauthSubject: id,
     role: opts?.role ?? "developer",
+  });
+  return id;
+}
+
+/**
+ * Creates a platform user and registers teardown to delete that row. Use for
+ * tests that need an extra user outside {@link cleanupTestApp} (e.g. a
+ * non-owner session against another user's app).
+ */
+export async function createTestUserWithCleanup(
+  t: Pick<TestContext, "after">,
+  opts?: { id?: string; role?: string },
+): Promise<string> {
+  const id = await createTestUser(opts);
+  t.after(async () => {
+    await db.delete(users).where(eq(users.id, id));
   });
   return id;
 }

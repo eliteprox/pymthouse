@@ -25,6 +25,7 @@ export function mockSignerFetch(opts?: {
   generateLivePaymentResponse?: unknown;
 }): MockSignerController {
   const signerHost = opts?.signerHost ?? "http://test-signer.invalid";
+  const signerOrigin = new URL(signerHost).origin;
   const original = globalThis.fetch;
 
   const calls: RecordedFetchCall[] = [];
@@ -65,13 +66,21 @@ export function mockSignerFetch(opts?: {
     }
     calls.push({ url, method, body });
 
-    if (!url.startsWith(signerHost)) {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      throw new Error(
+        `mockSignerFetch: invalid URL in test: ${method} ${url}`,
+      );
+    }
+    if (parsedUrl.origin !== signerOrigin) {
       throw new Error(
         `mockSignerFetch: unexpected non-signer fetch in test: ${method} ${url}`,
       );
     }
 
-    const path = "/" + url.slice(signerHost.length).replace(/^\/+/, "");
+    const path = parsedUrl.pathname;
     const failureStatus = failures.get(path);
     if (failureStatus) {
       failures.delete(path);

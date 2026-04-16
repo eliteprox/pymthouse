@@ -4,6 +4,7 @@ import { run } from "@/test-utils/db-guard";
 import {
   cleanupTestApp,
   createJobTokenForApp,
+  createTestUserWithCleanup,
   ensureRunningSigner,
   seedDeveloperAppWithClient,
 } from "@/test-utils/fixtures";
@@ -115,7 +116,16 @@ run("signer proxy routes enforce auth and forward to the signer", async (t) => {
   assert.ok(Array.isArray(discoverBody.orchestrators));
 
   // Confirm every call above went to the mocked signer host.
-  assert.ok(mock.calls.every((c) => c.url.startsWith("http://test-signer.invalid")));
+  const expectedSignerOrigin = new URL("http://test-signer.invalid").origin;
+  assert.ok(
+    mock.calls.every((c) => {
+      try {
+        return new URL(c.url).origin === expectedSignerOrigin;
+      } catch {
+        return false;
+      }
+    }),
+  );
 });
 
 run("generate-live-payment rejects requests against unapproved apps", async (t) => {
@@ -127,13 +137,7 @@ run("generate-live-payment rejects requests against unapproved apps", async (t) 
   const app = await seedDeveloperAppWithClient({ status: "draft" });
   t.after(() => cleanupTestApp(app));
 
-  const strangerUserId = await (await import("@/test-utils/fixtures")).createTestUser();
-  t.after(async () => {
-    const { db } = await import("@/db/index");
-    const { users } = await import("@/db/schema");
-    const { eq } = await import("drizzle-orm");
-    await db.delete(users).where(eq(users.id, strangerUserId));
-  });
+  const strangerUserId = await createTestUserWithCleanup(t);
 
   const strangerToken = await createJobTokenForApp({
     userId: strangerUserId,
