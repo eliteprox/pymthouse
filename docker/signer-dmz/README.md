@@ -23,4 +23,4 @@ docker compose -f docker/signer-dmz/docker-compose.yml up --build
 docker build -f docker/signer-dmz/Dockerfile.signer -t pymthouse-signer .
 ```
 
-Platform config (`railway.json`, `render.yaml`) points at `docker/signer-dmz/Dockerfile.signer`. See [docs/DEPLOYMENT.md](../../docs/DEPLOYMENT.md) and [docs/signer-deployment-options.md](../../docs/signer-deployment-options.md).
+Platform config (`railway.json`, `render.yaml`) builds `docker/signer-dmz/Dockerfile` (final image: Apache JWT DMZ + livepeer). For **livepeer only** (no Apache), use `Dockerfile.signer` instead. See [docs/DEPLOYMENT.md](../../docs/DEPLOYMENT.md) and [docs/signer-deployment-options.md](../../docs/signer-deployment-options.md).

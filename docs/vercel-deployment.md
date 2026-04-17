@@ -65,7 +65,7 @@ If you prefer using Docker:
 
 1. Follow steps 1-3 above
 2. In "Settings" → "Deploy":
-   - Dockerfile Path: `docker/signer-dmz/Dockerfile.signer`
+   - Dockerfile Path: `docker/signer-dmz/Dockerfile` (Apache + livepeer; same as `railway.json`)
 3. Add environment variables and volume (same as Option A)
 4. Deploy
 

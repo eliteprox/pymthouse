@@ -60,7 +60,7 @@ Railway's Nixpacks automatically detects and uses `nixpacks.toml`:
 If you prefer Docker on Railway:
 
 1. **Create new project**
-2. **Settings → Deploy → Dockerfile Path:** `docker/signer-dmz/Dockerfile.signer`
+2. **Settings → Deploy → Dockerfile Path:** `docker/signer-dmz/Dockerfile` (final stage = `signer-dmz`: Apache + livepeer). Use `docker/signer-dmz/Dockerfile.signer` only if you want go-livepeer **without** Apache.
 3. **Add environment variables** (same as above)
 4. **Add volume** at `/data`
 5. **Deploy**
@@ -195,7 +195,7 @@ gcloud run deploy pymthouse-signer \
 ### Option 6: DigitalOcean App Platform
 
 1. **Create new app** from GitHub
-2. **Detect Dockerfile:** Select `docker/signer-dmz/Dockerfile.signer`
+2. **Detect Dockerfile:** Select `docker/signer-dmz/Dockerfile` (DMZ) or `Dockerfile.signer` (livepeer only)
 3. **Add environment variables**
 4. **Attach a managed database** or volume for `/data`
 5. **Deploy**

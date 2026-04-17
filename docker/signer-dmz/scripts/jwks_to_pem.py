@@ -31,6 +31,8 @@ def _decode_jwk_param(jwk: dict, name: str) -> int:
     # binascii.Error is a ValueError subclass so callers can keep catching ValueError,
     # but keeping this explicit preserves the JWK field name in the message.
     raw = jwk[name]
+    if not isinstance(raw, str):
+        raise ValueError(f"invalid JWK field {name!r}: expected string")
     try:
         return int.from_bytes(_b64url_decode(raw), "big")
     except (binascii.Error, ValueError) as err:

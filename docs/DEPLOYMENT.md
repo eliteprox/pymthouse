@@ -19,7 +19,7 @@ Use this checklist to deploy Pymthouse to Vercel in ~15 minutes.
 7. Copy the public URL (e.g., `https://app-name.up.railway.app`)
 
 **Alternative: Railway with Docker**
-- Same as above, but Railway uses `docker/signer-dmz/Dockerfile.signer` instead
+- Same as above, but Railway uses `docker/signer-dmz/Dockerfile` (Apache JWT DMZ + livepeer in one image; see `railway.json`)
 
 **OR Render (Blueprint)**
 - Push code → Render detects `render.yaml` → Deploy
@@ -106,7 +106,7 @@ If you have Railway + Vercel CLI configured:
 
 ```bash
 # Deploy signer to Railway
-railway up --dockerfile docker/signer-dmz/Dockerfile.signer
+railway up --dockerfile docker/signer-dmz/Dockerfile
 
 # Get Railway URL
 railway status --json
