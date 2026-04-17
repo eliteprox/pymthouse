@@ -36,13 +36,6 @@
       "when": 1776374700000,
       "tag": "0004_device_third_party_initiate",
       "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1776466254115,
-      "tag": "0005_active_streams_view",
-      "breakpoints": true
     }
   ]
 }
