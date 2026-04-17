@@ -24,6 +24,9 @@ CustomLog ${APACHE_LOG_DIR}/access.log signer_combined
 	</Directory>
 
 	# CLI API (livepeer -cliAddr) — admin scope only; path prefix so one public PORT works on Railway.
+	# Redirect the bare prefix so "/__signer_cli" and "/__signer_cli/" both reach the CLI upstream
+	# (without the redirect, the bare path would fall through to the catch-all "/" ProxyPass below).
+	RedirectMatch permanent ^/__signer_cli$ /__signer_cli/
 	ProxyPass /__signer_cli/ ${SIGNER_CLI_HTTP_ADDR}/
 	ProxyPassReverse /__signer_cli/ ${SIGNER_CLI_HTTP_ADDR}/
 
@@ -53,7 +56,9 @@ CustomLog ${APACHE_LOG_DIR}/access.log signer_combined
 		AuthJWTAttributeUsername sub
 		AuthJWTLeeway 10
 
-		RequestHeader unset Authorization early
+		# Clear the bearer in the fixups phase (default) — after mod_authnz_jwt has verified it.
+		# Using "early" would strip the header before the auth phase and break verification.
+		RequestHeader unset Authorization
 
 		Require jwt-claim scope=admin
 	</LocationMatch>
@@ -68,7 +73,8 @@ CustomLog ${APACHE_LOG_DIR}/access.log signer_combined
 		AuthJWTAttributeUsername sub
 		AuthJWTLeeway 10
 
-		RequestHeader unset Authorization early
+		# Strip the bearer before proxying upstream, but not before mod_authnz_jwt verifies it.
+		RequestHeader unset Authorization
 
 		Require jwt-claim scope=sign:job
 	</LocationMatch>

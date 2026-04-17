@@ -71,6 +71,40 @@ function getSignerUrl(signer?: typeof signerConfig.$inferSelect | null): string 
   return `http://localhost:${port}`;
 }
 
+/**
+ * Per-subject LRU cache for DMZ bearer tokens. Mirrors the scheme in `signer-cli.ts`:
+ * DMZ tokens are minted for ~4 minutes; we serve cached copies for ~3.5 minutes and
+ * mint a fresh one slightly before expiry so in-flight Apache verification never
+ * trips the clock skew / leeway window.
+ *
+ * Keyed by the subject we put in the JWT (`sub` claim), so two callers acting on
+ * behalf of the same principal reuse the same token instead of minting one per request.
+ */
+const HTTP_DMZ_TOKEN_MAX_ENTRIES = 100;
+const HTTP_DMZ_TOKEN_TTL_MS = 3.5 * 60 * 1000;
+const httpDmzTokenCache = new Map<string, { token: string; expMs: number }>();
+
+async function getHttpDmzBearerForSubject(subject: string): Promise<string> {
+  const now = Date.now();
+  const cached = httpDmzTokenCache.get(subject);
+  if (cached && cached.expMs > now + 15_000) {
+    // Bump recency: re-insertion moves the entry to the end of the Map iteration order.
+    httpDmzTokenCache.delete(subject);
+    httpDmzTokenCache.set(subject, cached);
+    return cached.token;
+  }
+
+  const token = await issueSignerDmzToken({ gate: "http", subject });
+  httpDmzTokenCache.set(subject, { token, expMs: now + HTTP_DMZ_TOKEN_TTL_MS });
+
+  if (httpDmzTokenCache.size > HTTP_DMZ_TOKEN_MAX_ENTRIES) {
+    const oldest = httpDmzTokenCache.keys().next().value;
+    if (oldest !== undefined) httpDmzTokenCache.delete(oldest);
+  }
+
+  return token;
+}
+
 async function forwardToSigner(
   signer: typeof signerConfig.$inferSelect | null | undefined,
   path: string,
@@ -84,7 +118,7 @@ async function forwardToSigner(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (process.env.SIGNER_DMZ_FORWARD_JWT !== "false") {
     const sub = auth.userId || auth.appId || "signer-proxy";
-    const token = await issueSignerDmzToken({ gate: "http", subject: sub });
+    const token = await getHttpDmzBearerForSubject(sub);
     headers.Authorization = `Bearer ${token}`;
   }
   try {

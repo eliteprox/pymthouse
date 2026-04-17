@@ -8,6 +8,7 @@ import json
 import ssl
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -54,6 +55,16 @@ def main() -> int:
         help="If set, pick the RSA key with this kid (else first RSA key)",
     )
     args = p.parse_args()
+
+    # Only allow https: JWKS is fetched over the public internet and signing-key trust
+    # depends on TLS. Reject http/file/ftp/etc. outright rather than relying on urlopen defaults.
+    parsed = urllib.parse.urlparse(args.url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        print(
+            f"jwks_to_pem: refusing to fetch JWKS from non-https URL: {args.url!r}",
+            file=sys.stderr,
+        )
+        return 1
 
     ctx = ssl.create_default_context()
     req = urllib.request.Request(args.url, headers={"User-Agent": "pymthouse-signer-dmz/1.0"})
