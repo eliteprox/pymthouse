@@ -87,8 +87,9 @@ export async function PATCH(request: NextRequest) {
     }
   }
   if (body.signerApiKey !== undefined) {
-    const raw = typeof body.signerApiKey === "string" ? body.signerApiKey : "";
-    updates.signerApiKey = raw.trim() === "" ? null : raw;
+    const trimmed =
+      typeof body.signerApiKey === "string" ? body.signerApiKey.trim() : "";
+    updates.signerApiKey = trimmed === "" ? null : trimmed;
   }
   if (body.signerPort !== undefined) {
     const port = Number(body.signerPort);
