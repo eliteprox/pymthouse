@@ -133,7 +133,7 @@ npm run lint
 Pymthouse can be deployed to Vercel (for the Next.js app) with the Docker signer running on Railway, Render, or Fly.io.
 
 **Quick Deploy (15 minutes):**
-See [DEPLOYMENT.md](DEPLOYMENT.md) for a quick checklist.
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for a quick checklist.
 
 **Detailed Guide:**
 See [docs/vercel-deployment.md](docs/vercel-deployment.md) for full step-by-step instructions including:
@@ -146,7 +146,7 @@ See [docs/vercel-deployment.md](docs/vercel-deployment.md) for full step-by-step
 
 **Files included:**
 - `vercel.json` - Vercel configuration
-- `Dockerfile.signer` - Docker image for signer deployment
+- `docker/signer-dmz/` — go-livepeer signer Dockerfiles, Apache JWT DMZ, `docker-compose.yml`, and `scripts/jwks_to_pem.py` (see [docker/signer-dmz/README.md](docker/signer-dmz/README.md))
 - `railway.json` - Railway configuration
 - `render.yaml` - Render Blueprint
 

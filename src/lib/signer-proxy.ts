@@ -16,6 +16,7 @@ import {
   calculateLv2vPixels,
 } from "./proto";
 import type { AuthResult } from "./auth";
+import { issueSignerDmzToken } from "./signer-dmz-token";
 import { getSenderInfo } from "./signer-cli";
 
 export interface ProxyResult {
@@ -70,20 +71,64 @@ function getSignerUrl(signer?: typeof signerConfig.$inferSelect | null): string 
   return `http://localhost:${port}`;
 }
 
+/**
+ * Per-subject LRU cache for DMZ bearer tokens. Mirrors the scheme in `signer-cli.ts`:
+ * DMZ tokens are minted for ~4 minutes; we serve cached copies for ~3.5 minutes and
+ * mint a fresh one slightly before expiry so in-flight Apache verification never
+ * trips the clock skew / leeway window.
+ *
+ * Keyed by the subject we put in the JWT (`sub` claim), so two callers acting on
+ * behalf of the same principal reuse the same token instead of minting one per request.
+ */
+const HTTP_DMZ_TOKEN_MAX_ENTRIES = 100;
+const HTTP_DMZ_TOKEN_TTL_MS = 3.5 * 60 * 1000;
+const httpDmzTokenCache = new Map<string, { token: string; expMs: number }>();
+
+async function getHttpDmzBearerForSubject(subject: string): Promise<string> {
+  const now = Date.now();
+  const cached = httpDmzTokenCache.get(subject);
+  if (cached && cached.expMs > now + 15_000) {
+    // Bump recency: re-insertion moves the entry to the end of the Map iteration order.
+    httpDmzTokenCache.delete(subject);
+    httpDmzTokenCache.set(subject, cached);
+    return cached.token;
+  }
+
+  const token = await issueSignerDmzToken({ gate: "http", subject });
+  httpDmzTokenCache.set(subject, { token, expMs: now + HTTP_DMZ_TOKEN_TTL_MS });
+
+  if (httpDmzTokenCache.size > HTTP_DMZ_TOKEN_MAX_ENTRIES) {
+    const oldest = httpDmzTokenCache.keys().next().value;
+    if (oldest !== undefined) httpDmzTokenCache.delete(oldest);
+  }
+
+  return token;
+}
+
 async function forwardToSigner(
   signer: typeof signerConfig.$inferSelect | null | undefined,
   path: string,
   method: string,
-  body?: unknown
+  body: unknown | undefined,
+  auth: AuthResult,
 ): Promise<Response> {
   const url = `${getSignerUrl(signer)}${path}`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (process.env.SIGNER_DMZ_FORWARD_JWT !== "false") {
+    // Fall back to sessionId (always populated on AuthResult) so unauthenticated-but-
+    // session-scoped callers don't collapse onto a single shared "signer-proxy" token —
+    // each session keeps its own cache entry and stays traceable in upstream logs.
+    const sub = auth.userId || auth.appId || auth.sessionId;
+    const token = await getHttpDmzBearerForSubject(sub);
+    headers.Authorization = `Bearer ${token}`;
+  }
   try {
     return await fetch(url, {
       method,
-      headers: { "Content-Type": "application/json" },
-      body: body ? JSON.stringify(body) : undefined,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
   } finally {
@@ -108,7 +153,8 @@ export async function proxySignOrchestratorInfo(
       signer,
       "/sign-orchestrator-info",
       "POST",
-      requestBody
+      requestBody,
+      auth,
     );
     const responseBody = await response.json();
 
@@ -226,7 +272,8 @@ export async function proxyGenerateLivePayment(
       signer,
       "/generate-live-payment",
       "POST",
-      requestBody
+      requestBody,
+      auth,
     );
     const responseBody = await response.json();
 
@@ -305,7 +352,8 @@ export async function proxySignByocJob(
       signer,
       "/sign-byoc-job",
       "POST",
-      requestBody
+      requestBody,
+      auth,
     );
     const responseBody = await response.json();
 
@@ -336,7 +384,9 @@ export async function proxyDiscoverOrchestrators(
     const response = await forwardToSigner(
       signer,
       "/discover-orchestrators",
-      "GET"
+      "GET",
+      undefined,
+      auth,
     );
     const responseBody = await response.json();
 

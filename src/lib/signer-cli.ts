@@ -4,11 +4,35 @@
  * Client for go-livepeer's CLI API (port 4935 by default).
  * This is the same port that livepeer_cli connects to.
  * Must only be called server-side; the port is bound to 127.0.0.1 on the host.
+ *
+ * When the signer sits behind the Apache DMZ, set SIGNER_CLI_URL to the public
+ * base that maps to the CLI port (e.g. https://signer.example.com/__signer_cli).
+ * The server mints a short-lived JWT with admin scope for these requests.
  */
+
+import { issueSignerDmzToken } from "@/lib/signer-dmz-token";
 
 export function getSignerCliUrl(): string {
   if (process.env.SIGNER_CLI_URL) return process.env.SIGNER_CLI_URL;
   return "http://localhost:4935";
+}
+
+let cliDmzTokenCache: { token: string; expMs: number } | null = null;
+
+async function getCliDmzBearer(): Promise<string> {
+  if (process.env.SIGNER_DMZ_FORWARD_JWT === "false") {
+    return "";
+  }
+  const now = Date.now();
+  if (cliDmzTokenCache && cliDmzTokenCache.expMs > now + 15_000) {
+    return cliDmzTokenCache.token;
+  }
+  const token = await issueSignerDmzToken({
+    gate: "cli",
+    subject: "pymthouse-server",
+  });
+  cliDmzTokenCache = { token, expMs: now + 3.5 * 60 * 1000 };
+  return token;
 }
 
 export interface SenderInfo {
@@ -30,7 +54,13 @@ export interface SignerCliStatus {
 
 async function cliGet<T>(path: string): Promise<T> {
   const url = `${getSignerCliUrl()}${path}`;
+  const headers: Record<string, string> = {};
+  const bearer = await getCliDmzBearer();
+  if (bearer) {
+    headers.Authorization = `Bearer ${bearer}`;
+  }
   const res = await fetch(url, {
+    headers,
     signal: AbortSignal.timeout(5000),
     cache: "no-store",
   });
