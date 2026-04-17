@@ -102,6 +102,13 @@ def main() -> int:
         print(f"jwks_to_pem: invalid JSON: {e}", file=sys.stderr)
         return 1
 
+    if not isinstance(doc, dict):
+        print(
+            f"jwks_to_pem: JWKS JSON must be an object, got {type(doc).__name__}",
+            file=sys.stderr,
+        )
+        return 1
+
     keys = doc.get("keys")
     if not isinstance(keys, list) or not keys:
         print("jwks_to_pem: no keys in JWKS", file=sys.stderr)
@@ -131,8 +138,16 @@ def main() -> int:
         print(f"jwks_to_pem: {e}", file=sys.stderr)
         return 1
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_bytes(pem)
+    try:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_bytes(pem)
+    except OSError as e:
+        print(
+            f"jwks_to_pem: cannot write PEM to {args.out}: {e}",
+            file=sys.stderr,
+        )
+        return 1
+
     kid = chosen.get("kid", "?")
     print(f"jwks_to_pem: wrote {args.out} (kid={kid})")
     return 0

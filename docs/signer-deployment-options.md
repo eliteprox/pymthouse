@@ -87,7 +87,7 @@ Expose only Apache on the internet: **mod_authnz_jwt** validates PymtHouse OIDC 
 4. **Vercel / Next.js:** Point **`SIGNER_INTERNAL_URL`** at the DMZ public origin (e.g. `https://your-signer.railway.app`). For CLI reads (deposit, balances), set **`SIGNER_CLI_URL`** to the same host with the CLI prefix, e.g. `https://your-signer.railway.app/__signer_cli` (no trailing slash). Optional **`SIGNER_DMZ_FORWARD_JWT=false`** disables attaching service JWTs (only for debugging without Apache).
 
 5. **Health checks:** Use **`GET /healthz`** on the public URL (returns `200` and body `OK` from Apache). Do not rely on **`GET /status`** for remote signer mode: the go-livepeer remote signer HTTP API may not implement `/status`; the DMZ still proxies `/status` without JWT for compatibility with deployments that do support it.
-6. **Limitations:** `mod_authnz_jwt` uses a **single PEM file**, refreshed from JWKS. During key rotation with multiple active keys, refresh often or accept a short overlap risk.
+6. **Limitations:** `mod_authnz_jwt` uses a **single PEM file**, refreshed from JWKS. During key rotation with multiple active keys, often refresh or accept a short overlap risk.
 
 **Local compose (two containers — signer + Apache gateway):**
 
@@ -195,7 +195,7 @@ gcloud run deploy pymthouse-signer \
 ### Option 6: DigitalOcean App Platform
 
 1. **Create new app** from GitHub
-2. **Detect Dockerfile:** Select `docker/signer-dmz/Dockerfile` (DMZ) or `Dockerfile.signer` (livepeer only)
+2. **Detect Dockerfile:** Select `docker/signer-dmz/Dockerfile` (DMZ) or `docker/signer-dmz/Dockerfile.signer` (livepeer only)
 3. **Add environment variables**
 4. **Attach a managed database** or volume for `/data`
 5. **Deploy**
@@ -206,22 +206,46 @@ gcloud run deploy pymthouse-signer \
 
 For production-grade AWS deployment:
 
-1. **Push to ECR:**
+1. **Push to ECR (Apache JWT DMZ + livepeer in one image):**
+   ```bash
+   docker build -f docker/signer-dmz/Dockerfile -t pymthouse-signer-dmz .
+   docker tag pymthouse-signer-dmz:latest AWS_ACCOUNT.dkr.ecr.REGION.amazonaws.com/pymthouse-signer-dmz:latest
+   docker push AWS_ACCOUNT.dkr.ecr.REGION.amazonaws.com/pymthouse-signer-dmz:latest
+   ```
+
+   The DMZ container runs **Apache on `$PORT`** (set in the task definition, e.g. `8080`); go-livepeer listens on loopback inside the container. Map the load balancer to **`$PORT`**, not raw `8081`.
+
+2. **Create ECS task definition** with:
+   - Container image from ECR
+   - Port mappings: container port = the **`PORT`** you set (Apache), not 8081 alone
+   - Environment variables (`OIDC_ISSUER`, `JWKS_URI`, `SIGNER_NETWORK`, `ETH_RPC_URL`, etc.)
+   - EFS volume for `/data`
+
+3. **Create ECS service** with Application Load Balancer
+
+**Cost:** ~$15-30/month for Fargate + ALB
+
+#### Alternative: Signer-only (non-DMZ) — use with caution
+
+> **Warning:** `docker/signer-dmz/Dockerfile.signer` is the **go-livepeer binary with no Apache JWT gate in front of it.** It has **none** of the DMZ protections (no RS256/JWKS verification, no `scope=admin` / `scope=sign:job` enforcement, no `Authorization` header stripping before upstream). Anything that can reach the container's listening port can call the signer's HTTP and CLI APIs directly.
+>
+> Only use this image when **all** of the following apply:
+> - It is deployed on a **private network** (VPC-internal ALB/NLB, security group locked down to the Next.js app's egress, no public ingress).
+> - **Another authenticated hop** (your Next.js server, a sidecar, or a separate Apache/ingress-level auth layer) sits between the public internet and the signer.
+> - You understand that the signer container **exposes admin-equivalent endpoints** on port `4935` (`-cliAddr`) — sender info, keystore interactions, etc.
+>
+> For any **public-facing** deployment, use the DMZ build above (`docker/signer-dmz/Dockerfile`) instead.
+
+1. **Build, tag, and push the signer-only image:**
    ```bash
    docker build -f docker/signer-dmz/Dockerfile.signer -t pymthouse-signer .
    docker tag pymthouse-signer:latest AWS_ACCOUNT.dkr.ecr.REGION.amazonaws.com/pymthouse-signer:latest
    docker push AWS_ACCOUNT.dkr.ecr.REGION.amazonaws.com/pymthouse-signer:latest
    ```
 
-2. **Create ECS task definition** with:
-   - Container image from ECR
-   - Port mappings: 8081
-   - Environment variables
-   - EFS volume for `/data`
+2. **Create ECS task definition** with port mappings `8081` (HTTP) and (if needed by another internal client) `4935` (CLI), plus an EFS volume for `/data`.
 
-3. **Create ECS service** with Application Load Balancer
-
-**Cost:** ~$15-30/month for Fargate + ALB
+3. **Create an internal-only ECS service** (no public ALB) and point `SIGNER_INTERNAL_URL` / `SIGNER_CLI_URL` on the Next.js app at its private hostname.
 
 ## Binary Releases Available
 
@@ -273,7 +297,7 @@ Once deployed, add to Vercel environment variables:
 
 ```
 SIGNER_INTERNAL_URL=https://your-signer-url
-SIGNER_CLI_URL=https://your-signer-url
+SIGNER_CLI_URL=https://your-signer-url/__signer_cli
 ```
 
 Then redeploy your Vercel app.
