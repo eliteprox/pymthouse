@@ -110,6 +110,16 @@ export async function PUT(
     }
   }
 
+  if (body.billingPattern !== undefined) {
+    if (body.billingPattern !== "app_level" && body.billingPattern !== "per_user") {
+      return NextResponse.json(
+        { error: "billingPattern must be 'app_level' or 'per_user'" },
+        { status: 400 },
+      );
+    }
+    appUpdates.billingPattern = body.billingPattern;
+  }
+
   await db.update(developerApps).set(appUpdates).where(eq(developerApps.id, app.id));
 
   // Provider apps are self-service in the MVP, so OIDC config updates apply immediately.
