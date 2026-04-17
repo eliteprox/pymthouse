@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { TestContext } from "node:test";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "@/db/index";
 import { appUsers, developerApps, signerConfig, users } from "@/db/schema";
@@ -119,38 +119,133 @@ export async function createAppUser(opts: {
 }
 
 /**
+ * Sentinel URL the mock signer fetcher expects. Stored briefly on the shared
+ * `signer_config` row for the duration of a test run and reverted on teardown
+ * so we never leak it into a real deployment's routing.
+ */
+export const TEST_SIGNER_URL = "http://test-signer.invalid";
+
+interface SignerSnapshot {
+  existed: boolean;
+  prior?: typeof signerConfig.$inferSelect;
+}
+
+let signerSnapshot: SignerSnapshot | null = null;
+let signerRefCount = 0;
+
+function assertNonProdDatabase(): void {
+  const url = process.env.DATABASE_URL ?? "";
+  if (process.env.ALLOW_TEST_FIXTURES_ON_ANY_DB === "1") return;
+  const looksLikeTestDb =
+    /\btest\b/i.test(url) ||
+    process.env.NODE_ENV === "test" ||
+    process.env.CI === "true";
+  if (!looksLikeTestDb) {
+    throw new Error(
+      "ensureRunningSigner refused to run: DATABASE_URL does not look like a test DB " +
+        "(no 'test' marker, NODE_ENV!=='test', CI!=='true'). Refusing to mutate the " +
+        "shared signer_config row. Set ALLOW_TEST_FIXTURES_ON_ANY_DB=1 to override.",
+    );
+  }
+}
+
+/**
  * Ensure the default signer row exists and is marked running so proxy routes
- * forward requests. Returns a restore function that resets any captured state.
+ * forward requests to the mocked fetcher. Snapshots the prior row state on the
+ * first call and restores it when the last caller's teardown fires, so a test
+ * run never leaves `http://test-signer.invalid` (or any other test-only state)
+ * persisted in a shared database.
  */
 export async function ensureRunningSigner(): Promise<() => Promise<void>> {
-  const defaultSignerRows = await db
-    .select()
-    .from(signerConfig)
-    .where(eq(signerConfig.id, "default"))
-    .limit(1);
-  const defaultSigner = defaultSignerRows[0];
-  if (defaultSigner) {
-    await db
-      .update(signerConfig)
-      .set({ status: "running", signerUrl: "http://test-signer.invalid" })
-      .where(eq(signerConfig.id, "default"));
-  } else {
-    await db.insert(signerConfig).values({
-      id: "default",
-      name: "pymthouse test signer",
-      signerUrl: "http://test-signer.invalid",
-      status: "running",
-      network: "arbitrum-one-mainnet",
-      ethRpcUrl: "https://arb1.arbitrum.io/rpc",
-      signerPort: 8081,
-      defaultCutPercent: 15,
-      billingMode: "delegated",
-    });
+  assertNonProdDatabase();
+
+  if (signerRefCount === 0) {
+    const rows = await db
+      .select()
+      .from(signerConfig)
+      .where(eq(signerConfig.id, "default"))
+      .limit(1);
+    const prior = rows[0];
+    signerSnapshot = prior ? { existed: true, prior } : { existed: false };
+
+    if (prior) {
+      await db
+        .update(signerConfig)
+        .set({ status: "running", signerUrl: TEST_SIGNER_URL })
+        .where(eq(signerConfig.id, "default"));
+    } else {
+      await db.insert(signerConfig).values({
+        id: "default",
+        name: "pymthouse test signer",
+        signerUrl: TEST_SIGNER_URL,
+        status: "running",
+        network: "arbitrum-one-mainnet",
+        ethRpcUrl: "https://arb1.arbitrum.io/rpc",
+        signerPort: 8081,
+        defaultCutPercent: 15,
+        billingMode: "delegated",
+      });
+    }
   }
 
-  // Tests run in parallel; restoring signer status in each test can flip a
-  // shared row back to "stopped" while another test still needs it.
-  return async () => {};
+  signerRefCount += 1;
+  let released = false;
+
+  return async () => {
+    if (released) return;
+    released = true;
+    signerRefCount -= 1;
+    if (signerRefCount > 0) return;
+
+    const snapshot = signerSnapshot;
+    signerSnapshot = null;
+    if (!snapshot) return;
+
+    if (snapshot.existed && snapshot.prior) {
+      const p = snapshot.prior;
+      await db
+        .update(signerConfig)
+        .set({
+          status: p.status,
+          signerUrl: p.signerUrl,
+          signerPort: p.signerPort,
+          network: p.network,
+          ethRpcUrl: p.ethRpcUrl,
+          defaultCutPercent: p.defaultCutPercent,
+          billingMode: p.billingMode,
+          name: p.name,
+        })
+        .where(eq(signerConfig.id, "default"));
+    } else {
+      // We inserted the row; only remove it if nobody has since populated a
+      // real URL (belt-and-braces: never delete a row that now looks real).
+      await db
+        .delete(signerConfig)
+        .where(
+          and(
+            eq(signerConfig.id, "default"),
+            eq(signerConfig.signerUrl, TEST_SIGNER_URL),
+          ),
+        );
+    }
+  };
+}
+
+/**
+ * Emergency cleanup: if a previous test run crashed before teardown, wipe any
+ * `test-signer.invalid` URL it left in the shared signer_config row. Safe to
+ * call from CI bootstrap / a local `pnpm db:heal` style script.
+ */
+export async function clearTestSignerSentinel(): Promise<void> {
+  await db
+    .update(signerConfig)
+    .set({ signerUrl: null })
+    .where(
+      and(
+        eq(signerConfig.id, "default"),
+        eq(signerConfig.signerUrl, TEST_SIGNER_URL),
+      ),
+    );
 }
 
 /**
