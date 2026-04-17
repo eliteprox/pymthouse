@@ -20,6 +20,9 @@ type AppRow = {
 type UserUsageRow = {
   endUserId: string;
   externalUserId: string | null;
+  userType: "system_managed" | "oidc_authorized" | "unknown";
+  userLabel: string;
+  identifier: string;
   requestCount: number;
   totalFeeWei: string;
   totalUnits: string;
@@ -58,6 +61,32 @@ function formatPeriod(iso: string): string {
 
 function dateKeyFromIso(iso: string): string {
   return iso.slice(0, 10);
+}
+
+function classifyUsageUser(endUserId: string, externalUserId: string | null): {
+  userType: "system_managed" | "oidc_authorized" | "unknown";
+  userLabel: string;
+  identifier: string;
+} {
+  if (externalUserId) {
+    return {
+      userType: "system_managed",
+      userLabel: externalUserId,
+      identifier: endUserId,
+    };
+  }
+  if (endUserId !== "unknown") {
+    return {
+      userType: "oidc_authorized",
+      userLabel: "OIDC user (not provisioned)",
+      identifier: endUserId,
+    };
+  }
+  return {
+    userType: "unknown",
+    userLabel: "Unknown / unscoped",
+    identifier: "unknown",
+  };
 }
 
 function sortAppsForViewer(apps: AppRow[], userId: string, isAdmin: boolean): AppRow[] {
@@ -186,16 +215,23 @@ export default async function BillingPage() {
   const appUsage: AppUsageSummary[] = orderedApps.map((app) => {
     const summary = summaryByApp.get(app.id)!;
     const byUser: UserUsageRow[] = [...summary.byUser.entries()]
-      .map(([endUserId, userSummary]) => ({
-        endUserId,
-        externalUserId:
+      .map(([endUserId, userSummary]) => {
+        const externalUserId =
           endUserId === "unknown"
             ? null
-            : externalUserIdByAppUser.get(`${app.id}:${endUserId}`) || null,
-        requestCount: userSummary.requestCount,
-        totalFeeWei: userSummary.totalFeeWei.toString(),
-        totalUnits: userSummary.totalUnits.toString(),
-      }))
+            : externalUserIdByAppUser.get(`${app.id}:${endUserId}`) || null;
+        const identity = classifyUsageUser(endUserId, externalUserId);
+        return {
+          endUserId,
+          externalUserId,
+          userType: identity.userType,
+          userLabel: identity.userLabel,
+          identifier: identity.identifier,
+          requestCount: userSummary.requestCount,
+          totalFeeWei: userSummary.totalFeeWei.toString(),
+          totalUnits: userSummary.totalUnits.toString(),
+        };
+      })
       .sort((a, b) => {
         if (b.requestCount !== a.requestCount) {
           return b.requestCount - a.requestCount;
@@ -333,8 +369,8 @@ export default async function BillingPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
-                        <th className="text-left px-5 py-3 font-medium">App User</th>
-                        <th className="text-left px-5 py-3 font-medium">PymtHouse ID</th>
+                        <th className="text-left px-5 py-3 font-medium">Identity</th>
+                        <th className="text-left px-5 py-3 font-medium">Identifier</th>
                         <th className="text-right px-5 py-3 font-medium">Requests</th>
                         <th className="text-right px-5 py-3 font-medium">Units</th>
                         <th className="text-right px-5 py-3 font-medium">Total Fees</th>
@@ -347,15 +383,34 @@ export default async function BillingPage() {
                           className="border-b border-zinc-800/50 hover:bg-zinc-800/20"
                         >
                           <td className="px-5 py-3">
-                            <code className="text-xs text-zinc-300">
-                              {userUsage.externalUserId || "Unknown / unmapped"}
-                            </code>
+                            <div className="flex items-center gap-2">
+                              <code className="text-xs text-zinc-300">
+                                {userUsage.userLabel}
+                              </code>
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider ${
+                                  userUsage.userType === "system_managed"
+                                    ? "bg-cyan-500/20 text-cyan-300"
+                                    : userUsage.userType === "oidc_authorized"
+                                      ? "bg-amber-500/20 text-amber-300"
+                                      : "bg-zinc-700/40 text-zinc-400"
+                                }`}
+                              >
+                                {userUsage.userType === "system_managed"
+                                  ? "system"
+                                  : userUsage.userType === "oidc_authorized"
+                                    ? "oidc"
+                                    : "unknown"}
+                              </span>
+                            </div>
                           </td>
                           <td className="px-5 py-3">
-                            <code className="text-xs text-zinc-500">
-                              {userUsage.endUserId === "unknown"
+                            <code className="text-xs text-zinc-500" title={userUsage.identifier}>
+                              {userUsage.identifier === "unknown"
                                 ? "unknown"
-                                : `${userUsage.endUserId.slice(0, 8)}...`}
+                                : userUsage.identifier.length > 8
+                                  ? `${userUsage.identifier.slice(0, 8)}...`
+                                  : userUsage.identifier}
                             </code>
                           </td>
                           <td className="px-5 py-3 text-right text-zinc-300">

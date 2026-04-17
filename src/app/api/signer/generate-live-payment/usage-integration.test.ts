@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 
 import type { AuthResult } from "@/lib/auth";
 import { validateBearerToken } from "@/lib/auth";
+import { db } from "@/db/index";
+import { streamSessions, transactions } from "@/db/schema";
+import { countActiveStreamsByRecentPayment } from "@/lib/active-streams";
 import { proxyGenerateLivePayment } from "@/lib/signer-proxy";
 import { run } from "@/test-utils/db-guard";
 import {
@@ -14,6 +17,7 @@ import {
 } from "@/test-utils/fixtures";
 import { mockSignerFetch } from "@/test-utils/mock-signer";
 import { buildOrchestratorInfoBase64 } from "@/test-utils/orchestrator-info";
+import { eq, and } from "drizzle-orm";
 
 const PER_REQUEST_PIXELS = 1_000_000;
 const PRICE_PER_UNIT = 1_000_000_000;
@@ -134,6 +138,36 @@ run("high-volume signer usage is persisted and summarised via Usage API", async 
 
   const expectedRequestCount = VOLUME + 1;
   const expectedTotalFeeWei = (PER_REQUEST_FEE_WEI * BigInt(expectedRequestCount)).toString();
+
+  const dupeSessionRows = await db
+    .select()
+    .from(streamSessions)
+    .where(eq(streamSessions.manifestId, "dupe-manifest-0"))
+    .limit(1);
+  const dupeSession = dupeSessionRows[0];
+  assert.ok(dupeSession, "stream session persisted for manifest");
+
+  const linkedTxnRows = await db
+    .select()
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.streamSessionId, dupeSession.id),
+        eq(transactions.type, "usage"),
+        eq(transactions.status, "confirmed"),
+      ),
+    );
+  assert.equal(
+    linkedTxnRows.length,
+    1,
+    "exactly one confirmed usage transaction links to stream session when requestId is duplicated",
+  );
+
+  const activeStreamCount = await countActiveStreamsByRecentPayment();
+  assert.ok(
+    activeStreamCount > 0,
+    "recent-payment active stream view should report active streams after payment traffic",
+  );
 
   async function fetchUsage(query = "") {
     const res = await readUsage(

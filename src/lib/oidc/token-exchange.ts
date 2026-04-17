@@ -7,6 +7,7 @@ import { ensureSigningKey } from "./jwks";
 import { getIssuer } from "./tokens";
 import { fetchPlatformJWKS } from "./jwks-fetch";
 import { findOrCreateAppEndUser } from "@/lib/billing";
+import { billingPatternFromAllowedScopesString } from "@/lib/allowed-scopes";
 
 const TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange";
 const JWT_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:jwt";
@@ -84,11 +85,11 @@ export async function handleTokenExchange(params: {
     );
   }
 
-  if (app.billingPattern !== "per_user") {
+  if (billingPatternFromAllowedScopesString(clientRow.allowedScopes) !== "per_user") {
     throw new TokenExchangeError(
       "invalid_request",
-      "Token exchange requires per_user billing pattern",
-      "Token exchange requires per-user billing",
+      "Token exchange requires the users:token scope on the OAuth client",
+      "Token exchange requires per-user billing (users:token scope)",
     );
   }
 

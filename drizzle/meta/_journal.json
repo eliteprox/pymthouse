@@ -29,6 +29,27 @@
       "when": 1776374600000,
       "tag": "0003_billing_column_types",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1776450000000,
+      "tag": "0004_active_streams_view",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776463799039,
+      "tag": "0005_drop_developer_apps_billing_pattern",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1776465501739,
+      "tag": "0006_schema_active_streams_snapshot",
+      "breakpoints": true
     }
   ]
 }

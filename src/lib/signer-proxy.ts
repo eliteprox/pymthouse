@@ -230,6 +230,8 @@ export async function proxyGenerateLivePayment(
     feeWei,
     signer.defaultCutPercent
   );
+  const nowIso = new Date().toISOString();
+  let streamSessionId: string | null = null;
 
   // Upsert StreamSession, linked to end user if token is scoped
   if (manifestId) {
@@ -246,6 +248,7 @@ export async function proxyGenerateLivePayment(
     const existingSession = sessionRows[0];
 
     if (existingSession) {
+      streamSessionId = existingSession.id;
       const newTotalPixels = BigInt(existingSession.totalPixels) + pixels;
       const newTotalFeeWei = BigInt(existingSession.totalFeeWei) + feeWei;
 
@@ -254,12 +257,14 @@ export async function proxyGenerateLivePayment(
         .set({
           totalPixels: Number(newTotalPixels),
           totalFeeWei: newTotalFeeWei.toString(),
-          lastPaymentAt: new Date().toISOString(),
+          lastPaymentAt: nowIso,
         })
         .where(eq(streamSessions.id, existingSession.id));
     } else {
+      const newSessionId = uuidv4();
+      streamSessionId = newSessionId;
       await db.insert(streamSessions).values({
-        id: uuidv4(),
+        id: newSessionId,
         endUserId: auth.endUserId || null,
         appId: providerAppId ?? auth.appId ?? null,
         bearerTokenHash: auth.tokenHash,
@@ -270,6 +275,7 @@ export async function proxyGenerateLivePayment(
         pricePerUnit: pricePerUnit.toString(),
         pixelsPerUnit: pixelsPerUnit.toString(),
         status: "active",
+        lastPaymentAt: nowIso,
       });
     }
   }
@@ -314,6 +320,7 @@ export async function proxyGenerateLivePayment(
           endUserId: auth.endUserId || null,
           appId: providerAppId ?? auth.appId ?? null,
           clientId: providerAppId,
+          streamSessionId,
           type: "usage",
           amountWei: feeWei.toString(),
           platformCutPercent: signer.defaultCutPercent,

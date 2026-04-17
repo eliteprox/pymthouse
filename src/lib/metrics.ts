@@ -1,6 +1,7 @@
 import { db } from "@/db/index";
 import { signerConfig, streamSessions, transactions } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { countActiveStreamsByRecentPayment } from "@/lib/active-streams";
 
 interface MetricsPayload {
   ethAddress: string | null;
@@ -32,13 +33,11 @@ export async function collectMetrics(): Promise<MetricsPayload | null> {
 
   if (!signer?.naapApiKey) return null;
 
-  const activeSessions = await db
-    .select()
-    .from(streamSessions)
-    .where(eq(streamSessions.status, "active"));
-
-  const allSessions = await db.select().from(streamSessions);
-  const txns = await db.select().from(transactions);
+  const [activeStreamCount, allSessions, txns] = await Promise.all([
+    countActiveStreamsByRecentPayment(),
+    db.select().from(streamSessions),
+    db.select().from(transactions),
+  ]);
 
   let totalPixels = 0n;
   let totalFee = 0n;
@@ -52,7 +51,7 @@ export async function collectMetrics(): Promise<MetricsPayload | null> {
     network: signer.network,
     timestamp: new Date().toISOString(),
     metrics: {
-      activeStreams: activeSessions.length,
+      activeStreams: activeStreamCount,
       totalStreams: allSessions.length,
       totalPixelsSigned: totalPixels.toString(),
       totalFeeWei: totalFee.toString(),
