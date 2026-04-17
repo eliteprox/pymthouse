@@ -94,6 +94,7 @@ export default function AppSettingsPanel({ data }: Props) {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Failed to rotate secret");
       setSecret(body.clientSecret);
+      setTokenEndpointAuthMethod("client_secret_post");
       setMessage("Client secret rotated");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
