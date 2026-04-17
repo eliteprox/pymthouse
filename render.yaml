@@ -6,7 +6,7 @@ services:
   - type: web
     name: pymthouse-signer
     env: docker
-    dockerfilePath: ./Dockerfile.signer
+    dockerfilePath: ./docker/signer-dmz/Dockerfile.signer
     plan: starter # Change to 'free' for free tier (will spin down after 15min inactivity)
     healthCheckPath: /status
     envVars:

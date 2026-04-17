@@ -75,7 +75,7 @@ RUN ldconfig && \
     a2enmod authnz_jwt && \
     a2enmod alias proxy proxy_http headers rewrite authn_core authz_core
 
-COPY scripts/jwks_to_pem.py /opt/pymthouse/scripts/jwks_to_pem.py
+COPY docker/signer-dmz/scripts/jwks_to_pem.py /opt/pymthouse/scripts/jwks_to_pem.py
 COPY docker/signer-dmz/apache/ports.conf.in /etc/apache2/templates/ports.conf.in
 COPY docker/signer-dmz/apache/signer-dmz.conf.in /etc/apache2/templates/signer-dmz.conf.in
 COPY docker/signer-dmz/entrypoint.sh /entrypoint.sh

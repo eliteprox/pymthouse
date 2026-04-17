@@ -60,7 +60,7 @@ Railway's Nixpacks automatically detects and uses `nixpacks.toml`:
 If you prefer Docker on Railway:
 
 1. **Create new project**
-2. **Settings → Deploy → Dockerfile Path:** `Dockerfile.signer`
+2. **Settings → Deploy → Dockerfile Path:** `docker/signer-dmz/Dockerfile.signer`
 3. **Add environment variables** (same as above)
 4. **Add volume** at `/data`
 5. **Deploy**
@@ -69,7 +69,7 @@ If you prefer Docker on Railway:
 
 Expose only Apache on the internet: **mod_authnz_jwt** validates PymtHouse OIDC access tokens (RS256) using a PEM derived from the public [JWKS](https://pymthouse.com/api/v1/oidc/jwks). **go-livepeer** listens on loopback inside the same container; only requests with a valid `Authorization: Bearer` header reach the signer. The Authorization header is stripped before proxying so the signer never sees bearer tokens.
 
-1. **Dockerfile path:** `docker/signer-dmz/Dockerfile` (or repo-root symlink `Dockerfile.signer-dmz`). Default build target is the combined image (`signer-dmz`).
+1. **Dockerfile path:** `docker/signer-dmz/Dockerfile`. Default build target is the combined image (`signer-dmz`).
 2. **Environment variables** (in addition to signer settings such as `SIGNER_NETWORK`, `ETH_RPC_URL`, volume at `/data`):
 
    | Variable | Purpose |
@@ -92,7 +92,7 @@ Expose only Apache on the internet: **mod_authnz_jwt** validates PymtHouse OIDC 
 **Local compose (two containers — signer + Apache gateway):**
 
 ```bash
-docker compose -f docker-compose.signer-dmz.yml up --build
+docker compose -f docker/signer-dmz/docker-compose.yml up --build
 ```
 
 Gateway is on [http://localhost:8080](http://localhost:8080); the signer is not published. Use `curl http://localhost:8080/healthz` and authenticated calls to proxied paths with a PymtHouse-issued bearer token.
@@ -195,7 +195,7 @@ gcloud run deploy pymthouse-signer \
 ### Option 6: DigitalOcean App Platform
 
 1. **Create new app** from GitHub
-2. **Detect Dockerfile:** Select `Dockerfile.signer`
+2. **Detect Dockerfile:** Select `docker/signer-dmz/Dockerfile.signer`
 3. **Add environment variables**
 4. **Attach a managed database** or volume for `/data`
 5. **Deploy**
@@ -208,7 +208,7 @@ For production-grade AWS deployment:
 
 1. **Push to ECR:**
    ```bash
-   docker build -f Dockerfile.signer -t pymthouse-signer .
+   docker build -f docker/signer-dmz/Dockerfile.signer -t pymthouse-signer .
    docker tag pymthouse-signer:latest AWS_ACCOUNT.dkr.ecr.REGION.amazonaws.com/pymthouse-signer:latest
    docker push AWS_ACCOUNT.dkr.ecr.REGION.amazonaws.com/pymthouse-signer:latest
    ```
@@ -326,7 +326,8 @@ Look for:
 To update to a new version:
 
 1. **Update the download URL** in:
-   - `Dockerfile.signer` (line with wget)
+   - `docker/signer-dmz/Dockerfile.signer` (line with wget)
+   - `docker/signer-dmz/Dockerfile` (livepeer download in the `signer-dmz` image stage, if you use it)
    - `nixpacks.toml` (install phase)
    
 2. **Change version number:**
