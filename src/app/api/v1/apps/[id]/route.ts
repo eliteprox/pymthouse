@@ -46,6 +46,7 @@ export async function GET(
           ? (JSON.parse(client.postLogoutRedirectUris) as string[])
           : [],
         initiateLoginUri: client.initiateLoginUri,
+        deviceThirdPartyInitiateLogin: client.deviceThirdPartyInitiateLogin === 1,
         logoUri: client.logoUri,
         policyUri: client.policyUri,
         tosUri: client.tosUri,

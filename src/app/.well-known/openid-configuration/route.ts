@@ -15,6 +15,7 @@ export async function GET(): Promise<NextResponse> {
     device_authorization_endpoint: `${issuer}${PROVIDER_ENDPOINT_PATHS.deviceAuthorization}`,
     introspection_endpoint: `${issuer}${PROVIDER_ENDPOINT_PATHS.introspection}`,
     revocation_endpoint: `${issuer}${PROVIDER_ENDPOINT_PATHS.revocation}`,
+    end_session_endpoint: `${issuer}${PROVIDER_ENDPOINT_PATHS.endSession}`,
     registration_endpoint: undefined, // Dynamic registration not supported
     scopes_supported: [
       "openid",

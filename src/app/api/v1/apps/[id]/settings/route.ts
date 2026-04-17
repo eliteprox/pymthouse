@@ -75,6 +75,11 @@ export async function PUT(
   if (body.initiateLoginUri !== undefined) {
     clientUpdates.initiateLoginUri = body.initiateLoginUri || null;
   }
+  if (body.deviceThirdPartyInitiateLogin !== undefined) {
+    clientUpdates.deviceThirdPartyInitiateLogin = Boolean(
+      body.deviceThirdPartyInitiateLogin,
+    );
+  }
   if (body.tokenEndpointAuthMethod !== undefined) {
     clientUpdates.tokenEndpointAuthMethod = body.tokenEndpointAuthMethod;
   }

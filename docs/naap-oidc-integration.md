@@ -34,6 +34,18 @@ Grants in use:
 - Clients are created and managed through app registration (dashboard/API).
 - Each confidential client authenticates at the token endpoint using its own `client_id` + `client_secret`.
 
+## Device authorization (RFC 8628) and third-party initiate login
+
+For clients that use the device code grant, the verification URL includes `client_id` and `iss` (PymtHouse issuer) so the browser can optionally send the user to your app’s registered **`initiate_login_uri`** first (OIDC Core — initiating login from a third party).
+
+- **Opt-in:** In app settings, enable **Redirect device verification to initiate login URI** and set **Initiate login URI** to your HTTPS endpoint that accepts `iss`, `target_link_uri`, and optional `login_hint`.
+- **Your endpoint** must validate `iss` against discovery (must equal this deployment’s issuer), validate `target_link_uri` (HTTPS, same origin as your app or an allowlisted return URL), then send the user to the OP authorization endpoint or otherwise complete login and redirect to `target_link_uri` so they land back on `/oidc/device` with the same query parameters.
+- **Security:** Treat `initiate_login_uri` as a sensitive redirect; use HTTPS only, avoid open redirects on `target_link_uri`, and use CSRF protection on any form that starts login. The OP sets a short-lived cookie so a failed RP round-trip does not loop redirects indefinitely.
+
+## RP-initiated logout
+
+Discovery advertises `end_session_endpoint` (`{issuer}/session/end`). Use it with registered **`post_logout_redirect_uris`** so users return to your app after signing out of the OP session.
+
 ## Interactive login (authorization code)
 
 1. Redirect user agent to `{issuer}/auth` with `response_type=code`, `client_id`, `redirect_uri`, `scope`, `state`.

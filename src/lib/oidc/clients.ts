@@ -97,6 +97,27 @@ export async function getRegisteredRedirectOrigins(): Promise<Set<string>> {
   return origins;
 }
 
+/**
+ * `initiate_login_uri` for OIDC third-party login initiation, only when the app opted in
+ * for device-flow redirects (off by default).
+ */
+export async function getInitiateLoginUriForDeviceFlow(
+  clientId: string,
+): Promise<string | null> {
+  const rows = await db
+    .select({
+      initiateLoginUri: oidcClients.initiateLoginUri,
+      deviceThirdPartyInitiateLogin: oidcClients.deviceThirdPartyInitiateLogin,
+    })
+    .from(oidcClients)
+    .where(eq(oidcClients.clientId, clientId))
+    .limit(1);
+  const row = rows[0];
+  if (!row || row.deviceThirdPartyInitiateLogin !== 1) return null;
+  const uri = row.initiateLoginUri;
+  return typeof uri === "string" && uri.trim() ? uri.trim() : null;
+}
+
 export async function getClient(clientId: string): Promise<{
   id: string;
   clientId: string;
@@ -269,6 +290,7 @@ export async function updateClientConfig(
     grantTypes?: string[];
     tokenEndpointAuthMethod?: "none" | "client_secret_post" | "client_secret_basic";
     postLogoutRedirectUris?: string[];
+    deviceThirdPartyInitiateLogin?: boolean;
     initiateLoginUri?: string | null;
     logoUri?: string | null;
     policyUri?: string | null;
@@ -295,6 +317,9 @@ export async function updateClientConfig(
   }
   if (config.postLogoutRedirectUris !== undefined) {
     updates.postLogoutRedirectUris = JSON.stringify(config.postLogoutRedirectUris);
+  }
+  if (config.deviceThirdPartyInitiateLogin !== undefined) {
+    updates.deviceThirdPartyInitiateLogin = config.deviceThirdPartyInitiateLogin ? 1 : 0;
   }
   if (config.initiateLoginUri !== undefined) updates.initiateLoginUri = config.initiateLoginUri;
   if (config.logoUri !== undefined) updates.logoUri = config.logoUri;

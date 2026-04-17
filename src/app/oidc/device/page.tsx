@@ -1,8 +1,16 @@
 import { getServerSession } from "next-auth";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/next-auth-options";
 import DeviceVerifyForm from "./device-verify-form";
 import { resolveHostContext } from "@/lib/oidc/host-resolution";
+import { getInitiateLoginUriForDeviceFlow } from "@/lib/oidc/clients";
+import {
+  THIRD_PARTY_INITIATE_SKIP_COOKIE,
+  buildDeviceFlowTargetLinkUri,
+  issuerMatchesExpected,
+} from "@/lib/oidc/third-party-initiate-login";
+import { getIssuer } from "@/lib/oidc/tokens";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -15,14 +23,50 @@ export default async function DeviceVerificationPage({
   const session = await getServerSession(authOptions);
   const hostContext = await resolveHostContext();
 
+  const userCode =
+    typeof params.user_code === "string" ? params.user_code : undefined;
+  const clientIdParam =
+    typeof params.client_id === "string" ? params.client_id : undefined;
+  const issParam = typeof params.iss === "string" ? params.iss : undefined;
+  const loginHintParam =
+    typeof params.login_hint === "string" ? params.login_hint : undefined;
+
+  const expectedIssuer = getIssuer();
+
   if (!session?.user) {
+    const skipThirdParty = (await cookies()).get(THIRD_PARTY_INITIATE_SKIP_COOKIE)?.value === "1";
+
+    if (
+      clientIdParam &&
+      issParam &&
+      issuerMatchesExpected(issParam, expectedIssuer) &&
+      !skipThirdParty
+    ) {
+      const initiateLoginUri = await getInitiateLoginUriForDeviceFlow(clientIdParam);
+      if (initiateLoginUri) {
+        const targetLinkUri = buildDeviceFlowTargetLinkUri({
+          user_code: userCode,
+          client_id: clientIdParam,
+          iss: issParam,
+          login_hint: loginHintParam,
+        });
+        redirect(
+          `/oidc/device/initiate-login?${new URLSearchParams({
+            initiate_login_uri: initiateLoginUri,
+            target_link_uri: targetLinkUri,
+            ...(loginHintParam ? { login_hint: loginHintParam } : {}),
+          }).toString()}`,
+        );
+      }
+    }
+
     const qs = new URLSearchParams();
-    const userCode =
-      typeof params.user_code === "string" ? params.user_code : undefined;
     if (userCode) qs.set("user_code", userCode);
-    redirect(
-      `/login?callbackUrl=${encodeURIComponent(`/oidc/device${qs.toString() ? `?${qs.toString()}` : ""}`)}`
-    );
+    if (clientIdParam) qs.set("client_id", clientIdParam);
+    if (issParam) qs.set("iss", issParam);
+    if (loginHintParam) qs.set("login_hint", loginHintParam);
+    const devicePath = `/oidc/device${qs.toString() ? `?${qs.toString()}` : ""}`;
+    redirect(`/login?callbackUrl=${encodeURIComponent(devicePath)}`);
   }
 
   return (

@@ -19,6 +19,7 @@ interface Props {
   /** Post-logout URIs and initiate-login URI (OIDC client metadata). */
   initialPostLogoutRedirectUris?: string[];
   initialInitiateLoginUri?: string | null;
+  initialDeviceThirdPartyInitiateLogin?: boolean;
   /** When false, settings are view-only (non-admin team members). */
   canEdit?: boolean;
   /** Only the app owner may submit for review (matches submit API). */
@@ -49,6 +50,7 @@ export default function AppSettingsScreen({
   initialDomains,
   initialPostLogoutRedirectUris = [],
   initialInitiateLoginUri = null,
+  initialDeviceThirdPartyInitiateLogin = false,
   canEdit = true,
   canSubmitForReview = false,
   onReviewSubmitted,
@@ -68,6 +70,8 @@ export default function AppSettingsScreen({
   const [initiateLoginUri, setInitiateLoginUri] = useState(
     initialInitiateLoginUri ?? "",
   );
+  const [deviceThirdPartyInitiateLogin, setDeviceThirdPartyInitiateLogin] =
+    useState(initialDeviceThirdPartyInitiateLogin);
   const [newPostLogoutUri, setNewPostLogoutUri] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +116,7 @@ export default function AppSettingsScreen({
         body: JSON.stringify({
           postLogoutRedirectUris,
           initiateLoginUri: initiateLoginUri.trim() || null,
+          deviceThirdPartyInitiateLogin,
           tokenEndpointAuthMethod: formData.tokenEndpointAuthMethod,
         }),
       });
@@ -128,7 +133,14 @@ export default function AppSettingsScreen({
     } finally {
       setSaving(false);
     }
-  }, [appId, formData, postLogoutRedirectUris, initiateLoginUri, canEdit]);
+  }, [
+    appId,
+    formData,
+    postLogoutRedirectUris,
+    initiateLoginUri,
+    deviceThirdPartyInitiateLogin,
+    canEdit,
+  ]);
 
   const submitForReview = useCallback(async () => {
     if (!canSubmitForReview) return;
@@ -353,7 +365,8 @@ export default function AppSettingsScreen({
         <div>
           <h2 className="text-lg font-semibold text-zinc-100">Advanced OIDC</h2>
           <p className="text-sm text-zinc-500 mt-1">
-            Post-logout redirects and optional initiate-login URI. Saved with{" "}
+            Post-logout redirects, optional initiate-login URI, and device-flow
+            third-party login. Saved with{" "}
             <strong className="text-zinc-400">Save</strong> below.
           </p>
         </div>
@@ -419,7 +432,33 @@ export default function AppSettingsScreen({
             disabled={!canEdit}
             className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
           />
+          <p className="text-xs text-zinc-500 mt-2">
+            OIDC third-party login (iss, target_link_uri). When enabled below,
+            unauthenticated device verification can redirect here once before
+            PymtHouse login.
+          </p>
         </div>
+
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={deviceThirdPartyInitiateLogin}
+            onChange={(e) => setDeviceThirdPartyInitiateLogin(e.target.checked)}
+            disabled={!canEdit}
+            className="mt-1 rounded border-zinc-600 disabled:opacity-50"
+          />
+          <span>
+            <span className="block text-sm font-medium text-zinc-300">
+              Redirect device verification to initiate login URI
+            </span>
+            <span className="block text-xs text-zinc-500 mt-1">
+              Only enable if your app implements{" "}
+              <code className="text-zinc-400">initiate_login_uri</code> and
+              returns users to{" "}
+              <code className="text-zinc-400">target_link_uri</code> (HTTPS).
+            </span>
+          </span>
+        </label>
       </section>
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-6 space-y-4">

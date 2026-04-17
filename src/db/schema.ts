@@ -159,6 +159,8 @@ export const oidcClients = pgTable("oidc_clients", {
   grantTypes: text("grant_types").notNull().default("authorization_code,refresh_token"), // comma-separated
   tokenEndpointAuthMethod: text("token_endpoint_auth_method").notNull().default("none"), // none | client_secret_post | client_secret_basic
   postLogoutRedirectUris: text("post_logout_redirect_uris"), // JSON array
+  /** When true, device flow may redirect once to `initiate_login_uri` (OIDC third-party login). Default off. */
+  deviceThirdPartyInitiateLogin: integer("device_third_party_initiate_login").notNull().default(0),
   initiateLoginUri: text("initiate_login_uri"),
   logoUri: text("logo_uri"),
   policyUri: text("policy_uri"),
