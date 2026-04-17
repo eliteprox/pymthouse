@@ -24,7 +24,9 @@ export async function GET(
     let providerAuth: Awaited<ReturnType<typeof getAuthorizedProviderApp>> | null = null;
     try {
       providerAuth = await getAuthorizedProviderApp(clientId);
-    } catch {
+    } catch (err) {
+      // Log error for debugging
+      console.error("getAuthorizedProviderApp failed", err);
       providerAuth = null;
     }
     if (!providerAuth) {

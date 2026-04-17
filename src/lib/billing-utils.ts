@@ -10,7 +10,9 @@ export function calendarMonthBoundsUtc(now: Date): { start: string; end: string 
   };
 }
 
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const MAX_DATE_RANGE_DAYS = 365; // Safety limit for date range iteration
 
 /** YYYY-MM-DD keys from period bounds (inclusive of both calendar days). */
 export function dateKeysInclusiveUtc(periodStartIso: string, periodEndIso: string): string[] {
@@ -19,6 +21,10 @@ export function dateKeysInclusiveUtc(periodStartIso: string, periodEndIso: strin
   const keys: string[] = [];
   let t = startDay.getTime();
   const endT = endDay.getTime();
+  const dayDiff = Math.floor((endT - t) / MS_PER_DAY) + 1;
+  if (dayDiff > MAX_DATE_RANGE_DAYS) {
+    throw new Error(`dateKeysInclusiveUtc: Range exceeds maximum of ${MAX_DATE_RANGE_DAYS} days`);
+  }
   while (t <= endT) {
     const current = new Date(t);
     keys.push(current.toISOString().slice(0, 10));
