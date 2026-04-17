@@ -125,14 +125,6 @@ export async function createAppUser(opts: {
  */
 export const TEST_SIGNER_URL = "http://test-signer.invalid";
 
-interface SignerSnapshot {
-  existed: boolean;
-  prior?: typeof signerConfig.$inferSelect;
-}
-
-let signerSnapshot: SignerSnapshot | null = null;
-let signerRefCount = 0;
-
 function assertNonProdDatabase(): void {
   const url = process.env.DATABASE_URL ?? "";
   if (process.env.ALLOW_TEST_FIXTURES_ON_ANY_DB === "1") return;
@@ -151,84 +143,46 @@ function assertNonProdDatabase(): void {
 
 /**
  * Ensure the default signer row exists and is marked running so proxy routes
- * forward requests to the mocked fetcher. Snapshots the prior row state on the
- * first call and restores it when the last caller's teardown fires, so a test
- * run never leaves `http://test-signer.invalid` (or any other test-only state)
- * persisted in a shared database.
+ * forward requests to the mocked fetcher.
+ *
+ * Teardown is intentionally a no-op: `node --test` runs files in parallel
+ * **processes** sharing one Postgres row. A refcount/snapshot restore in one
+ * worker would set `status` back to `stopped` while another worker's test is
+ * still mid-run (503: Signer is not running). See usage-integration vs
+ * proxy-routes tests.
+ *
+ * If a run crashes, use {@link clearTestSignerSentinel} or re-seed the row.
  */
 export async function ensureRunningSigner(): Promise<() => Promise<void>> {
   assertNonProdDatabase();
 
-  if (signerRefCount === 0) {
-    const rows = await db
-      .select()
-      .from(signerConfig)
-      .where(eq(signerConfig.id, "default"))
-      .limit(1);
-    const prior = rows[0];
-    signerSnapshot = prior ? { existed: true, prior } : { existed: false };
+  const rows = await db
+    .select()
+    .from(signerConfig)
+    .where(eq(signerConfig.id, "default"))
+    .limit(1);
+  const prior = rows[0];
 
-    if (prior) {
-      await db
-        .update(signerConfig)
-        .set({ status: "running", signerUrl: TEST_SIGNER_URL })
-        .where(eq(signerConfig.id, "default"));
-    } else {
-      await db.insert(signerConfig).values({
-        id: "default",
-        name: "pymthouse test signer",
-        signerUrl: TEST_SIGNER_URL,
-        status: "running",
-        network: "arbitrum-one-mainnet",
-        ethRpcUrl: "https://arb1.arbitrum.io/rpc",
-        signerPort: 8081,
-        defaultCutPercent: 15,
-        billingMode: "delegated",
-      });
-    }
+  if (prior) {
+    await db
+      .update(signerConfig)
+      .set({ status: "running", signerUrl: TEST_SIGNER_URL })
+      .where(eq(signerConfig.id, "default"));
+  } else {
+    await db.insert(signerConfig).values({
+      id: "default",
+      name: "pymthouse test signer",
+      signerUrl: TEST_SIGNER_URL,
+      status: "running",
+      network: "arbitrum-one-mainnet",
+      ethRpcUrl: "https://arb1.arbitrum.io/rpc",
+      signerPort: 8081,
+      defaultCutPercent: 15,
+      billingMode: "delegated",
+    });
   }
 
-  signerRefCount += 1;
-  let released = false;
-
-  return async () => {
-    if (released) return;
-    released = true;
-    signerRefCount -= 1;
-    if (signerRefCount > 0) return;
-
-    const snapshot = signerSnapshot;
-    signerSnapshot = null;
-    if (!snapshot) return;
-
-    if (snapshot.existed && snapshot.prior) {
-      const p = snapshot.prior;
-      await db
-        .update(signerConfig)
-        .set({
-          status: p.status,
-          signerUrl: p.signerUrl,
-          signerPort: p.signerPort,
-          network: p.network,
-          ethRpcUrl: p.ethRpcUrl,
-          defaultCutPercent: p.defaultCutPercent,
-          billingMode: p.billingMode,
-          name: p.name,
-        })
-        .where(eq(signerConfig.id, "default"));
-    } else {
-      // We inserted the row; only remove it if nobody has since populated a
-      // real URL (belt-and-braces: never delete a row that now looks real).
-      await db
-        .delete(signerConfig)
-        .where(
-          and(
-            eq(signerConfig.id, "default"),
-            eq(signerConfig.signerUrl, TEST_SIGNER_URL),
-          ),
-        );
-    }
-  };
+  return async () => {};
 }
 
 /**
