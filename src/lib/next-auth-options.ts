@@ -4,7 +4,7 @@ import GoogleProvider from "next-auth/providers/google";
 import GitHubProvider from "next-auth/providers/github";
 import { db } from "@/db/index";
 import { users } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { validateBearerToken, hasScope } from "@/lib/auth";
 import { verifyPrivyToken, findOrCreateDeveloperUser, getPrivyClient } from "@/lib/privy";
@@ -147,6 +147,38 @@ export const authOptions: NextAuthOptions = {
         .limit(1);
       const existing = existingRows[0];
 
+      if (provider === "google" || provider === "github") {
+        if (existing && existing.role === "admin") {
+          return false;
+        }
+        if (existing) {
+          return true;
+        }
+        const normalizedEmail = user.email.trim().toLowerCase();
+        const adminByEmailRows = await db
+          .select()
+          .from(users)
+          .where(
+            and(
+              eq(users.role, "admin"),
+              sql`lower(${users.email}) = ${normalizedEmail}`,
+            ),
+          )
+          .limit(1);
+        if (adminByEmailRows[0]) {
+          return false;
+        }
+        await db.insert(users).values({
+          id: uuidv4(),
+          email: user.email,
+          name: user.name || null,
+          oauthProvider: provider,
+          oauthSubject: subject,
+          role: "developer",
+        });
+        return true;
+      }
+
       if (!existing) {
         await db.insert(users).values({
           id: uuidv4(),
@@ -212,7 +244,7 @@ export const authOptions: NextAuthOptions = {
     strategy: "jwt",
   },
   pages: {
-    signIn: "/",
+    signIn: "/login",
   },
   secret: nextAuthSecret,
 };

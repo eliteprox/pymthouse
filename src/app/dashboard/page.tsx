@@ -4,10 +4,15 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/next-auth-options";
 import { redirect } from "next/navigation";
 import { db } from "@/db/index";
-import { signerConfig, streamSessions, transactions, endUsers } from "@/db/schema";
+import { signerConfig, transactions, endUsers } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import DashboardLayout from "@/components/DashboardLayout";
 import Link from "next/link";
+import {
+  ACTIVE_STREAM_PAYMENT_WINDOW_LABEL,
+  countActiveStreamsByRecentPayment,
+  getActiveStreamSessionsByRecentPayment,
+} from "@/lib/active-streams";
 
 function formatWei(wei: string): string {
   if (wei === "0") return "0 ETH";
@@ -38,13 +43,13 @@ async function AdminDashboard() {
     .limit(1);
   const signer = signerRows[0];
 
-  const activeSessions = await db
-    .select()
-    .from(streamSessions)
-    .where(eq(streamSessions.status, "active"));
-
-  const allTransactions = await db.select().from(transactions);
-  const allEndUsers = await db.select().from(endUsers);
+  const [activeStreamCount, recentActiveSessions, allTransactions, allEndUsers] =
+    await Promise.all([
+      countActiveStreamsByRecentPayment(),
+      getActiveStreamSessionsByRecentPayment(5),
+      db.select().from(transactions),
+      db.select().from(endUsers),
+    ]);
 
   let totalFeeWei = 0n;
   let totalPlatformCutWei = 0n;
@@ -64,8 +69,8 @@ async function AdminDashboard() {
     },
     {
       label: "Active Streams",
-      value: activeSessions.length.toString(),
-      sub: "live now",
+      value: activeStreamCount.toString(),
+      sub: ACTIVE_STREAM_PAYMENT_WINDOW_LABEL,
       color: "text-blue-400",
     },
     {
@@ -147,11 +152,11 @@ async function AdminDashboard() {
 
         <div className="border border-zinc-800 rounded-xl p-5 bg-zinc-900/30">
           <h3 className="font-semibold text-zinc-200 mb-4">Recent Streams</h3>
-          {activeSessions.length === 0 ? (
+          {recentActiveSessions.length === 0 ? (
             <p className="text-zinc-500 text-sm">No active streams</p>
           ) : (
             <div className="space-y-3">
-              {activeSessions.slice(0, 5).map((session) => (
+              {recentActiveSessions.map((session) => (
                 <div
                   key={session.id}
                   className="flex items-center justify-between text-sm"

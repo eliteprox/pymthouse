@@ -97,13 +97,21 @@ export function LoginForm() {
   const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [showAdmin, setShowAdmin] = useState(false);
+  const [adminSectionOpen, setAdminSectionOpen] = useState(false);
+  const [oauthSectionOpen, setOauthSectionOpen] = useState(false);
   const [branding, setBranding] = useState<AppBranding | null>(null);
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
   const safeCallbackUrl = callbackUrl.startsWith("/") && !callbackUrl.startsWith("//") ? callbackUrl : "/dashboard";
   const clientId = searchParams.get("client_id");
   const isAdmin = searchParams.get("admin") === "1";
   const isOidcFlow = callbackUrl.includes("/oidc/");
+  const authError = searchParams.get("error");
+  const oauthCallbackMessage =
+    authError === "AccessDenied"
+      ? "OAuth sign-in was denied. Admin accounts must use a bearer token from npm run bootstrap, not Google or GitHub."
+      : authError
+        ? "Sign-in failed. Please try again."
+        : null;
 
   useEffect(() => {
     if (clientId && isOidcFlow) {
@@ -131,7 +139,7 @@ export function LoginForm() {
   useEffect(() => {
     if (!isAdmin) return;
     queueMicrotask(() => {
-      setShowAdmin(true);
+      setAdminSectionOpen(true);
     });
   }, [isAdmin]);
 
@@ -206,17 +214,24 @@ export function LoginForm() {
           <PrivyLoginButton primaryColor={primaryColor} />
         </div>
 
-        {/* Admin / OAuth section -- collapsed by default */}
-        <div className="border border-zinc-800 rounded-xl bg-zinc-900/30">
+        {oauthCallbackMessage && (
+          <p className="text-xs text-amber-300/90 bg-amber-500/10 border border-amber-500/25 rounded-lg px-3 py-2 mb-4">
+            {oauthCallbackMessage}
+          </p>
+        )}
+
+        {/* Admin sign-in (bootstrap token only) */}
+        <div className="border border-zinc-800 rounded-xl bg-zinc-900/30 mb-4">
           <button
-            onClick={() => setShowAdmin(!showAdmin)}
+            type="button"
+            onClick={() => setAdminSectionOpen(!adminSectionOpen)}
             className="w-full px-6 py-4 flex items-center justify-between text-left"
           >
             <span className="text-xs text-zinc-500 uppercase tracking-wider">
-              Admin / OAuth Login
+              Admin sign-in
             </span>
             <svg
-              className={`w-4 h-4 text-zinc-500 transition-transform ${showAdmin ? "rotate-180" : ""}`}
+              className={`w-4 h-4 text-zinc-500 transition-transform ${adminSectionOpen ? "rotate-180" : ""}`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -225,9 +240,13 @@ export function LoginForm() {
             </svg>
           </button>
 
-          {showAdmin && (
-            <div className="px-6 pb-6 space-y-4">
-              {/* Token login */}
+          {adminSectionOpen && (
+            <div className="px-6 pb-6 space-y-3">
+              <p className="text-xs text-zinc-500 leading-relaxed">
+                Admin access uses the bearer token printed by{" "}
+                <code className="text-zinc-400 font-mono text-[11px]">npm run bootstrap</code>
+                {" "}(paste the <span className="font-mono text-zinc-400">pmth_…</span> value).
+              </p>
               <form onSubmit={handleTokenLogin} className="space-y-3">
                 <input
                   type="password"
@@ -252,17 +271,46 @@ export function LoginForm() {
                   {loading ? "Signing in..." : "Sign in with Token"}
                 </button>
               </form>
+            </div>
+          )}
+        </div>
 
-              <div className="border-t border-zinc-800 pt-4">
-                <p className="text-xs text-zinc-500 mb-3">OAuth providers</p>
+        {/* Developer OAuth (Google / GitHub) — not for admin; hidden on ?admin=1 */}
+        {!isAdmin && (
+          <div className="border border-zinc-800 rounded-xl bg-zinc-900/30">
+            <button
+              type="button"
+              onClick={() => setOauthSectionOpen(!oauthSectionOpen)}
+              className="w-full px-6 py-4 flex items-center justify-between text-left"
+            >
+              <span className="text-xs text-zinc-500 uppercase tracking-wider">
+                Developer OAuth
+              </span>
+              <svg
+                className={`w-4 h-4 text-zinc-500 transition-transform ${oauthSectionOpen ? "rotate-180" : ""}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {oauthSectionOpen && (
+              <div className="px-6 pb-6 space-y-3">
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  For developer accounts only. Admin sign-in uses a bootstrap token, not these providers.
+                </p>
                 <div className="space-y-2">
                   <button
+                    type="button"
                     onClick={() => signIn("google", { callbackUrl: safeCallbackUrl })}
                     className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-zinc-700 rounded-lg hover:bg-zinc-800/50 transition-colors text-sm font-medium text-zinc-300"
                   >
                     Google
                   </button>
                   <button
+                    type="button"
                     onClick={() => signIn("github", { callbackUrl: safeCallbackUrl })}
                     className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-zinc-700 rounded-lg hover:bg-zinc-800/50 transition-colors text-sm font-medium text-zinc-300"
                   >
@@ -270,9 +318,9 @@ export function LoginForm() {
                   </button>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {isWhiteLabel ? (
           <footer className="mt-6 pt-4 text-center">

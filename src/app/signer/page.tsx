@@ -11,6 +11,10 @@ import SignerControlPanel from "@/components/SignerControlPanel";
 import SignerConfigForm from "@/components/SignerConfigForm";
 import SignerLogs from "@/components/SignerLogs";
 import SignerLiveStats from "@/components/SignerLiveStats";
+import {
+  ACTIVE_STREAM_PAYMENT_WINDOW_MINUTES,
+  countActiveStreamsByRecentPayment,
+} from "@/lib/active-streams";
 
 function formatWei(wei: string | null): string {
   if (!wei || wei === "0") return "0 WEI";
@@ -46,13 +50,11 @@ export default async function SignerPage() {
     );
   }
 
-  const activeSessions = await db
-    .select()
-    .from(streamSessions)
-    .where(eq(streamSessions.status, "active"));
-
-  const allSessions = await db.select().from(streamSessions);
-  const allTxns = await db.select().from(transactions);
+  const [activeStreamCount, allSessions, allTxns] = await Promise.all([
+    countActiveStreamsByRecentPayment(),
+    db.select().from(streamSessions),
+    db.select().from(transactions),
+  ]);
 
   let totalFeeWei = 0n;
   for (const s of allSessions) {
@@ -141,8 +143,8 @@ export default async function SignerPage() {
       {/* Activity stats from DB */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
         <StatCard
-          label="Active Streams"
-          value={activeSessions.length.toString()}
+          label={`Active Streams (${ACTIVE_STREAM_PAYMENT_WINDOW_MINUTES}m)`}
+          value={activeStreamCount.toString()}
           color="text-emerald-400"
         />
         <StatCard label="Total Streams" value={allSessions.length.toString()} />
