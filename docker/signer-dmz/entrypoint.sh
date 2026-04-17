@@ -23,17 +23,19 @@ if [ -n "${SIGNER_UPSTREAM:-}" ]; then
     export SIGNER_CLI_HTTP_ADDR="${_scheme}://${_host}:4935"
   fi
 else
-  export SIGNER_HTTP_ADDR="http://127.0.0.1:${SIGNER_PORT}"
-  # Without an upstream we need either an explicit CLI address, or a local livepeer
-  # binary that this entrypoint will spawn (it binds -cliAddr=127.0.0.1:4935).
-  if [ -z "${SIGNER_CLI_HTTP_ADDR:-}" ]; then
-    if [ -x /usr/local/bin/livepeer ]; then
-      export SIGNER_CLI_HTTP_ADDR="http://127.0.0.1:4935"
-    else
-      echo "entrypoint: neither SIGNER_UPSTREAM nor SIGNER_CLI_HTTP_ADDR is set and no local livepeer binary is present" >&2
-      exit 1
-    fi
+  # No upstream configured → the HTTP signer must come from a local livepeer process
+  # that this entrypoint spawns below. If the binary is missing we have nothing to
+  # bind 127.0.0.1:${SIGNER_PORT}; failing here prevents Apache from coming up with
+  # a catch-all ProxyPass pointing at a dead loopback port (which would otherwise
+  # surface only as opaque 502s at request time).
+  if [ ! -x /usr/local/bin/livepeer ]; then
+    echo "entrypoint: SIGNER_UPSTREAM is unset and /usr/local/bin/livepeer is missing; refusing to start with an unreachable signer" >&2
+    exit 1
   fi
+  export SIGNER_HTTP_ADDR="http://127.0.0.1:${SIGNER_PORT}"
+  # CLI lives in the same local livepeer process on port 4935. Respect an explicit
+  # override (e.g. tests pointing at a fake) but default to loopback otherwise.
+  export SIGNER_CLI_HTTP_ADDR="${SIGNER_CLI_HTTP_ADDR:-http://127.0.0.1:4935}"
 fi
 
 mkdir -p /run/jwt

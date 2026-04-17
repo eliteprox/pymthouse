@@ -117,7 +117,10 @@ async function forwardToSigner(
   const timeout = setTimeout(() => controller.abort(), 30_000);
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (process.env.SIGNER_DMZ_FORWARD_JWT !== "false") {
-    const sub = auth.userId || auth.appId || "signer-proxy";
+    // Fall back to sessionId (always populated on AuthResult) so unauthenticated-but-
+    // session-scoped callers don't collapse onto a single shared "signer-proxy" token —
+    // each session keeps its own cache entry and stays traceable in upstream logs.
+    const sub = auth.userId || auth.appId || auth.sessionId;
     const token = await getHttpDmzBearerForSubject(sub);
     headers.Authorization = `Bearer ${token}`;
   }

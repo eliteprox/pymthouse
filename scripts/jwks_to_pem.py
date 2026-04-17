@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import binascii
 import json
 import ssl
 import sys
@@ -24,11 +25,23 @@ def _b64url_decode(s: str) -> bytes:
     return base64.urlsafe_b64decode(s.encode("ascii"))
 
 
+def _decode_jwk_param(jwk: dict, name: str) -> int:
+    # Wrap each base64url field decode so a corrupt "n" or "e" produces a
+    # descriptive error instead of a bare "Invalid base64-encoded string".
+    # binascii.Error is a ValueError subclass so callers can keep catching ValueError,
+    # but keeping this explicit preserves the JWK field name in the message.
+    raw = jwk[name]
+    try:
+        return int.from_bytes(_b64url_decode(raw), "big")
+    except (binascii.Error, ValueError) as err:
+        raise ValueError(f"invalid base64url in JWK field {name!r}: {err}") from err
+
+
 def jwk_rsa_to_pem(jwk: dict) -> bytes:
     if jwk.get("kty") != "RSA":
         raise ValueError(f"Unsupported kty: {jwk.get('kty')}")
-    n = int.from_bytes(_b64url_decode(jwk["n"]), "big")
-    e = int.from_bytes(_b64url_decode(jwk["e"]), "big")
+    n = _decode_jwk_param(jwk, "n")
+    e = _decode_jwk_param(jwk, "e")
     pub = rsa.RSAPublicNumbers(e, n).public_key(default_backend())
     return pub.public_bytes(
         encoding=serialization.Encoding.PEM,
@@ -77,6 +90,12 @@ def main() -> int:
 
     try:
         doc = json.loads(body.decode("utf-8"))
+    except UnicodeDecodeError as e:
+        # UnicodeDecodeError is a ValueError but not a JSONDecodeError, so the
+        # previous handler let it crash. Catch it so a non-UTF-8 JWKS payload
+        # (e.g. upstream misconfiguration, captive-portal HTML) exits cleanly.
+        print(f"jwks_to_pem: JWKS body is not valid UTF-8: {e}", file=sys.stderr)
+        return 1
     except json.JSONDecodeError as e:
         print(f"jwks_to_pem: invalid JSON: {e}", file=sys.stderr)
         return 1
