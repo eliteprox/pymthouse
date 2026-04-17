@@ -4,17 +4,7 @@ import { db } from "@/db/index";
 import { plans, signerConfig, subscriptions, usageRecords } from "@/db/schema";
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { getAuthorizedProviderApp, getProviderApp } from "@/lib/provider-apps";
-
-function calendarMonthBoundsUtc(now: Date): { start: string; end: string } {
-  const y = now.getUTCFullYear();
-  const m = now.getUTCMonth();
-  const start = new Date(Date.UTC(y, m, 1, 0, 0, 0, 0));
-  const end = new Date(Date.UTC(y, m + 1, 0, 23, 59, 59, 999));
-  return {
-    start: start.toISOString(),
-    end: end.toISOString(),
-  };
-}
+import { calendarMonthBoundsUtc, dateKeysInclusiveUtc } from "@/lib/billing-utils";
 
 function dateKeyFromIso(iso: string): string {
   return iso.slice(0, 10);
@@ -123,21 +113,17 @@ export async function GET(
   >();
 
   for (const row of rows) {
-    totalFeeWei += BigInt(row.fee);
+    const feeStr = row.fee || "0";
+    totalFeeWei += BigInt(feeStr);
     totalUnits += BigInt(row.units || "0");
     const day = dateKeyFromIso(row.createdAt);
     const cur = byDay.get(day) || { requestCount: 0, feeWei: 0n };
     cur.requestCount += 1;
-    cur.feeWei += BigInt(row.fee);
+    cur.feeWei += BigInt(feeStr);
     byDay.set(day, cur);
   }
 
-  const timelineDates: string[] = [];
-  const startDay = new Date(`${dateKeyFromIso(periodStart)}T12:00:00.000Z`);
-  const endDay = new Date(`${dateKeyFromIso(periodEnd)}T12:00:00.000Z`);
-  for (let d = new Date(startDay); d <= endDay; d.setUTCDate(d.getUTCDate() + 1)) {
-    timelineDates.push(d.toISOString().slice(0, 10));
-  }
+  const timelineDates = dateKeysInclusiveUtc(periodStart, periodEnd);
 
   const timeline = timelineDates.map((date) => {
     const bucket = byDay.get(date);
@@ -151,7 +137,11 @@ export async function GET(
   const planType = planRow?.type ?? "free";
   let overageUnits = "0";
   let overageWei = "0";
-  if (planType === "subscription" && planRow?.includedUnits && planRow?.overageRateWei) {
+  if (
+    (planType === "subscription" || planType === "usage") &&
+    planRow?.includedUnits &&
+    planRow?.overageRateWei
+  ) {
     const included = BigInt(planRow.includedUnits);
     const rate = BigInt(planRow.overageRateWei);
     if (totalUnits > included) {
@@ -170,8 +160,14 @@ export async function GET(
           name: planRow.name,
           priceAmount: planRow.priceAmount,
           priceCurrency: planRow.priceCurrency,
-          includedUnits: planRow.includedUnits,
-          overageRateWei: planRow.overageRateWei,
+          includedUnits:
+            planRow.includedUnits != null
+              ? planRow.includedUnits.toString()
+              : null,
+          overageRateWei:
+            planRow.overageRateWei != null
+              ? planRow.overageRateWei.toString()
+              : null,
           status: planRow.status,
         }
       : null,

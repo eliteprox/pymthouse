@@ -51,7 +51,9 @@ export default function UsageLineChart({
 
   const tickCount = Math.min(5, n);
   const tickStep = Math.max(1, Math.ceil(n / tickCount));
-  const xLabels = data.filter((_, i) => i % tickStep === 0 || i === n - 1);
+  const xLabels = data
+    .map((d, idx) => ({ ...d, idx }))
+    .filter((_, i) => i % tickStep === 0 || i === n - 1);
 
   return (
     <div className={`w-full overflow-x-auto ${className}`}>
@@ -91,20 +93,17 @@ export default function UsageLineChart({
         <text x={padL} y={12} className="fill-zinc-500 text-[10px]">
           {valueLabel}
         </text>
-        {xLabels.map((d) => {
-          const i = data.indexOf(d);
-          return (
-            <text
-              key={d.date}
-              x={xAt(i)}
-              y={height - 10}
-              textAnchor="middle"
-              className="fill-zinc-500 text-[9px]"
-            >
-              {d.date.slice(5)}
-            </text>
-          );
-        })}
+        {xLabels.map((d) => (
+          <text
+            key={`${d.date}-${d.idx}`}
+            x={xAt(d.idx)}
+            y={height - 10}
+            textAnchor="middle"
+            className="fill-zinc-500 text-[9px]"
+          >
+            {d.date.slice(5)}
+          </text>
+        ))}
       </svg>
     </div>
   );

@@ -7,6 +7,7 @@ import UsageLineChart from "@/components/UsageLineChart";
 import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
 import { appUsers, developerApps, usageRecords, users } from "@/db/schema";
+import { calendarMonthBoundsUtc, dateKeysInclusiveUtc } from "@/lib/billing-utils";
 
 type AppRow = {
   id: string;
@@ -31,14 +32,6 @@ type AppUsageSummary = {
   totalUnits: string;
   byUser: UserUsageRow[];
 };
-
-function calendarMonthBoundsUtc(now: Date): { start: string; end: string } {
-  const y = now.getUTCFullYear();
-  const m = now.getUTCMonth();
-  const start = new Date(Date.UTC(y, m, 1, 0, 0, 0, 0));
-  const end = new Date(Date.UTC(y, m + 1, 0, 23, 59, 59, 999));
-  return { start: start.toISOString(), end: end.toISOString() };
-}
 
 function formatWei(wei: string): string {
   if (!wei || !/^\d+$/.test(wei)) return "0";
@@ -233,16 +226,13 @@ export default async function BillingPage() {
     const day = dateKeyFromIso(row.createdAt);
     requestsByDay.set(day, (requestsByDay.get(day) ?? 0) + 1);
   }
-  const chartData: { date: string; value: number }[] = [];
-  const startDay = new Date(`${dateKeyFromIso(cycle.start)}T12:00:00.000Z`);
-  const endDay = new Date(`${dateKeyFromIso(cycle.end)}T12:00:00.000Z`);
-  for (let d = new Date(startDay); d <= endDay; d.setUTCDate(d.getUTCDate() + 1)) {
-    const date = d.toISOString().slice(0, 10);
-    chartData.push({
-      date,
-      value: requestsByDay.get(date) ?? 0,
-    });
-  }
+  const chartData: { date: string; value: number }[] = dateKeysInclusiveUtc(
+    cycle.start,
+    cycle.end,
+  ).map((date) => ({
+    date,
+    value: requestsByDay.get(date) ?? 0,
+  }));
 
   return (
     <DashboardLayout>

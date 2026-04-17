@@ -3,6 +3,8 @@ import {
   text,
   integer,
   real,
+  bigint,
+  timestamp,
   primaryKey,
   uniqueIndex,
   index,
@@ -271,9 +273,9 @@ export const plans = pgTable(
     priceCurrency: text("price_currency").notNull().default("USD"),
     status: text("status").notNull().default("draft"),
     /** Pixel-unit quota included per billing cycle (subscription plans). */
-    includedUnits: text("included_units"),
+    includedUnits: bigint("included_units", { mode: "bigint" }),
     /** Per-pixel wei for overage (subscription) or base rate (usage plans). */
-    overageRateWei: text("overage_rate_wei"),
+    overageRateWei: bigint("overage_rate_wei", { mode: "bigint" }),
     createdAt: text("created_at")
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
@@ -322,8 +324,14 @@ export const subscriptions = pgTable("subscriptions", {
     .notNull()
     .references(() => plans.id),
   status: text("status").notNull().default("active"),
-  currentPeriodStart: text("current_period_start"),
-  currentPeriodEnd: text("current_period_end"),
+  currentPeriodStart: timestamp("current_period_start", {
+    withTimezone: true,
+    mode: "string",
+  }),
+  currentPeriodEnd: timestamp("current_period_end", {
+    withTimezone: true,
+    mode: "string",
+  }),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),

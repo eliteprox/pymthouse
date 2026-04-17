@@ -32,6 +32,10 @@ export default function AppPlansPage() {
   const [saving, setSaving] = useState(false);
   const [canEdit, setCanEdit] = useState(true);
   const [planError, setPlanError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{
+    includedUnits?: string;
+    overageRateWei?: string;
+  }>({});
   const [form, setForm] = useState({
     name: "",
     type: "free",
@@ -62,8 +66,32 @@ export default function AppPlansPage() {
     load();
   }, [id]);
 
+  const isNonNegativeIntegerString = (s: string) => /^\d+$/.test(s.trim());
+
+  const validateBillingFields = (): boolean => {
+    const next: { includedUnits?: string; overageRateWei?: string } = {};
+    if (form.type === "subscription") {
+      if (!form.includedUnits.trim() || !isNonNegativeIntegerString(form.includedUnits)) {
+        next.includedUnits = "Required: non-negative integer (digits only)";
+      }
+      if (!form.overageRateWei.trim() || !isNonNegativeIntegerString(form.overageRateWei)) {
+        next.overageRateWei = "Required: non-negative integer (digits only)";
+      }
+    } else if (form.type === "usage") {
+      if (form.includedUnits.trim() && !isNonNegativeIntegerString(form.includedUnits)) {
+        next.includedUnits = "Must be a non-negative integer (digits only)";
+      }
+      if (form.overageRateWei.trim() && !isNonNegativeIntegerString(form.overageRateWei)) {
+        next.overageRateWei = "Must be a non-negative integer (digits only)";
+      }
+    }
+    setFieldErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
   const createPlan = async () => {
     if (!canEdit || !form.name.trim()) return;
+    if (!validateBillingFields()) return;
     setSaving(true);
     setPlanError(null);
     try {
@@ -118,6 +146,7 @@ export default function AppPlansPage() {
         pipeline: "video",
         slaTargetP95Ms: "",
       });
+      setFieldErrors({});
       setPlanError(null);
       load();
     } catch (err) {
@@ -210,30 +239,54 @@ export default function AppPlansPage() {
             />
           </div>
           {form.type === "subscription" && (
-            <input
-              value={form.includedUnits}
-              onChange={(event) =>
-                setForm({ ...form, includedUnits: event.target.value })
-              }
-              placeholder="Included units (pixels) per billing cycle"
-              disabled={!canEdit}
-              className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
-            />
+            <div className="space-y-1">
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={form.includedUnits}
+                onChange={(event) => {
+                  const v = event.target.value.replace(/\D/g, "");
+                  setForm({ ...form, includedUnits: v });
+                  if (fieldErrors.includedUnits) {
+                    setFieldErrors((e) => ({ ...e, includedUnits: undefined }));
+                  }
+                }}
+                placeholder="Included units (pixels) per billing cycle"
+                disabled={!canEdit}
+                className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              {fieldErrors.includedUnits && (
+                <p className="text-xs text-red-400">{fieldErrors.includedUnits}</p>
+              )}
+            </div>
           )}
           {(form.type === "subscription" || form.type === "usage") && (
-            <input
-              value={form.overageRateWei}
-              onChange={(event) =>
-                setForm({ ...form, overageRateWei: event.target.value })
-              }
-              placeholder={
-                form.type === "usage"
-                  ? "Rate per unit (wei)"
-                  : "Overage rate (wei per unit)"
-              }
-              disabled={!canEdit}
-              className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
-            />
+            <div className="space-y-1">
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={form.overageRateWei}
+                onChange={(event) => {
+                  const v = event.target.value.replace(/\D/g, "");
+                  setForm({ ...form, overageRateWei: v });
+                  if (fieldErrors.overageRateWei) {
+                    setFieldErrors((e) => ({ ...e, overageRateWei: undefined }));
+                  }
+                }}
+                placeholder={
+                  form.type === "usage"
+                    ? "Rate per unit (wei)"
+                    : "Overage rate (wei per unit)"
+                }
+                disabled={!canEdit}
+                className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              {fieldErrors.overageRateWei && (
+                <p className="text-xs text-red-400">{fieldErrors.overageRateWei}</p>
+              )}
+            </div>
           )}
           <div className="grid grid-cols-2 gap-3">
             <input
