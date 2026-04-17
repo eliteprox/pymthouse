@@ -75,6 +75,35 @@ Base path: `/api/v1/apps/{clientId}/users`
 - `admin` is explicitly rejected.
 - Default scope (when omitted): `sign:job`.
 
+## Complete device authorization (server-side)
+
+`POST /api/v1/apps/{clientId}/device/approve`
+
+- Authenticate with the same confidential client **Basic auth** (`client_id:client_secret`) as other Builder routes.
+- Requires **`users:token`** or **`users:write`** in the client’s allowed scopes.
+- Requires **Redirect device verification to initiate login URI** to be enabled for the app (same flag as OIDC third-party device login).
+- JSON body (provide exactly one of `sub` or `externalUserId`):
+
+```json
+{
+  "user_code": "ABCD-EFGH",
+  "sub": "<PymtHouse account id: users.id or end_users.id>"
+}
+```
+
+or
+
+```json
+{
+  "user_code": "ABCD-EFGH",
+  "externalUserId": "your-app-user-id"
+}
+```
+
+When using `externalUserId`, the server resolves or creates the corresponding `end_users` row for your developer app (same mapping as token exchange). When using `sub`, that account must already exist in `users` or `end_users`.
+
+The `user_code` must belong to the same `client_id` as the authenticated caller. Response: `{ "status": "authorized" }` on success.
+
 ## End-to-end flow (recommended)
 
 1. Backend obtains machine token via `client_credentials`.
@@ -119,4 +148,5 @@ curl -sS -u "${CLIENT_ID}:${CLIENT_SECRET}" \
 
 - [`src/app/api/v1/apps/[id]/users/route.ts`](../src/app/api/v1/apps/[id]/users/route.ts)
 - [`src/app/api/v1/apps/[id]/users/[externalUserId]/token/route.ts`](../src/app/api/v1/apps/[id]/users/[externalUserId]/token/route.ts)
+- [`src/app/api/v1/apps/[id]/device/approve/route.ts`](../src/app/api/v1/apps/[id]/device/approve/route.ts)
 - [`src/lib/auth.ts`](../src/lib/auth.ts) (`authenticateAppClient`, JWT auth parsing)

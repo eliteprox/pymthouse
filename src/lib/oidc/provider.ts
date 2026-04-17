@@ -372,12 +372,19 @@ export async function getProvider(): Promise<Provider> {
         // Without these overrides, visiting `/api/v1/oidc/device/<code>` renders
         // the provider's default HTML which fails (devInteractions is off).
         userCodeInputSource: async (ctx, _form, _out, _err) => {
-          ctx.redirect(`${issuer.replace(/\/api\/v1\/oidc$/, "")}/oidc/device`);
+          const u = new URL(`${issuer.replace(/\/api\/v1\/oidc$/, "")}/oidc/device`);
+          const cid = ctx.oidc?.client?.clientId;
+          if (cid) u.searchParams.set("client_id", cid);
+          u.searchParams.set("iss", getIssuer());
+          ctx.redirect(u.toString());
         },
-        userCodeConfirmSource: async (ctx, _form, _client, _deviceInfo, userCode) => {
-          ctx.redirect(
-            `${issuer.replace(/\/api\/v1\/oidc$/, "")}/oidc/device?user_code=${encodeURIComponent(userCode)}`,
-          );
+        userCodeConfirmSource: async (ctx, _form, client, _deviceInfo, userCode) => {
+          const u = new URL(`${issuer.replace(/\/api\/v1\/oidc$/, "")}/oidc/device`);
+          u.searchParams.set("user_code", userCode);
+          const cid = client?.clientId ?? ctx.oidc?.client?.clientId;
+          if (cid) u.searchParams.set("client_id", cid);
+          u.searchParams.set("iss", getIssuer());
+          ctx.redirect(u.toString());
         },
         successSource: async (ctx) => {
           ctx.body = `<!DOCTYPE html><html><head><title>Device Authorized</title></head>`

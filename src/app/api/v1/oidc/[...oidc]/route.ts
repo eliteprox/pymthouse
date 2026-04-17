@@ -21,7 +21,6 @@ import {
   isGatewayTokenExchangeRequest,
 } from "@/lib/oidc/gateway-token-exchange";
 import { rotateProgrammaticRefreshToken } from "@/lib/oidc/programmatic-tokens";
-import { buildDeviceFlowTargetLinkUri } from "@/lib/oidc/third-party-initiate-login";
 
 const RESOURCE_REQUIRED_GRANTS = new Set([
   "urn:ietf:params:oauth:grant-type:device_code",
@@ -315,12 +314,14 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
                 /* ignore */
               }
             }
-            deviceParams.set("iss", getIssuer());
+                       deviceParams.set("iss", getIssuer());
             const qs = deviceParams.toString();
-            const customBase = `${externalOrigin}/oidc/device${qs ? `?${qs}` : ""}`;
-            json.verification_uri = customBase;
-            if (json.verification_uri_complete && json.user_code) {
-              json.verification_uri_complete = customBase;
+            const verificationBase = `${externalOrigin}/oidc/device`;
+            json.verification_uri = verificationBase;
+            if (json.user_code) {
+              json.verification_uri_complete = qs
+                ? `${verificationBase}?${qs}`
+                : verificationBase;
             }
             finalBody = Buffer.from(JSON.stringify(json), "utf-8");
             headers.set("content-length", String(finalBody.length));

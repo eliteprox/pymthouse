@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { normalizeUserCode } from "@/lib/oidc/device";
 
@@ -8,6 +8,7 @@ interface DeviceInfo {
   clientName: string;
   scopes: string[];
   primaryColor?: string;
+  impliedDeviceConsent?: boolean;
 }
 
 export default function DeviceVerifyForm() {
@@ -22,19 +23,10 @@ export default function DeviceVerifyForm() {
   const [step, setStep] = useState<"enter" | "confirm">(
     prefilled ? "confirm" : "enter"
   );
+  const impliedConsentStartedRef = useRef(false);
 
   const rawPrimaryColor = deviceInfo?.primaryColor || "#10b981";
   const primaryColor = /^#[0-9a-fA-F]{6}$/.test(rawPrimaryColor) ? rawPrimaryColor : "#10b981";
-
-  // If prefilled, immediately look up the device code
-  useEffect(() => {
-    if (prefilled) {
-      const normalized = normalizeUserCode(prefilled);
-      setUserCode(normalized);
-      lookupCode(normalized);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   async function lookupCode(code: string) {
     setStatus("loading");
@@ -51,10 +43,11 @@ export default function DeviceVerifyForm() {
         setStatus("error");
         return;
       }
-      setDeviceInfo({ 
-        clientName: data.client_name, 
+      setDeviceInfo({
+        clientName: data.client_name,
         scopes: data.scopes,
         primaryColor: data.branding?.primaryColor,
+        impliedDeviceConsent: data.implied_device_consent === true,
       });
       setStep("confirm");
       setStatus("idle");
@@ -64,7 +57,8 @@ export default function DeviceVerifyForm() {
     }
   }
 
-  async function authorize(allow: boolean) {
+  const authorize = useCallback(async (allow: boolean, codeOverride?: string) => {
+    const code = normalizeUserCode((codeOverride ?? userCode).trim());
     setStatus("loading");
     setError(null);
     try {
@@ -72,7 +66,7 @@ export default function DeviceVerifyForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user_code: userCode,
+          user_code: code,
           action: allow ? "approve" : "deny",
         }),
       });
@@ -87,7 +81,31 @@ export default function DeviceVerifyForm() {
       setError("Something went wrong. Please try again.");
       setStatus("error");
     }
-  }
+  }, [userCode]);
+
+  // If prefilled, immediately look up the device code
+  useEffect(() => {
+    if (prefilled) {
+      const normalized = normalizeUserCode(prefilled);
+      setUserCode(normalized);
+      lookupCode(normalized);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (
+      !prefilled ||
+      !deviceInfo?.impliedDeviceConsent ||
+      impliedConsentStartedRef.current ||
+      step !== "confirm" ||
+      status !== "idle"
+    ) {
+      return;
+    }
+    impliedConsentStartedRef.current = true;
+    void authorize(true, normalizeUserCode(prefilled));
+  }, [prefilled, deviceInfo, step, status, authorize]);
 
   function handleSubmitCode(e: React.FormEvent) {
     e.preventDefault();

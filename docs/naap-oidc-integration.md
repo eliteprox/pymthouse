@@ -36,11 +36,20 @@ Grants in use:
 
 ## Device authorization (RFC 8628) and third-party initiate login
 
-For clients that use the device code grant, the verification URL includes `client_id` and `iss` (PymtHouse issuer) so the browser can optionally send the user to your app’s registered **`initiate_login_uri`** first (OIDC Core — initiating login from a third party).
+For clients that use the device code grant, the `/device/auth` response is rewritten so:
+
+- **`verification_uri`** is a short URL: `{public origin}/oidc/device` (easy to type on a second device).
+- **`verification_uri_complete`** includes `user_code`, `client_id`, and `iss` so the browser can resume the flow without re-entering the code.
+
+Unauthenticated users may be redirected once to your registered **`initiate_login_uri`** (OIDC Core — initiating login from a third party) when the app opts in. The redirect target is loaded **from the database for `client_id`**; `/oidc/device/initiate-login` does not accept an arbitrary `initiate_login_uri` query parameter (open-redirect safe).
 
 - **Opt-in:** In app settings, enable **Redirect device verification to initiate login URI** and set **Initiate login URI** to your HTTPS endpoint that accepts `iss`, `target_link_uri`, and optional `login_hint`.
-- **Your endpoint** must validate `iss` against discovery (must equal this deployment’s issuer), validate `target_link_uri` (HTTPS, same origin as your app or an allowlisted return URL), then send the user to the OP authorization endpoint or otherwise complete login and redirect to `target_link_uri` so they land back on `/oidc/device` with the same query parameters.
-- **Security:** Treat `initiate_login_uri` as a sensitive redirect; use HTTPS only, avoid open redirects on `target_link_uri`, and use CSRF protection on any form that starts login. The OP sets a short-lived cookie so a failed RP round-trip does not loop redirects indefinitely.
+- **Your endpoint** must validate `iss` against discovery (must equal this deployment’s issuer), validate `target_link_uri`, then complete login at your IdP and redirect the user to `target_link_uri` so they land back on `/oidc/device` with the same query parameters.
+- **Security:** Treat `initiate_login_uri` as a sensitive redirect; use HTTPS only (HTTP on localhost allowed in development), avoid open redirects on your handler, and use CSRF protection on any form that starts login. The OP sets a short-lived, per-client cookie so a failed RP round-trip does not loop redirects indefinitely.
+
+**Confidential backends** can complete the device grant without a browser session using the Builder API: `POST /api/v1/apps/{clientId}/device/approve` (requires `users:token` or `users:write`, third-party device login enabled, and Basic auth). See [Builder API](builder-api.md).
+
+**Implied consent (integration flow):** For confidential clients with third-party device login enabled, when the user opens the verification UI with a **prefilled** `user_code` from `verification_uri_complete`, the secondary “Authorize” confirmation step is skipped after a successful lookup (the user still authenticated at your site or the OP).
 
 ## RP-initiated logout
 

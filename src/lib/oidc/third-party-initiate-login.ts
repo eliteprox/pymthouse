@@ -1,9 +1,16 @@
-import { getIssuer, getPublicOrigin } from "@/lib/oidc/tokens";
+import { createHash } from "crypto";
+import { getPublicOrigin } from "@/lib/oidc/tokens";
 
-/** Cookie set when we send the user to the RP's `initiate_login_uri` once, to avoid a redirect loop when they return. */
-export const THIRD_PARTY_INITIATE_SKIP_COOKIE = "pmth_tp_init_skip";
+const INITIATE_SKIP_MAX_AGE_SEC = 120;
 
-const INITIATE_SKIP_MAX_AGE_SEC = 600;
+function isLocalhostHostname(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname.startsWith("192.168.") ||
+    hostname.endsWith(".local")
+  );
+}
 
 /**
  * OIDC Core — "Initiating Login from a Third Party" (initiate_login_uri).
@@ -49,6 +56,44 @@ export function buildDeviceFlowTargetLinkUri(searchParams: {
   return base.href;
 }
 
+/**
+ * Registered initiate_login_uri must use HTTPS (HTTP allowed on localhost in non-production).
+ */
+export function validateInitiateLoginUri(uri: string): void {
+  const u = new URL(uri);
+  if (u.hash) {
+    throw new Error("initiate_login_uri must not include a fragment");
+  }
+  if (u.protocol === "https:") {
+    return;
+  }
+  if (
+    process.env.NODE_ENV !== "production" &&
+    u.protocol === "http:" &&
+    isLocalhostHostname(u.hostname)
+  ) {
+    return;
+  }
+  throw new Error("initiate_login_uri must use HTTPS");
+}
+
+/**
+ * `target_link_uri` passed to the RP must return the browser to our public device page only.
+ */
+export function validateDeviceFlowTargetLinkUri(targetLinkUri: string): void {
+  const expectedOrigin = new URL(getPublicOrigin()).origin;
+  const u = new URL(targetLinkUri);
+  if (u.origin !== expectedOrigin) {
+    throw new Error("target_link_uri must use this site's origin");
+  }
+  if (u.pathname !== "/oidc/device") {
+    throw new Error("target_link_uri path must be /oidc/device");
+  }
+  if (u.hash) {
+    throw new Error("target_link_uri must not include a fragment");
+  }
+}
+
 export function buildInitiateLoginRedirectUrl(
   initiateLoginUri: string,
   args: {
@@ -57,6 +102,8 @@ export function buildInitiateLoginRedirectUrl(
     login_hint?: string | null;
   },
 ): string {
+  validateInitiateLoginUri(initiateLoginUri);
+  validateDeviceFlowTargetLinkUri(args.target_link_uri);
   const dest = new URL(initiateLoginUri);
   dest.searchParams.set("iss", args.iss);
   dest.searchParams.set("target_link_uri", args.target_link_uri);
@@ -64,6 +111,12 @@ export function buildInitiateLoginRedirectUrl(
     dest.searchParams.set("login_hint", args.login_hint.trim());
   }
   return dest.toString();
+}
+
+/** Per-client cookie so one RP opt-in does not suppress redirects for another app. */
+export function thirdPartyInitiateSkipCookieName(clientId: string): string {
+  const h = createHash("sha256").update(clientId).digest("hex").slice(0, 16);
+  return `pmth_tp_skip_${h}`;
 }
 
 export function initiateSkipCookieOptions(): {
@@ -84,5 +137,3 @@ export function initiateSkipCookieOptions(): {
     secure,
   };
 }
-
-export { getIssuer };

@@ -439,12 +439,21 @@ export default function AppSettingsScreen({
           </p>
         </div>
 
-        <label className="flex items-start gap-3 cursor-pointer">
+        <label
+          className={`flex items-start gap-3 ${canEdit && initiateLoginUri.trim() && (initiateLoginUri.startsWith("https://") || initiateLoginUri.startsWith("http://localhost")) ? "cursor-pointer" : "cursor-not-allowed opacity-80"}`}
+        >
           <input
             type="checkbox"
             checked={deviceThirdPartyInitiateLogin}
             onChange={(e) => setDeviceThirdPartyInitiateLogin(e.target.checked)}
-            disabled={!canEdit}
+            disabled={
+              !canEdit ||
+              !(
+                initiateLoginUri.trim() &&
+                (initiateLoginUri.startsWith("https://") ||
+                  initiateLoginUri.startsWith("http://localhost"))
+              )
+            }
             className="mt-1 rounded border-zinc-600 disabled:opacity-50"
           />
           <span>
@@ -452,10 +461,11 @@ export default function AppSettingsScreen({
               Redirect device verification to initiate login URI
             </span>
             <span className="block text-xs text-zinc-500 mt-1">
-              Only enable if your app implements{" "}
+              Requires a valid HTTPS initiate login URI above (localhost HTTP
+              allowed for development). Your app must implement{" "}
               <code className="text-zinc-400">initiate_login_uri</code> and
-              returns users to{" "}
-              <code className="text-zinc-400">target_link_uri</code> (HTTPS).
+              return users to{" "}
+              <code className="text-zinc-400">target_link_uri</code>.
             </span>
           </span>
         </label>

@@ -5,14 +5,45 @@ import { authOptions } from "@/lib/next-auth-options";
 import DeviceVerifyForm from "./device-verify-form";
 import { resolveHostContext } from "@/lib/oidc/host-resolution";
 import { getInitiateLoginUriForDeviceFlow } from "@/lib/oidc/clients";
+import { SqliteAdapter } from "@/lib/oidc/adapter";
+import { normalizeUserCode } from "@/lib/oidc/device";
 import {
-  THIRD_PARTY_INITIATE_SKIP_COOKIE,
   buildDeviceFlowTargetLinkUri,
   issuerMatchesExpected,
+  thirdPartyInitiateSkipCookieName,
 } from "@/lib/oidc/third-party-initiate-login";
 import { getIssuer } from "@/lib/oidc/tokens";
 
 type SearchParams = Record<string, string | string[] | undefined>;
+
+async function resolveAuthoritativeClientId(
+  userCode: string | undefined,
+  clientIdParam: string | undefined,
+): Promise<string | undefined> {
+  if (userCode) {
+    try {
+      const adapter = new SqliteAdapter("DeviceCode");
+      const normalized = normalizeUserCode(userCode);
+      const payload = await adapter.findByUserCode(normalized);
+      if (payload) {
+        const bound =
+          typeof payload.clientId === "string"
+            ? payload.clientId
+            : typeof payload.params === "object" &&
+                payload.params !== null &&
+                typeof (payload.params as Record<string, unknown>).client_id === "string"
+              ? ((payload.params as Record<string, unknown>).client_id as string)
+              : undefined;
+        if (bound) {
+          return bound;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return clientIdParam;
+}
 
 export default async function DeviceVerificationPage({
   searchParams,
@@ -32,27 +63,39 @@ export default async function DeviceVerificationPage({
     typeof params.login_hint === "string" ? params.login_hint : undefined;
 
   const expectedIssuer = getIssuer();
+  const authoritativeClientId = await resolveAuthoritativeClientId(
+    userCode,
+    clientIdParam,
+  );
 
   if (!session?.user) {
-    const skipThirdParty = (await cookies()).get(THIRD_PARTY_INITIATE_SKIP_COOKIE)?.value === "1";
+    const skipCookieName = authoritativeClientId
+      ? thirdPartyInitiateSkipCookieName(authoritativeClientId)
+      : null;
+    const skipThirdParty =
+      skipCookieName !== null
+        ? (await cookies()).get(skipCookieName)?.value === "1"
+        : true;
 
     if (
-      clientIdParam &&
+      authoritativeClientId &&
       issParam &&
       issuerMatchesExpected(issParam, expectedIssuer) &&
       !skipThirdParty
     ) {
-      const initiateLoginUri = await getInitiateLoginUriForDeviceFlow(clientIdParam);
+      const initiateLoginUri = await getInitiateLoginUriForDeviceFlow(
+        authoritativeClientId,
+      );
       if (initiateLoginUri) {
         const targetLinkUri = buildDeviceFlowTargetLinkUri({
           user_code: userCode,
-          client_id: clientIdParam,
+          client_id: authoritativeClientId,
           iss: issParam,
           login_hint: loginHintParam,
         });
         redirect(
           `/oidc/device/initiate-login?${new URLSearchParams({
-            initiate_login_uri: initiateLoginUri,
+            client_id: authoritativeClientId,
             target_link_uri: targetLinkUri,
             ...(loginHintParam ? { login_hint: loginHintParam } : {}),
           }).toString()}`,
@@ -62,7 +105,7 @@ export default async function DeviceVerificationPage({
 
     const qs = new URLSearchParams();
     if (userCode) qs.set("user_code", userCode);
-    if (clientIdParam) qs.set("client_id", clientIdParam);
+    if (authoritativeClientId) qs.set("client_id", authoritativeClientId);
     if (issParam) qs.set("iss", issParam);
     if (loginHintParam) qs.set("login_hint", loginHintParam);
     const devicePath = `/oidc/device${qs.toString() ? `?${qs.toString()}` : ""}`;
