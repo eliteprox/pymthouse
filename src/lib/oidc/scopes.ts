@@ -38,7 +38,8 @@ export const OIDC_SCOPES: ScopeDefinition[] = [
   {
     value: "users:token",
     label: "Issue User Tokens",
-    description: "Issue app-user access tokens for provider-managed backends",
+    description:
+      "Issue app-user access tokens for provider-managed backends. Enables per-user usage attribution.",
   },
   {
     value: "admin",

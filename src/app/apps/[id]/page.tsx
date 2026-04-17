@@ -25,7 +25,6 @@ export default function AppDetailPage() {
     domains: { id: string; domain: string }[];
     postLogoutRedirectUris: string[];
     initiateLoginUri: string | null;
-    billingPattern: "app_level" | "per_user";
     canEdit: boolean;
     canSubmitForReview: boolean;
   } | null>(null);
@@ -70,8 +69,6 @@ export default function AppDetailPage() {
           ),
           postLogoutRedirectUris: data.oidcClient?.postLogoutRedirectUris || [],
           initiateLoginUri: data.oidcClient?.initiateLoginUri ?? null,
-          billingPattern:
-            data.billingPattern === "per_user" ? "per_user" : "app_level",
           canEdit: data.canEdit === true,
           canSubmitForReview: data.canSubmitForReview === true,
         });
@@ -171,7 +168,6 @@ export default function AppDetailPage() {
         initialDomains={appData.domains}
         initialPostLogoutRedirectUris={appData.postLogoutRedirectUris}
         initialInitiateLoginUri={appData.initiateLoginUri}
-        initialBillingPattern={appData.billingPattern}
         canEdit={appData.canEdit}
         canSubmitForReview={appData.canSubmitForReview}
         onReviewSubmitted={handleReviewSubmitted}

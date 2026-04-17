@@ -19,8 +19,6 @@ interface Props {
   /** Post-logout URIs and initiate-login URI (OIDC client metadata). */
   initialPostLogoutRedirectUris?: string[];
   initialInitiateLoginUri?: string | null;
-  /** Billing pattern: `app_level` (default) or `per_user` (required for programmatic user tokens). */
-  initialBillingPattern?: "app_level" | "per_user";
   /** When false, settings are view-only (non-admin team members). */
   canEdit?: boolean;
   /** Only the app owner may submit for review (matches submit API). */
@@ -51,7 +49,6 @@ export default function AppSettingsScreen({
   initialDomains,
   initialPostLogoutRedirectUris = [],
   initialInitiateLoginUri = null,
-  initialBillingPattern = "app_level",
   canEdit = true,
   canSubmitForReview = false,
   onReviewSubmitted,
@@ -70,9 +67,6 @@ export default function AppSettingsScreen({
   );
   const [initiateLoginUri, setInitiateLoginUri] = useState(
     initialInitiateLoginUri ?? "",
-  );
-  const [billingPattern, setBillingPattern] = useState<"app_level" | "per_user">(
-    initialBillingPattern,
   );
   const [newPostLogoutUri, setNewPostLogoutUri] = useState("");
   const [saving, setSaving] = useState(false);
@@ -95,6 +89,11 @@ export default function AppSettingsScreen({
     setError(null);
     setMessage(null);
     try {
+      const scopeTokens = formData.allowedScopes.split(/\s+/).filter(Boolean);
+      const billingPattern = scopeTokens.includes("users:token")
+        ? "per_user"
+        : "app_level";
+
       const res = await fetch(`/api/v1/apps/${appId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -134,7 +133,7 @@ export default function AppSettingsScreen({
     } finally {
       setSaving(false);
     }
-  }, [appId, formData, postLogoutRedirectUris, initiateLoginUri, billingPattern, canEdit]);
+  }, [appId, formData, postLogoutRedirectUris, initiateLoginUri, canEdit]);
 
   const submitForReview = useCallback(async () => {
     if (!canSubmitForReview) return;
@@ -353,69 +352,6 @@ export default function AppSettingsScreen({
           }
           readOnly={!canEdit}
         />
-      </section>
-
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold text-zinc-100">Billing pattern</h2>
-          <p className="text-sm text-zinc-500 mt-1">
-            Controls how usage is attributed and billed. Switch to{" "}
-            <strong className="text-zinc-300">Per-user</strong> if your app needs
-            to mint programmatic user tokens (e.g. short-lived{" "}
-            <code className="text-xs text-zinc-400">sign:job</code> JWTs) on
-            behalf of signed-in end users. Takes effect on save.
-          </p>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label
-            className={`flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors ${
-              billingPattern === "app_level"
-                ? "border-emerald-500/40 bg-emerald-500/5"
-                : "border-zinc-800 bg-zinc-800/30 hover:border-zinc-700"
-            } ${!canEdit ? "cursor-not-allowed opacity-60" : ""}`}
-          >
-            <input
-              type="radio"
-              name="billing-pattern"
-              value="app_level"
-              checked={billingPattern === "app_level"}
-              onChange={() => setBillingPattern("app_level")}
-              disabled={!canEdit}
-              className="mt-0.5 accent-emerald-500"
-            />
-            <div>
-              <div className="text-sm font-medium text-zinc-100">App-level</div>
-              <p className="text-xs text-zinc-500 mt-1">
-                Developer pays for all usage. End users do not need individual
-                billing. Default.
-              </p>
-            </div>
-          </label>
-          <label
-            className={`flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors ${
-              billingPattern === "per_user"
-                ? "border-emerald-500/40 bg-emerald-500/5"
-                : "border-zinc-800 bg-zinc-800/30 hover:border-zinc-700"
-            } ${!canEdit ? "cursor-not-allowed opacity-60" : ""}`}
-          >
-            <input
-              type="radio"
-              name="billing-pattern"
-              value="per_user"
-              checked={billingPattern === "per_user"}
-              onChange={() => setBillingPattern("per_user")}
-              disabled={!canEdit}
-              className="mt-0.5 accent-emerald-500"
-            />
-            <div>
-              <div className="text-sm font-medium text-zinc-100">Per-user</div>
-              <p className="text-xs text-zinc-500 mt-1">
-                Usage is attributed to each signed-in end user. Required to mint
-                programmatic user tokens via the Builder API.
-              </p>
-            </div>
-          </label>
-        </div>
       </section>
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 space-y-6">

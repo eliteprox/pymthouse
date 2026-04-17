@@ -98,6 +98,11 @@ export async function POST(request: NextRequest) {
   const appId = clientId;
   const now = new Date().toISOString();
 
+  const billingPattern =
+    body.billingPattern === "per_user" || body.billingPattern === "app_level"
+      ? body.billingPattern
+      : "app_level";
+
   await db.insert(developerApps).values({
     id: appId,
     ownerId: userId,
@@ -105,6 +110,7 @@ export async function POST(request: NextRequest) {
     name: name.trim(),
     developerName: body.developerName || null,
     websiteUrl: body.websiteUrl || null,
+    billingPattern,
     status: "draft", // Apps start as draft and require admin approval
     createdAt: now,
     updatedAt: now,

@@ -82,11 +82,17 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
     setSaving(true);
     setError(null);
     try {
+      const scopeTokens = formData.allowedScopes.split(/\s+/).filter(Boolean);
+      const billingPattern = scopeTokens.includes("users:token")
+        ? "per_user"
+        : "app_level";
+      const payload = { ...formData, billingPattern };
+
       if (!appState.id) {
         const res = await fetch("/api/v1/apps", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           const text = await res.text();
@@ -104,7 +110,7 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
         const res = await fetch(`/api/v1/apps/${appState.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           const text = await res.text();
