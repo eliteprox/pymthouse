@@ -73,6 +73,24 @@ export async function PATCH(request: NextRequest) {
   const current = currentRows[0];
 
   if (body.name !== undefined) updates.name = body.name;
+  if (body.signerUrl !== undefined) {
+    const raw = typeof body.signerUrl === "string" ? body.signerUrl.trim() : "";
+    if (raw === "") {
+      updates.signerUrl = null;
+    } else if (!isValidUrl(raw)) {
+      return NextResponse.json(
+        { error: "signerUrl must be a valid http(s) URL or empty" },
+        { status: 400 }
+      );
+    } else {
+      updates.signerUrl = raw;
+    }
+  }
+  if (body.signerApiKey !== undefined) {
+    const trimmed =
+      typeof body.signerApiKey === "string" ? body.signerApiKey.trim() : "";
+    updates.signerApiKey = trimmed === "" ? null : trimmed;
+  }
   if (body.signerPort !== undefined) {
     const port = Number(body.signerPort);
     if (!Number.isInteger(port) || port < 1024 || port > 65535) {
