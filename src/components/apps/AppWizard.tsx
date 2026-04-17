@@ -237,9 +237,10 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
             domains={domains}
             onDomainsChange={setDomains}
             hasSecret={appState.hasSecret}
-            onSecretGenerated={() =>
-              setAppState((s) => ({ ...s, hasSecret: true }))
-            }
+            onSecretGenerated={() => {
+              setAppState((s) => ({ ...s, hasSecret: true }));
+              updateFormData({ tokenEndpointAuthMethod: "client_secret_post" });
+            }}
           />
         )}
       </div>

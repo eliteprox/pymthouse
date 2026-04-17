@@ -63,12 +63,20 @@ export async function getSignerRoutingContext(authAppId?: string | null) {
 
 /**
  * Build the internal URL for the signer container.
+ *
+ * Always returned without a trailing slash so callers can safely concatenate
+ * a leading-slash path (`${base}${path}`). A stored `http://host:8081/` would
+ * otherwise produce `//sign-orchestrator-info`, which Go's ServeMux 301s to
+ * the canonical path — undici follows the 301 as GET, and go-livepeer's
+ * signer replies with `Method Not Allowed` on GET, surfacing as a 502 with
+ * a "Unexpected token 'M'" JSON parse error in the proxy layer.
  */
 function getSignerUrl(signer?: typeof signerConfig.$inferSelect | null): string {
-  if (signer?.signerUrl) return signer.signerUrl;
-  if (process.env.SIGNER_INTERNAL_URL) return process.env.SIGNER_INTERNAL_URL;
-  const port = signer?.signerPort ?? 8081;
-  return `http://localhost:${port}`;
+  const base =
+    signer?.signerUrl
+    || process.env.SIGNER_INTERNAL_URL
+    || `http://localhost:${signer?.signerPort ?? 8081}`;
+  return base.replace(/\/+$/, "");
 }
 
 /**
