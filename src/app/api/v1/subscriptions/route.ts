@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
 import { plans, subscriptions } from "@/db/schema";
+import { calendarMonthBoundsUtc } from "@/lib/billing-utils";
 
 async function getSessionUserId() {
   const session = await getServerSession(authOptions);
@@ -61,13 +62,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(existing);
   }
 
+  const cal = calendarMonthBoundsUtc(new Date());
+  const nowIso = cal.start;
+  const periodEndIso = cal.end;
   const subscription = {
     id: uuidv4(),
     userId,
     clientId: plan.clientId,
     planId,
     status: "active",
-    createdAt: new Date().toISOString(),
+    currentPeriodStart: nowIso,
+    currentPeriodEnd: periodEndIso,
+    createdAt: nowIso,
     cancelledAt: null,
   };
 

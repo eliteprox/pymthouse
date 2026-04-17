@@ -11,6 +11,8 @@ interface PlanRow {
   priceAmount: string;
   priceCurrency: string;
   status: string;
+  includedUnits: string | null;
+  overageRateWei: string | null;
   capabilities: {
     id: string;
     pipeline: string;
@@ -30,11 +32,17 @@ export default function AppPlansPage() {
   const [saving, setSaving] = useState(false);
   const [canEdit, setCanEdit] = useState(true);
   const [planError, setPlanError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{
+    includedUnits?: string;
+    overageRateWei?: string;
+  }>({});
   const [form, setForm] = useState({
     name: "",
     type: "free",
     priceAmount: "0",
     priceCurrency: "USD",
+    includedUnits: "",
+    overageRateWei: "",
     modelId: "",
     pipeline: "video",
     slaTargetP95Ms: "",
@@ -58,8 +66,32 @@ export default function AppPlansPage() {
     load();
   }, [id]);
 
+  const isNonNegativeIntegerString = (s: string) => /^\d+$/.test(s.trim());
+
+  const validateBillingFields = (): boolean => {
+    const next: { includedUnits?: string; overageRateWei?: string } = {};
+    if (form.type === "subscription") {
+      if (!form.includedUnits.trim() || !isNonNegativeIntegerString(form.includedUnits)) {
+        next.includedUnits = "Required: non-negative integer (digits only)";
+      }
+      if (!form.overageRateWei.trim() || !isNonNegativeIntegerString(form.overageRateWei)) {
+        next.overageRateWei = "Required: non-negative integer (digits only)";
+      }
+    } else if (form.type === "usage") {
+      if (form.includedUnits.trim() && !isNonNegativeIntegerString(form.includedUnits)) {
+        next.includedUnits = "Must be a non-negative integer (digits only)";
+      }
+      if (form.overageRateWei.trim() && !isNonNegativeIntegerString(form.overageRateWei)) {
+        next.overageRateWei = "Must be a non-negative integer (digits only)";
+      }
+    }
+    setFieldErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
   const createPlan = async () => {
     if (!canEdit || !form.name.trim()) return;
+    if (!validateBillingFields()) return;
     setSaving(true);
     setPlanError(null);
     try {
@@ -72,6 +104,15 @@ export default function AppPlansPage() {
           priceAmount: form.priceAmount,
           priceCurrency: form.priceCurrency,
           status: "active",
+          includedUnits:
+            form.type === "subscription" && form.includedUnits.trim()
+              ? form.includedUnits.trim()
+              : null,
+          overageRateWei:
+            (form.type === "subscription" || form.type === "usage") &&
+            form.overageRateWei.trim()
+              ? form.overageRateWei.trim()
+              : null,
           capabilities: form.modelId
             ? [
                 {
@@ -99,10 +140,13 @@ export default function AppPlansPage() {
         type: "free",
         priceAmount: "0",
         priceCurrency: "USD",
+        includedUnits: "",
+        overageRateWei: "",
         modelId: "",
         pipeline: "video",
         slaTargetP95Ms: "",
       });
+      setFieldErrors({});
       setPlanError(null);
       load();
     } catch (err) {
@@ -184,7 +228,7 @@ export default function AppPlansPage() {
             >
               <option value="free">Free</option>
               <option value="subscription">Subscription</option>
-              <option value="usage">Usage Based</option>
+              <option value="usage">Pay-Per-Use</option>
             </select>
             <input
               value={form.priceAmount}
@@ -194,6 +238,56 @@ export default function AppPlansPage() {
               className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50"
             />
           </div>
+          {form.type === "subscription" && (
+            <div className="space-y-1">
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={form.includedUnits}
+                onChange={(event) => {
+                  const v = event.target.value.replace(/\D/g, "");
+                  setForm({ ...form, includedUnits: v });
+                  if (fieldErrors.includedUnits) {
+                    setFieldErrors((e) => ({ ...e, includedUnits: undefined }));
+                  }
+                }}
+                placeholder="Included units (pixels) per billing cycle"
+                disabled={!canEdit}
+                className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              {fieldErrors.includedUnits && (
+                <p className="text-xs text-red-400">{fieldErrors.includedUnits}</p>
+              )}
+            </div>
+          )}
+          {(form.type === "subscription" || form.type === "usage") && (
+            <div className="space-y-1">
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={form.overageRateWei}
+                onChange={(event) => {
+                  const v = event.target.value.replace(/\D/g, "");
+                  setForm({ ...form, overageRateWei: v });
+                  if (fieldErrors.overageRateWei) {
+                    setFieldErrors((e) => ({ ...e, overageRateWei: undefined }));
+                  }
+                }}
+                placeholder={
+                  form.type === "usage"
+                    ? "Rate per unit (wei)"
+                    : "Overage rate (wei per unit)"
+                }
+                disabled={!canEdit}
+                className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              {fieldErrors.overageRateWei && (
+                <p className="text-xs text-red-400">{fieldErrors.overageRateWei}</p>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <input
               value={form.modelId}
@@ -242,6 +336,17 @@ export default function AppPlansPage() {
                       <p className="text-xs text-zinc-500 mt-1">
                         {plan.type} · {plan.priceAmount} {plan.priceCurrency}
                       </p>
+                      {(plan.includedUnits || plan.overageRateWei) && (
+                        <p className="text-xs text-zinc-500 mt-1">
+                          {plan.includedUnits
+                            ? `Included ${plan.includedUnits} units`
+                            : null}
+                          {plan.includedUnits && plan.overageRateWei ? " · " : null}
+                          {plan.overageRateWei
+                            ? `Rate ${plan.overageRateWei} wei/unit`
+                            : null}
+                        </p>
+                      )}
                       <div className="mt-3 space-y-1">
                         {plan.capabilities.map((capability) => (
                           <p key={capability.id} className="text-xs text-zinc-400">
