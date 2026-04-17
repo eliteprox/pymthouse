@@ -1,5 +1,6 @@
 import {
   pgTable,
+  pgView,
   text,
   integer,
   real,
@@ -113,22 +114,39 @@ export const streamSessions = pgTable("stream_sessions", {
   endedAt: text("ended_at"),
 });
 
-export const transactions = pgTable("transactions", {
-  id: text("id").primaryKey(),
-  endUserId: text("end_user_id").references(() => endUsers.id),
-  appId: text("app_id"),
-  clientId: text("client_id").references(() => developerApps.id),
-  streamSessionId: text("stream_session_id").references(() => streamSessions.id),
-  type: text("type").notNull(), // prepay_credit | usage | payout | refund
-  amountWei: text("amount_wei").notNull(),
-  platformCutPercent: real("platform_cut_percent"),
-  platformCutWei: text("platform_cut_wei"),
-  txHash: text("tx_hash"),
-  status: text("status").notNull().default("pending"), // pending | confirmed | failed
-  createdAt: text("created_at")
-    .notNull()
-    .$defaultFn(() => new Date().toISOString()),
-});
+export const transactions = pgTable(
+  "transactions",
+  {
+    id: text("id").primaryKey(),
+    endUserId: text("end_user_id").references(() => endUsers.id),
+    appId: text("app_id"),
+    clientId: text("client_id").references(() => developerApps.id),
+    streamSessionId: text("stream_session_id").references(() => streamSessions.id),
+    type: text("type").notNull(), // prepay_credit | usage | payout | refund
+    amountWei: text("amount_wei").notNull(),
+    platformCutPercent: real("platform_cut_percent"),
+    platformCutWei: text("platform_cut_wei"),
+    txHash: text("tx_hash"),
+    status: text("status").notNull().default("pending"), // pending | confirmed | failed
+    createdAt: text("created_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [
+    index("transactions_usage_confirmed_stream_session_created_at_idx")
+      .on(t.streamSessionId, t.createdAt)
+      .where(
+        sql`${t.type} = 'usage' AND ${t.status} = 'confirmed' AND ${t.streamSessionId} IS NOT NULL`,
+      ),
+  ],
+);
+
+/** Matches `drizzle/0005_active_streams_view.sql` — stream sessions with usage tx in the last 5 minutes. */
+export const activeStreamIdsByRecentPayment = pgView("active_stream_ids_by_recent_payment", {
+  id: text("id"),
+}).as(
+  sql`SELECT DISTINCT "stream_session_id" AS "id" FROM "transactions" WHERE "type" = 'usage' AND "status" = 'confirmed' AND "stream_session_id" IS NOT NULL AND "created_at"::timestamptz > NOW() - INTERVAL '5 minutes'`,
+);
 
 // ============================================
 // OIDC Provider Tables
