@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { TestContext } from "node:test";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "@/db/index";
 import { appUsers, developerApps, signerConfig, users } from "@/db/schema";
@@ -119,26 +119,60 @@ export async function createAppUser(opts: {
 }
 
 /**
+ * Sentinel URL the mock signer fetcher expects. Stored briefly on the shared
+ * `signer_config` row for the duration of a test run and reverted on teardown
+ * so we never leak it into a real deployment's routing.
+ */
+export const TEST_SIGNER_URL = "http://test-signer.invalid";
+
+function assertNonProdDatabase(): void {
+  const url = process.env.DATABASE_URL ?? "";
+  if (process.env.ALLOW_TEST_FIXTURES_ON_ANY_DB === "1") return;
+  const looksLikeTestDb =
+    /(_test|-test|\btest\b)/i.test(url) ||
+    process.env.NODE_ENV === "test" ||
+    process.env.CI === "true";
+  if (!looksLikeTestDb) {
+    throw new Error(
+      "ensureRunningSigner refused to run: DATABASE_URL does not look like a test DB " +
+        "(no 'test' marker, NODE_ENV!=='test', CI!=='true'). Refusing to mutate the " +
+        "shared signer_config row. Set ALLOW_TEST_FIXTURES_ON_ANY_DB=1 to override.",
+    );
+  }
+}
+
+/**
  * Ensure the default signer row exists and is marked running so proxy routes
- * forward requests. Returns a restore function that resets any captured state.
+ * forward requests to the mocked fetcher.
+ *
+ * Teardown is intentionally a no-op: `node --test` runs files in parallel
+ * **processes** sharing one Postgres row. A refcount/snapshot restore in one
+ * worker would set `status` back to `stopped` while another worker's test is
+ * still mid-run (503: Signer is not running). See usage-integration vs
+ * proxy-routes tests.
+ *
+ * If a run crashes, use {@link clearTestSignerSentinel} or re-seed the row.
  */
 export async function ensureRunningSigner(): Promise<() => Promise<void>> {
-  const defaultSignerRows = await db
+  assertNonProdDatabase();
+
+  const rows = await db
     .select()
     .from(signerConfig)
     .where(eq(signerConfig.id, "default"))
     .limit(1);
-  const defaultSigner = defaultSignerRows[0];
-  if (defaultSigner) {
+  const prior = rows[0];
+
+  if (prior) {
     await db
       .update(signerConfig)
-      .set({ status: "running", signerUrl: "http://test-signer.invalid" })
+      .set({ status: "running", signerUrl: TEST_SIGNER_URL })
       .where(eq(signerConfig.id, "default"));
   } else {
     await db.insert(signerConfig).values({
       id: "default",
       name: "pymthouse test signer",
-      signerUrl: "http://test-signer.invalid",
+      signerUrl: TEST_SIGNER_URL,
       status: "running",
       network: "arbitrum-one-mainnet",
       ethRpcUrl: "https://arb1.arbitrum.io/rpc",
@@ -148,9 +182,24 @@ export async function ensureRunningSigner(): Promise<() => Promise<void>> {
     });
   }
 
-  // Tests run in parallel; restoring signer status in each test can flip a
-  // shared row back to "stopped" while another test still needs it.
   return async () => {};
+}
+
+/**
+ * Emergency cleanup: if a previous test run crashed before teardown, wipe any
+ * `test-signer.invalid` URL it left in the shared signer_config row. Safe to
+ * call from CI bootstrap / a local `pnpm db:heal` style script.
+ */
+export async function clearTestSignerSentinel(): Promise<void> {
+  await db
+    .update(signerConfig)
+    .set({ signerUrl: null })
+    .where(
+      and(
+        eq(signerConfig.id, "default"),
+        eq(signerConfig.signerUrl, TEST_SIGNER_URL),
+      ),
+    );
 }
 
 /**
