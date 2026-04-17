@@ -65,7 +65,11 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     valid: true,
     client_id: apiKey.clientId,
-    plan,
+    plan: {
+      ...plan,
+      includedUnits: plan.includedUnits != null ? plan.includedUnits.toString() : null,
+      overageRateWei: plan.overageRateWei != null ? plan.overageRateWei.toString() : null,
+    },
     allowedModels: capabilities.map((bundle) => bundle.modelId).filter(Boolean),
   });
 }

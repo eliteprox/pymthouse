@@ -145,10 +145,10 @@ export default function AppDetailPage() {
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => router.push(`/apps/${id}/usage`)}
+              onClick={() => router.push("/billing")}
               className="px-4 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 transition-colors"
             >
-              Usage
+              Billing &amp; usage
             </button>
             <button
               type="button"

@@ -9,6 +9,120 @@ import {
   appEditForbiddenResponse,
 } from "@/lib/provider-apps";
 
+function isNonNegativeIntegerString(s: string): boolean {
+  return /^\d+$/.test(s);
+}
+
+/** Present empty → null; present non-empty must match non-negative integer digits. */
+function parseOptionalNonNegativeIntString(
+  raw: unknown,
+  fieldName: string,
+): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (raw === undefined || raw === null) {
+    return { ok: true, value: null };
+  }
+  const s = String(raw).trim();
+  if (s === "") {
+    return { ok: true, value: null };
+  }
+  if (!isNonNegativeIntegerString(s)) {
+    return {
+      ok: false,
+      error: `${fieldName} must be a non-negative integer string`,
+    };
+  }
+  return { ok: true, value: s };
+}
+
+function resolveBillingFieldsForPost(
+  planType: string,
+  body: Record<string, unknown>,
+):
+  | { ok: true; includedUnits: string | null; overageRateWei: string | null }
+  | { ok: false; error: string } {
+  if (planType === "free") {
+    return { ok: true, includedUnits: null, overageRateWei: null };
+  }
+  if (planType === "subscription") {
+    const inc = parseOptionalNonNegativeIntString(body.includedUnits, "includedUnits");
+    const ovr = parseOptionalNonNegativeIntString(body.overageRateWei, "overageRateWei");
+    if (!inc.ok) return inc;
+    if (!ovr.ok) return ovr;
+    if (inc.value === null || ovr.value === null) {
+      return {
+        ok: false,
+        error: "includedUnits and overageRateWei are required for subscription plans",
+      };
+    }
+    return { ok: true, includedUnits: inc.value, overageRateWei: ovr.value };
+  }
+  if (planType === "usage") {
+    const inc = parseOptionalNonNegativeIntString(body.includedUnits, "includedUnits");
+    const ovr = parseOptionalNonNegativeIntString(body.overageRateWei, "overageRateWei");
+    if (!inc.ok) return inc;
+    if (!ovr.ok) return ovr;
+    return { ok: true, includedUnits: inc.value, overageRateWei: ovr.value };
+  }
+  return { ok: true, includedUnits: null, overageRateWei: null };
+}
+
+function mergeBillingFieldForPut(
+  rawBody: unknown,
+  existing: string | null,
+  fieldName: string,
+): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (rawBody === undefined) {
+    if (existing === null || existing === undefined) {
+      return { ok: true, value: null };
+    }
+    const t = String(existing).trim();
+    if (t === "") {
+      return { ok: true, value: null };
+    }
+    if (!isNonNegativeIntegerString(t)) {
+      return {
+        ok: false,
+        error: `${fieldName} must be a non-negative integer string`,
+      };
+    }
+    return { ok: true, value: t };
+  }
+  return parseOptionalNonNegativeIntString(rawBody, fieldName);
+}
+
+function resolveBillingFieldsForPut(
+  effectiveType: string,
+  body: Record<string, unknown>,
+  existing: { includedUnits: string | null; overageRateWei: string | null },
+):
+  | { ok: true; includedUnits: string | null; overageRateWei: string | null }
+  | { ok: false; error: string } {
+  if (effectiveType === "free") {
+    return { ok: true, includedUnits: null, overageRateWei: null };
+  }
+  if (effectiveType === "subscription") {
+    const inc = mergeBillingFieldForPut(body.includedUnits, existing.includedUnits, "includedUnits");
+    const ovr = mergeBillingFieldForPut(body.overageRateWei, existing.overageRateWei, "overageRateWei");
+    if (!inc.ok) return inc;
+    if (!ovr.ok) return ovr;
+    if (inc.value === null || ovr.value === null) {
+      return {
+        ok: false,
+        error: "includedUnits and overageRateWei are required for subscription plans",
+      };
+    }
+    return { ok: true, includedUnits: inc.value, overageRateWei: ovr.value };
+  }
+  if (effectiveType === "usage") {
+    const inc = mergeBillingFieldForPut(body.includedUnits, existing.includedUnits, "includedUnits");
+    const ovr = mergeBillingFieldForPut(body.overageRateWei, existing.overageRateWei, "overageRateWei");
+    if (!inc.ok) return inc;
+    if (!ovr.ok) return ovr;
+    return { ok: true, includedUnits: inc.value, overageRateWei: ovr.value };
+  }
+  return { ok: true, includedUnits: null, overageRateWei: null };
+}
+
 function parseCapabilities(input: unknown): {
   capabilities: Array<{
     pipeline: string;
@@ -94,6 +208,14 @@ export async function GET(
   return NextResponse.json({
     plans: rows.map((plan) => ({
       ...plan,
+      includedUnits:
+        plan.includedUnits !== null && plan.includedUnits !== undefined
+          ? plan.includedUnits.toString()
+          : null,
+      overageRateWei:
+        plan.overageRateWei !== null && plan.overageRateWei !== undefined
+          ? plan.overageRateWei.toString()
+          : null,
       clientId,
       capabilities: bundles
         .filter((bundle) => bundle.planId === plan.id)
@@ -144,6 +266,12 @@ export async function POST(
     return NextResponse.json({ error: parsedCapabilities.error }, { status: 400 });
   }
 
+  const planType = String(body.type || "free");
+  const billing = resolveBillingFieldsForPost(planType, body);
+  if (!billing.ok) {
+    return NextResponse.json({ error: billing.error }, { status: 400 });
+  }
+
   const planId = uuidv4();
   const now = new Date().toISOString();
   const appId = auth.app.id;
@@ -152,10 +280,14 @@ export async function POST(
       id: planId,
       clientId: appId,
       name,
-      type: String(body.type || "free"),
+      type: planType,
       priceAmount: String(body.priceAmount || "0"),
       priceCurrency: String(body.priceCurrency || "USD"),
       status: String(body.status || "active"),
+      includedUnits:
+        billing.includedUnits !== null ? BigInt(billing.includedUnits) : null,
+      overageRateWei:
+        billing.overageRateWei !== null ? BigInt(billing.overageRateWei) : null,
       createdAt: now,
       updatedAt: now,
     });
@@ -232,24 +364,39 @@ export async function PUT(
       .limit(1);
     const existing = existingRows[0];
     if (!existing) {
-      return false;
+      return { tag: "notfound" as const };
+    }
+
+    const nextType = body.type !== undefined ? String(body.type) : existing.type;
+    const billing = resolveBillingFieldsForPut(nextType, body, {
+      includedUnits:
+        existing.includedUnits != null ? String(existing.includedUnits) : null,
+      overageRateWei:
+        existing.overageRateWei != null ? String(existing.overageRateWei) : null,
+    });
+    if (!billing.ok) {
+      return { tag: "validation" as const, error: billing.error };
     }
 
     const updated = await tx
       .update(plans)
       .set({
         name: body.name !== undefined ? String(body.name) : existing.name,
-        type: body.type !== undefined ? String(body.type) : existing.type,
+        type: nextType,
         priceAmount: body.priceAmount !== undefined ? String(body.priceAmount) : existing.priceAmount,
         priceCurrency: body.priceCurrency !== undefined ? String(body.priceCurrency) : existing.priceCurrency,
         status: body.status !== undefined ? String(body.status) : existing.status,
+        includedUnits:
+          billing.includedUnits !== null ? BigInt(billing.includedUnits) : null,
+        overageRateWei:
+          billing.overageRateWei !== null ? BigInt(billing.overageRateWei) : null,
         updatedAt: now,
       })
       .where(and(eq(plans.id, planId), eq(plans.clientId, appId)))
       .returning({ id: plans.id });
 
     if (updated.length === 0) {
-      return false;
+      return { tag: "notfound" as const };
     }
 
     if (parsedCapabilities) {
@@ -276,11 +423,14 @@ export async function PUT(
       }
     }
 
-    return true;
+    return { tag: "ok" as const };
   });
 
-  if (!txnResult) {
+  if (txnResult.tag === "notfound") {
     return NextResponse.json({ error: "Plan not found" }, { status: 404 });
+  }
+  if (txnResult.tag === "validation") {
+    return NextResponse.json({ error: txnResult.error }, { status: 400 });
   }
 
   return NextResponse.json({ success: true });
