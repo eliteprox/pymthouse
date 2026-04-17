@@ -129,7 +129,7 @@ function assertNonProdDatabase(): void {
   const url = process.env.DATABASE_URL ?? "";
   if (process.env.ALLOW_TEST_FIXTURES_ON_ANY_DB === "1") return;
   const looksLikeTestDb =
-    /\btest\b/i.test(url) ||
+    /(_test|-test|\btest\b)/i.test(url) ||
     process.env.NODE_ENV === "test" ||
     process.env.CI === "true";
   if (!looksLikeTestDb) {
