@@ -448,8 +448,7 @@ export default function TestingStep({
               </button>
             </div>
             <p className="text-xs text-amber-400/80">
-              Store this secret securely. It will not be shown again. Save the app using
-              the button at the bottom of the page before using this new secret.
+              Store this secret securely. It will not be shown again.
             </p>
           </div>
         ) : (
