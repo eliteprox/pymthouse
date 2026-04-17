@@ -82,11 +82,13 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
     setSaving(true);
     setError(null);
     try {
+      const payload = { ...formData };
+
       if (!appState.id) {
         const res = await fetch("/api/v1/apps", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           const text = await res.text();
@@ -104,7 +106,7 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
         const res = await fetch(`/api/v1/apps/${appState.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           const text = await res.text();

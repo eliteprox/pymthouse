@@ -5,6 +5,8 @@ import { appUsers, usageRecords } from "@/db/schema";
 import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { getAuthorizedProviderApp, getProviderApp } from "@/lib/provider-apps";
 
+type UsageUserType = "system_managed" | "oidc_authorized" | "unknown";
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -99,12 +101,24 @@ export async function GET(
         : [];
     const appUserMap = new Map(appUserRows.map((user) => [user.id, user]));
 
-    response.byUser = [...byUserMap.entries()].map(([endUserId, data]) => ({
-      endUserId,
-      externalUserId: appUserMap.get(endUserId)?.externalUserId || null,
-      feeWei: data.feeWei.toString(),
-      requestCount: data.count,
-    }));
+    response.byUser = [...byUserMap.entries()].map(([endUserId, data]) => {
+      const externalUserId = appUserMap.get(endUserId)?.externalUserId || null;
+      let userType: UsageUserType = "unknown";
+      if (externalUserId) {
+        userType = "system_managed";
+      } else if (endUserId !== "unknown") {
+        userType = "oidc_authorized";
+      }
+
+      return {
+        endUserId,
+        externalUserId,
+        userType,
+        identifier: endUserId,
+        feeWei: data.feeWei.toString(),
+        requestCount: data.count,
+      };
+    });
   }
 
   return NextResponse.json(response);

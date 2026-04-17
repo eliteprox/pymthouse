@@ -96,7 +96,7 @@ export default function AppSettingsScreen({
       const res = await fetch(`/api/v1/apps/${appId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData }),
       });
       if (!res.ok) {
         const text = await res.text();

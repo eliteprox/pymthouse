@@ -274,6 +274,10 @@ export async function cleanupTestApp(
   await db.execute(sql`DELETE FROM app_users WHERE client_id = ${appId}`);
   await db.execute(sql`DELETE FROM provider_admins WHERE client_id = ${appId}`);
 
+  // Transactions reference stream_sessions (stream_session_id FK). Remove those
+  // rows before deleting stream_sessions.
+  await db.execute(sql`DELETE FROM transactions WHERE client_id = ${appId}`);
+  await db.execute(sql`DELETE FROM transactions WHERE app_id = ${appId}`);
   if (endUserIds.length > 0) {
     const arr = sql.raw(arrayLiteral(endUserIds));
     await db.execute(sql`DELETE FROM transactions WHERE end_user_id = ANY(${arr})`);
@@ -281,8 +285,6 @@ export async function cleanupTestApp(
   }
 
   await db.execute(sql`DELETE FROM stream_sessions WHERE app_id = ${appId}`);
-  await db.execute(sql`DELETE FROM transactions WHERE client_id = ${appId}`);
-  await db.execute(sql`DELETE FROM transactions WHERE app_id = ${appId}`);
   await db.execute(sql`DELETE FROM end_users WHERE app_id = ${appId}`);
 
   await db.execute(sql`DELETE FROM developer_apps WHERE id = ${appId}`);

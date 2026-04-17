@@ -12,6 +12,7 @@ import {
   appEditForbiddenResponse,
 } from "@/lib/provider-apps";
 import { deleteDeveloperAppAndRelatedData } from "@/lib/delete-developer-app";
+import { billingPatternFromAllowedScopesString } from "@/lib/allowed-scopes";
 
 export async function GET(
   _request: NextRequest,
@@ -62,8 +63,14 @@ export async function GET(
 
   const canonicalClientId = clientInfo?.clientId ?? clientId;
   const { oidcClientId: _oidcClientId, ...appWithoutOidcClientId } = app;
+  const billingPattern = clientInfo
+    ? billingPatternFromAllowedScopesString(
+        clientInfo.allowedScopes ?? DEFAULT_OIDC_SCOPES,
+      )
+    : "app_level";
   return NextResponse.json({
     ...appWithoutOidcClientId,
+    billingPattern,
     id: canonicalClientId,
     clientId: canonicalClientId,
     canEdit: await canEditProviderApp(auth),

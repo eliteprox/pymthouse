@@ -12,6 +12,7 @@ import { db } from "@/db/index";
 import { appUsers, developerApps, oidcClients } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { validateClientSecret } from "./clients";
+import { billingPatternFromAllowedScopesString } from "@/lib/allowed-scopes";
 
 const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 const REFRESH_TOKEN_TTL_DAYS = 30;
@@ -34,8 +35,9 @@ export async function issueProgrammaticTokens(input: {
   scopes: string[];
 }) {
   const appRows = await db
-    .select({ billingPattern: developerApps.billingPattern })
+    .select({ allowedScopes: oidcClients.allowedScopes })
     .from(developerApps)
+    .innerJoin(oidcClients, eq(developerApps.oidcClientId, oidcClients.id))
     .where(eq(developerApps.id, input.developerAppId))
     .limit(1);
   const app = appRows[0];
@@ -44,10 +46,10 @@ export async function issueProgrammaticTokens(input: {
     throw new ProgrammaticTokenError("invalid_client", "App not found");
   }
 
-  if (app.billingPattern !== "per_user") {
+  if (billingPatternFromAllowedScopesString(app.allowedScopes) !== "per_user") {
     throw new ProgrammaticTokenError(
       "invalid_request",
-      "Programmatic user tokens require per-user billing",
+      "Programmatic user tokens require the users:token scope on the OAuth client",
     );
   }
 
@@ -135,7 +137,7 @@ export async function rotateProgrammaticRefreshToken(input: {
     .select({
       appId: developerApps.id,
       oauthClientId: oidcClients.clientId,
-      billingPattern: developerApps.billingPattern,
+      allowedScopes: oidcClients.allowedScopes,
     })
     .from(developerApps)
     .innerJoin(oidcClients, eq(developerApps.oidcClientId, oidcClients.id))
@@ -143,7 +145,10 @@ export async function rotateProgrammaticRefreshToken(input: {
     .limit(1);
   const app = appRows[0];
 
-  if (!app || app.billingPattern !== "per_user") {
+  if (
+    !app ||
+    billingPatternFromAllowedScopesString(app.allowedScopes) !== "per_user"
+  ) {
     return null;
   }
 
