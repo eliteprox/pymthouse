@@ -65,6 +65,38 @@ If you prefer Docker on Railway:
 4. **Add volume** at `/data`
 5. **Deploy**
 
+### Option 2b: Railway (Docker) — Apache JWT DMZ (recommended for public signers)
+
+Expose only Apache on the internet: **mod_authnz_jwt** validates PymtHouse OIDC access tokens (RS256) using a PEM derived from the public [JWKS](https://pymthouse.com/api/v1/oidc/jwks). **go-livepeer** listens on loopback inside the same container; only requests with a valid `Authorization: Bearer` header reach the signer. The Authorization header is stripped before proxying so the signer never sees bearer tokens.
+
+1. **Dockerfile path:** `docker/signer-dmz/Dockerfile` (or repo-root symlink `Dockerfile.signer-dmz`). Default build target is the combined image (`signer-dmz`).
+2. **Environment variables** (in addition to signer settings such as `SIGNER_NETWORK`, `ETH_RPC_URL`, volume at `/data`):
+
+   | Variable | Purpose |
+   |----------|---------|
+   | `PORT` | Apache listen port (Railway sets this automatically). |
+   | `OIDC_ISSUER` | Defaults to `https://pymthouse.com/api/v1/oidc`. Must match token `iss`. |
+   | `OIDC_AUDIENCE` | Defaults to the same as issuer; must match token `aud`. |
+   | `JWKS_URI` | Defaults to `https://pymthouse.com/api/v1/oidc/jwks`. Used at startup and on refresh. |
+   | `JWKS_REFRESH_SECONDS` | Background JWKS refresh interval (default `900`). Triggers `apachectl graceful` when the PEM changes. |
+   | `SIGNER_UPSTREAM` | Optional. If set (e.g. `http://signer:8081` in compose-only gateway builds), the container does **not** run livepeer and only proxies to this URL. |
+   | `SIGNER_CLI_HTTP_ADDR` | Upstream for the CLI port (default `http://127.0.0.1:4935`). In compose, set to `http://signer:4935`. Apache exposes the CLI under **`/__signer_cli/`** on the same public port as the HTTP API. |
+
+3. **JWT gates (Apache):** Paths under `/__signer_cli/` require a JWT whose **`scope`** claim is exactly **`admin`**. All other signer HTTP paths (except `/healthz` and `/status`) require **`scope=sign:job`**. PymtHouse mints short-lived RS256 tokens for outbound calls after it has already validated the user or admin session (see `issueSignerDmzToken` in the app).
+
+4. **Vercel / Next.js:** Point **`SIGNER_INTERNAL_URL`** at the DMZ public origin (e.g. `https://your-signer.railway.app`). For CLI reads (deposit, balances), set **`SIGNER_CLI_URL`** to the same host with the CLI prefix, e.g. `https://your-signer.railway.app/__signer_cli` (no trailing slash). Optional **`SIGNER_DMZ_FORWARD_JWT=false`** disables attaching service JWTs (only for debugging without Apache).
+
+5. **Health checks:** Use **`GET /healthz`** on the public URL (returns `200` and body `OK` from Apache). Do not rely on **`GET /status`** for remote signer mode: the go-livepeer remote signer HTTP API may not implement `/status`; the DMZ still proxies `/status` without JWT for compatibility with deployments that do support it.
+6. **Limitations:** `mod_authnz_jwt` uses a **single PEM file**, refreshed from JWKS. During key rotation with multiple active keys, refresh often or accept a short overlap risk.
+
+**Local compose (two containers — signer + Apache gateway):**
+
+```bash
+docker compose -f docker-compose.signer-dmz.yml up --build
+```
+
+Gateway is on [http://localhost:8080](http://localhost:8080); the signer is not published. Use `curl http://localhost:8080/healthz` and authenticated calls to proxied paths with a PymtHouse-issued bearer token.
+
 ### Option 3: Render (Docker)
 
 Render uses the `render.yaml` blueprint:
@@ -225,8 +257,11 @@ Done in 5 minutes!
 After deployment, test your signer:
 
 ```bash
-# Health check
+# Health check (plain Docker / Nixpacks signer)
 curl https://your-signer-url/status
+
+# Apache DMZ image — use /healthz for load balancers; /status may 404 in remote signer mode
+curl https://your-signer-url/healthz
 
 # Should return JSON with orchestrator info
 curl https://your-signer-url/registeredOrchestrators

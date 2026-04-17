@@ -16,6 +16,7 @@ import {
   calculateLv2vPixels,
 } from "./proto";
 import type { AuthResult } from "./auth";
+import { issueSignerDmzToken } from "./signer-dmz-token";
 import { getSenderInfo } from "./signer-cli";
 
 export interface ProxyResult {
@@ -74,16 +75,23 @@ async function forwardToSigner(
   signer: typeof signerConfig.$inferSelect | null | undefined,
   path: string,
   method: string,
-  body?: unknown
+  body: unknown | undefined,
+  auth: AuthResult,
 ): Promise<Response> {
   const url = `${getSignerUrl(signer)}${path}`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (process.env.SIGNER_DMZ_FORWARD_JWT !== "false") {
+    const sub = auth.userId || auth.appId || "signer-proxy";
+    const token = await issueSignerDmzToken({ gate: "http", subject: sub });
+    headers.Authorization = `Bearer ${token}`;
+  }
   try {
     return await fetch(url, {
       method,
-      headers: { "Content-Type": "application/json" },
-      body: body ? JSON.stringify(body) : undefined,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
   } finally {
@@ -108,7 +116,8 @@ export async function proxySignOrchestratorInfo(
       signer,
       "/sign-orchestrator-info",
       "POST",
-      requestBody
+      requestBody,
+      auth,
     );
     const responseBody = await response.json();
 
@@ -226,7 +235,8 @@ export async function proxyGenerateLivePayment(
       signer,
       "/generate-live-payment",
       "POST",
-      requestBody
+      requestBody,
+      auth,
     );
     const responseBody = await response.json();
 
@@ -305,7 +315,8 @@ export async function proxySignByocJob(
       signer,
       "/sign-byoc-job",
       "POST",
-      requestBody
+      requestBody,
+      auth,
     );
     const responseBody = await response.json();
 
@@ -336,7 +347,9 @@ export async function proxyDiscoverOrchestrators(
     const response = await forwardToSigner(
       signer,
       "/discover-orchestrators",
-      "GET"
+      "GET",
+      undefined,
+      auth,
     );
     const responseBody = await response.json();
 
