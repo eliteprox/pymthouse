@@ -148,6 +148,15 @@ export async function POST(
   const now = new Date().toISOString();
   const appId = auth.app.id;
   await db.transaction(async (tx) => {
+    const includedUnits =
+      body.includedUnits !== undefined && body.includedUnits !== null
+        ? String(body.includedUnits).trim() || null
+        : null;
+    const overageRateWei =
+      body.overageRateWei !== undefined && body.overageRateWei !== null
+        ? String(body.overageRateWei).trim() || null
+        : null;
+
     await tx.insert(plans).values({
       id: planId,
       clientId: appId,
@@ -156,6 +165,8 @@ export async function POST(
       priceAmount: String(body.priceAmount || "0"),
       priceCurrency: String(body.priceCurrency || "USD"),
       status: String(body.status || "active"),
+      includedUnits,
+      overageRateWei,
       createdAt: now,
       updatedAt: now,
     });
@@ -243,6 +254,18 @@ export async function PUT(
         priceAmount: body.priceAmount !== undefined ? String(body.priceAmount) : existing.priceAmount,
         priceCurrency: body.priceCurrency !== undefined ? String(body.priceCurrency) : existing.priceCurrency,
         status: body.status !== undefined ? String(body.status) : existing.status,
+        includedUnits:
+          body.includedUnits !== undefined
+            ? body.includedUnits === null || String(body.includedUnits).trim() === ""
+              ? null
+              : String(body.includedUnits).trim()
+            : existing.includedUnits,
+        overageRateWei:
+          body.overageRateWei !== undefined
+            ? body.overageRateWei === null || String(body.overageRateWei).trim() === ""
+              ? null
+              : String(body.overageRateWei).trim()
+            : existing.overageRateWei,
         updatedAt: now,
       })
       .where(and(eq(plans.id, planId), eq(plans.clientId, appId)))

@@ -11,6 +11,8 @@ interface PlanRow {
   priceAmount: string;
   priceCurrency: string;
   status: string;
+  includedUnits: string | null;
+  overageRateWei: string | null;
   capabilities: {
     id: string;
     pipeline: string;
@@ -35,6 +37,8 @@ export default function AppPlansPage() {
     type: "free",
     priceAmount: "0",
     priceCurrency: "USD",
+    includedUnits: "",
+    overageRateWei: "",
     modelId: "",
     pipeline: "video",
     slaTargetP95Ms: "",
@@ -72,6 +76,15 @@ export default function AppPlansPage() {
           priceAmount: form.priceAmount,
           priceCurrency: form.priceCurrency,
           status: "active",
+          includedUnits:
+            form.type === "subscription" && form.includedUnits.trim()
+              ? form.includedUnits.trim()
+              : null,
+          overageRateWei:
+            (form.type === "subscription" || form.type === "usage") &&
+            form.overageRateWei.trim()
+              ? form.overageRateWei.trim()
+              : null,
           capabilities: form.modelId
             ? [
                 {
@@ -99,6 +112,8 @@ export default function AppPlansPage() {
         type: "free",
         priceAmount: "0",
         priceCurrency: "USD",
+        includedUnits: "",
+        overageRateWei: "",
         modelId: "",
         pipeline: "video",
         slaTargetP95Ms: "",
@@ -184,7 +199,7 @@ export default function AppPlansPage() {
             >
               <option value="free">Free</option>
               <option value="subscription">Subscription</option>
-              <option value="usage">Usage Based</option>
+              <option value="usage">Pay-Per-Use</option>
             </select>
             <input
               value={form.priceAmount}
@@ -194,6 +209,32 @@ export default function AppPlansPage() {
               className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50"
             />
           </div>
+          {form.type === "subscription" && (
+            <input
+              value={form.includedUnits}
+              onChange={(event) =>
+                setForm({ ...form, includedUnits: event.target.value })
+              }
+              placeholder="Included units (pixels) per billing cycle"
+              disabled={!canEdit}
+              className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            />
+          )}
+          {(form.type === "subscription" || form.type === "usage") && (
+            <input
+              value={form.overageRateWei}
+              onChange={(event) =>
+                setForm({ ...form, overageRateWei: event.target.value })
+              }
+              placeholder={
+                form.type === "usage"
+                  ? "Rate per unit (wei)"
+                  : "Overage rate (wei per unit)"
+              }
+              disabled={!canEdit}
+              className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            />
+          )}
           <div className="grid grid-cols-2 gap-3">
             <input
               value={form.modelId}
@@ -242,6 +283,17 @@ export default function AppPlansPage() {
                       <p className="text-xs text-zinc-500 mt-1">
                         {plan.type} · {plan.priceAmount} {plan.priceCurrency}
                       </p>
+                      {(plan.includedUnits || plan.overageRateWei) && (
+                        <p className="text-xs text-zinc-500 mt-1">
+                          {plan.includedUnits
+                            ? `Included ${plan.includedUnits} units`
+                            : null}
+                          {plan.includedUnits && plan.overageRateWei ? " · " : null}
+                          {plan.overageRateWei
+                            ? `Rate ${plan.overageRateWei} wei/unit`
+                            : null}
+                        </p>
+                      )}
                       <div className="mt-3 space-y-1">
                         {plan.capabilities.map((capability) => (
                           <p key={capability.id} className="text-xs text-zinc-400">

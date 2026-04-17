@@ -270,6 +270,10 @@ export const plans = pgTable(
     priceAmount: text("price_amount").notNull().default("0"),
     priceCurrency: text("price_currency").notNull().default("USD"),
     status: text("status").notNull().default("draft"),
+    /** Pixel-unit quota included per billing cycle (subscription plans). */
+    includedUnits: text("included_units"),
+    /** Per-pixel wei for overage (subscription) or base rate (usage plans). */
+    overageRateWei: text("overage_rate_wei"),
     createdAt: text("created_at")
       .notNull()
       .$defaultFn(() => new Date().toISOString()),
@@ -318,6 +322,8 @@ export const subscriptions = pgTable("subscriptions", {
     .notNull()
     .references(() => plans.id),
   status: text("status").notNull().default("active"),
+  currentPeriodStart: text("current_period_start"),
+  currentPeriodEnd: text("current_period_end"),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),

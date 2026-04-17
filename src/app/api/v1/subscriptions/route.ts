@@ -61,13 +61,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(existing);
   }
 
+  const nowIso = new Date().toISOString();
+  const periodEndIso = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
   const subscription = {
     id: uuidv4(),
     userId,
     clientId: plan.clientId,
     planId,
     status: "active",
-    createdAt: new Date().toISOString(),
+    currentPeriodStart: nowIso,
+    currentPeriodEnd: periodEndIso,
+    createdAt: nowIso,
     cancelledAt: null,
   };
 
