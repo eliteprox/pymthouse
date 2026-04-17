@@ -12,6 +12,7 @@ import {
   appEditForbiddenResponse,
 } from "@/lib/provider-apps";
 import { deleteDeveloperAppAndRelatedData } from "@/lib/delete-developer-app";
+import { billingPatternFromAllowedScopesString } from "@/lib/allowed-scopes";
 
 export async function GET(
   _request: NextRequest,
@@ -61,8 +62,14 @@ export async function GET(
 
   const canonicalClientId = clientInfo?.clientId ?? clientId;
   const { oidcClientId: _oidcClientId, ...appWithoutOidcClientId } = app;
+  const billingPattern = clientInfo
+    ? billingPatternFromAllowedScopesString(
+        clientInfo.allowedScopes ?? DEFAULT_OIDC_SCOPES,
+      )
+    : "app_level";
   return NextResponse.json({
     ...appWithoutOidcClientId,
+    billingPattern,
     id: canonicalClientId,
     clientId: canonicalClientId,
     canEdit: await canEditProviderApp(auth),
@@ -108,16 +115,6 @@ export async function PUT(
     if (body[field] !== undefined) {
       appUpdates[field] = body[field];
     }
-  }
-
-  if (body.billingPattern !== undefined) {
-    if (body.billingPattern !== "app_level" && body.billingPattern !== "per_user") {
-      return NextResponse.json(
-        { error: "billingPattern must be 'app_level' or 'per_user'" },
-        { status: 400 },
-      );
-    }
-    appUpdates.billingPattern = body.billingPattern;
   }
 
   await db.update(developerApps).set(appUpdates).where(eq(developerApps.id, app.id));

@@ -82,11 +82,7 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
     setSaving(true);
     setError(null);
     try {
-      const scopeTokens = formData.allowedScopes.split(/\s+/).filter(Boolean);
-      const billingPattern = scopeTokens.includes("users:token")
-        ? "per_user"
-        : "app_level";
-      const payload = { ...formData, billingPattern };
+      const payload = { ...formData };
 
       if (!appState.id) {
         const res = await fetch("/api/v1/apps", {

@@ -210,7 +210,6 @@ export const developerApps = pgTable("developer_apps", {
   brandingPrimaryColor: text("branding_primary_color"), // hex color e.g., #10b981
   brandingLogoUrl: text("branding_logo_url"), // override logo for hosted login
   brandingSupportEmail: text("branding_support_email"), // custom support email for branded login
-  billingPattern: text("billing_pattern").notNull().default("app_level"), // app_level | per_user
   jwksUri: text("jwks_uri"), // Platform's JWKS URL for RFC 8693 token exchange (Pattern B)
   createdAt: text("created_at")
     .notNull()

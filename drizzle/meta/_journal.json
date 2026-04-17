@@ -36,6 +36,13 @@
       "when": 1776450000000,
       "tag": "0004_active_streams_view",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1776463799039,
+      "tag": "0005_drop_developer_apps_billing_pattern",
+      "breakpoints": true
     }
   ]
 }

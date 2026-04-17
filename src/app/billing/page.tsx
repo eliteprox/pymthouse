@@ -408,7 +408,9 @@ export default async function BillingPage() {
                             <code className="text-xs text-zinc-500" title={userUsage.identifier}>
                               {userUsage.identifier === "unknown"
                                 ? "unknown"
-                                : `${userUsage.identifier.slice(0, 8)}...`}
+                                : userUsage.identifier.length > 8
+                                  ? `${userUsage.identifier.slice(0, 8)}...`
+                                  : userUsage.identifier}
                             </code>
                           </td>
                           <td className="px-5 py-3 text-right text-zinc-300">
