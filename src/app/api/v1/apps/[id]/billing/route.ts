@@ -141,8 +141,8 @@ export async function GET(
   let overageWei = "0";
   if (
     (planType === "subscription" || planType === "usage") &&
-    planRow?.includedUnits &&
-    planRow?.overageRateWei
+    planRow?.includedUnits != null &&
+    planRow?.overageRateWei != null
   ) {
     const included = BigInt(planRow.includedUnits);
     const rate = BigInt(planRow.overageRateWei);
