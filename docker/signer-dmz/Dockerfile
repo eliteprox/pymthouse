@@ -90,7 +90,8 @@ RUN mkdir -p /var/www/static && printf "OK\n" > /var/www/static/healthz
 RUN groupadd --system --gid "${APP_GID}" "${APP_USER}" && \
     useradd --system --uid "${APP_UID}" --gid "${APP_GID}" \
       --home-dir /home/${APP_USER} --create-home --shell /usr/sbin/nologin "${APP_USER}" && \
-    mkdir -p /run/jwt /run/apache2 /var/lock/apache2 /var/log/apache2 /data && \
+    mkdir -p /run/jwt /run/apache2 /var/lock/apache2 /var/log/apache2 /data \
+      /var/lib/apache2/site/enabled_by_admin && \
     sed -i \
       -e "s|^export APACHE_RUN_USER=.*|export APACHE_RUN_USER=${APP_USER}|" \
       -e "s|^export APACHE_RUN_GROUP=.*|export APACHE_RUN_GROUP=${APP_USER}|" \
@@ -105,7 +106,8 @@ RUN groupadd --system --gid "${APP_GID}" "${APP_USER}" && \
       /run/jwt \
       /var/www/static \
       /opt/pymthouse \
-      /data && \
+      /data \
+      /var/lib/apache2/site/enabled_by_admin && \
     # Allow the unprivileged user to bind to privileged ports (e.g. PORT=80 in compose)
     # without giving the whole container root. Safe because the cap is file-scoped.
     setcap cap_net_bind_service=+ep /usr/sbin/apache2
