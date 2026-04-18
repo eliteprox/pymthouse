@@ -151,12 +151,6 @@ export default async function LandingPage() {
           Livepeer-powered providers.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3">
-          <Link
-            href="/login"
-            className="px-6 py-2.5 text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors"
-          >
-            Start Building
-          </Link>
           <a
             href={docsUrl}
             target="_blank"
@@ -165,6 +159,12 @@ export default async function LandingPage() {
           >
             Docs
           </a>
+          <Link
+            href="/login"
+            className="px-6 py-2.5 text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors"
+          >
+            Start Building
+          </Link>
           <Link
             href="/marketplace"
             className="px-6 py-2.5 text-sm font-medium text-zinc-100 border border-zinc-600 rounded-lg hover:border-zinc-500 hover:bg-zinc-900/50 transition-colors"
