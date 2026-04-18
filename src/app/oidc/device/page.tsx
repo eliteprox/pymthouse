@@ -1,10 +1,49 @@
 import { getServerSession } from "next-auth";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/next-auth-options";
 import DeviceVerifyForm from "./device-verify-form";
 import { resolveHostContext } from "@/lib/oidc/host-resolution";
+import { getInitiateLoginUriForDeviceFlow } from "@/lib/oidc/clients";
+import { SqliteAdapter } from "@/lib/oidc/adapter";
+import { normalizeUserCode } from "@/lib/oidc/device";
+import {
+  buildDeviceFlowTargetLinkUri,
+  issuerMatchesExpected,
+  thirdPartyInitiateSkipCookieName,
+} from "@/lib/oidc/third-party-initiate-login";
+import { getIssuer } from "@/lib/oidc/tokens";
 
 type SearchParams = Record<string, string | string[] | undefined>;
+
+async function resolveAuthoritativeClientId(
+  userCode: string | undefined,
+  clientIdParam: string | undefined,
+): Promise<string | undefined> {
+  if (userCode) {
+    try {
+      const adapter = new SqliteAdapter("DeviceCode");
+      const normalized = normalizeUserCode(userCode);
+      const payload = await adapter.findByUserCode(normalized);
+      if (payload) {
+        const bound =
+          typeof payload.clientId === "string"
+            ? payload.clientId
+            : typeof payload.params === "object" &&
+                payload.params !== null &&
+                typeof (payload.params as Record<string, unknown>).client_id === "string"
+              ? ((payload.params as Record<string, unknown>).client_id as string)
+              : undefined;
+        if (bound) {
+          return bound;
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return clientIdParam;
+}
 
 export default async function DeviceVerificationPage({
   searchParams,
@@ -15,14 +54,62 @@ export default async function DeviceVerificationPage({
   const session = await getServerSession(authOptions);
   const hostContext = await resolveHostContext();
 
+  const userCode =
+    typeof params.user_code === "string" ? params.user_code : undefined;
+  const clientIdParam =
+    typeof params.client_id === "string" ? params.client_id : undefined;
+  const issParam = typeof params.iss === "string" ? params.iss : undefined;
+  const loginHintParam =
+    typeof params.login_hint === "string" ? params.login_hint : undefined;
+
+  const expectedIssuer = getIssuer();
+  const authoritativeClientId = await resolveAuthoritativeClientId(
+    userCode,
+    clientIdParam,
+  );
+
   if (!session?.user) {
+    const skipCookieName = authoritativeClientId
+      ? thirdPartyInitiateSkipCookieName(authoritativeClientId)
+      : null;
+    const skipThirdParty =
+      skipCookieName !== null
+        ? (await cookies()).get(skipCookieName)?.value === "1"
+        : true;
+
+    if (
+      authoritativeClientId &&
+      issParam &&
+      issuerMatchesExpected(issParam, expectedIssuer) &&
+      !skipThirdParty
+    ) {
+      const initiateLoginUri = await getInitiateLoginUriForDeviceFlow(
+        authoritativeClientId,
+      );
+      if (initiateLoginUri) {
+        const targetLinkUri = buildDeviceFlowTargetLinkUri({
+          user_code: userCode,
+          client_id: authoritativeClientId,
+          iss: issParam,
+          login_hint: loginHintParam,
+        });
+        redirect(
+          `/oidc/device/initiate-login?${new URLSearchParams({
+            client_id: authoritativeClientId,
+            target_link_uri: targetLinkUri,
+            ...(loginHintParam ? { login_hint: loginHintParam } : {}),
+          }).toString()}`,
+        );
+      }
+    }
+
     const qs = new URLSearchParams();
-    const userCode =
-      typeof params.user_code === "string" ? params.user_code : undefined;
     if (userCode) qs.set("user_code", userCode);
-    redirect(
-      `/login?callbackUrl=${encodeURIComponent(`/oidc/device${qs.toString() ? `?${qs.toString()}` : ""}`)}`
-    );
+    if (authoritativeClientId) qs.set("client_id", authoritativeClientId);
+    if (issParam) qs.set("iss", issParam);
+    if (loginHintParam) qs.set("login_hint", loginHintParam);
+    const devicePath = `/oidc/device${qs.toString() ? `?${qs.toString()}` : ""}`;
+    redirect(`/login?callbackUrl=${encodeURIComponent(devicePath)}`);
   }
 
   return (

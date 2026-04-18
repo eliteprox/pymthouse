@@ -11,6 +11,7 @@ import {
   getAuthorizedProviderApp,
   appEditForbiddenResponse,
 } from "@/lib/provider-apps";
+import { validateInitiateLoginUri } from "@/lib/oidc/third-party-initiate-login";
 
 function extractOrigins(uris: string[]): string[] {
   const origins = new Set<string>();
@@ -75,8 +76,48 @@ export async function PUT(
   if (body.initiateLoginUri !== undefined) {
     clientUpdates.initiateLoginUri = body.initiateLoginUri || null;
   }
+  if (body.deviceThirdPartyInitiateLogin !== undefined) {
+    clientUpdates.deviceThirdPartyInitiateLogin = Boolean(
+      body.deviceThirdPartyInitiateLogin,
+    );
+  }
   if (body.tokenEndpointAuthMethod !== undefined) {
     clientUpdates.tokenEndpointAuthMethod = body.tokenEndpointAuthMethod;
+  }
+
+  let nextInitiateLoginUri = client.initiateLoginUri;
+  if (body.initiateLoginUri !== undefined) {
+    nextInitiateLoginUri = body.initiateLoginUri || null;
+  }
+  let nextDeviceThirdParty =
+    client.deviceThirdPartyInitiateLogin === 1;
+  if (body.deviceThirdPartyInitiateLogin !== undefined) {
+    nextDeviceThirdParty = Boolean(body.deviceThirdPartyInitiateLogin);
+  }
+  if (nextDeviceThirdParty) {
+    const uri = nextInitiateLoginUri?.trim();
+    if (!uri) {
+      return NextResponse.json(
+        {
+          error: "invalid_request",
+          error_description:
+            "Initiate login URI is required when device third-party login is enabled",
+        },
+        { status: 400 },
+      );
+    }
+    try {
+      validateInitiateLoginUri(uri);
+    } catch {
+      return NextResponse.json(
+        {
+          error: "invalid_request",
+          error_description:
+            "Initiate login URI must be a valid HTTPS URL (HTTP on localhost allowed in development)",
+        },
+        { status: 400 },
+      );
+    }
   }
 
   // Auto-sync branding from developerApps

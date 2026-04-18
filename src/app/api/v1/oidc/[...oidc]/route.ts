@@ -20,6 +20,10 @@ import {
   handleGatewayTokenExchange,
   isGatewayTokenExchangeRequest,
 } from "@/lib/oidc/gateway-token-exchange";
+import {
+  handleDeviceApprovalTokenExchange,
+  isDeviceApprovalTokenExchangeRequest,
+} from "@/lib/oidc/device-token-exchange";
 import { rotateProgrammaticRefreshToken } from "@/lib/oidc/programmatic-tokens";
 
 const RESOURCE_REQUIRED_GRANTS = new Set([
@@ -119,7 +123,29 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
         exchangeParams,
       );
       const subjectTokenType = exchangeParams.get("subject_token_type") || "";
+      const resourceParam = exchangeParams.get("resource");
       try {
+        if (
+          isDeviceApprovalTokenExchangeRequest({
+            grantType,
+            subjectTokenType,
+            resource: resourceParam,
+          })
+        ) {
+          const result = await handleDeviceApprovalTokenExchange({
+            clientId,
+            clientSecret,
+            subjectToken: exchangeParams.get("subject_token") || "",
+            subjectTokenType,
+            resource: resourceParam,
+            requestedTokenType: exchangeParams.get("requested_token_type"),
+            audience: exchangeParams.getAll("audience"),
+          });
+          return NextResponse.json(result, {
+            headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+          });
+        }
+
         if (
           isGatewayTokenExchangeRequest({
             grantType,
@@ -299,10 +325,29 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
         try {
           const json = JSON.parse(finalBody.toString("utf-8"));
           if (json.verification_uri) {
-            const customBase = `${externalOrigin}/oidc/device`;
-            json.verification_uri = customBase;
-            if (json.verification_uri_complete && json.user_code) {
-              json.verification_uri_complete = `${customBase}?user_code=${encodeURIComponent(json.user_code)}`;
+            const deviceParams = new URLSearchParams();
+            if (json.user_code) {
+              deviceParams.set("user_code", json.user_code);
+            }
+            if (body && body.length > 0) {
+              try {
+                const form = new URLSearchParams(body.toString("utf-8"));
+                const deviceClientId = form.get("client_id");
+                if (deviceClientId) {
+                  deviceParams.set("client_id", deviceClientId);
+                }
+              } catch {
+                /* ignore */
+              }
+            }
+                       deviceParams.set("iss", getIssuer());
+            const qs = deviceParams.toString();
+            const verificationBase = `${externalOrigin}/oidc/device`;
+            json.verification_uri = verificationBase;
+            if (json.user_code) {
+              json.verification_uri_complete = qs
+                ? `${verificationBase}?${qs}`
+                : verificationBase;
             }
             finalBody = Buffer.from(JSON.stringify(json), "utf-8");
             headers.set("content-length", String(finalBody.length));

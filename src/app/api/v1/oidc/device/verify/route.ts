@@ -9,11 +9,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/next-auth-options";
-import { getProvider } from "@/lib/oidc/provider";
 import { SqliteAdapter } from "@/lib/oidc/adapter";
 import { getClient } from "@/lib/oidc/clients";
+import { approveDeviceCodeForAccount } from "@/lib/oidc/device-approval";
+import { db } from "@/db/index";
+import { oidcClients } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { normalizeUserCode } from "@/lib/oidc/device";
-import { getIssuer } from "@/lib/oidc/tokens";
 import { resolveAppBrandingByClientId } from "@/lib/oidc/branding";
 import { checkAppAccess } from "@/lib/oidc/app-access";
 
@@ -82,9 +84,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         : typeof deviceCode.params?.scope === "string"
           ? deviceCode.params.scope
           : "";
+    let impliedDeviceConsent = false;
+    if (typeof clientId === "string") {
+      const policyRows = await db
+        .select({
+          deviceThirdPartyInitiateLogin: oidcClients.deviceThirdPartyInitiateLogin,
+          clientSecretHash: oidcClients.clientSecretHash,
+        })
+        .from(oidcClients)
+        .where(eq(oidcClients.clientId, clientId))
+        .limit(1);
+      const policy = policyRows[0];
+      impliedDeviceConsent =
+        policy?.deviceThirdPartyInitiateLogin === 1 && !!policy?.clientSecretHash;
+    }
+
     return NextResponse.json({
       client_name: client?.displayName || clientId || "Unknown Application",
       scopes: scope.split(" ").filter(Boolean),
+      implied_device_consent: impliedDeviceConsent,
       branding: branding ? {
         mode: branding.mode,
         displayName: branding.displayName,
@@ -110,54 +128,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    const provider = await getProvider();
-    const grant = new provider.Grant();
-    grant.clientId = clientId;
-    grant.accountId = userId;
-    const scope =
-      typeof deviceCode.scope === "string"
-        ? deviceCode.scope
-        : typeof deviceCode.params?.scope === "string"
-          ? deviceCode.params.scope
-          : "";
-    if (scope) {
-      grant.addOIDCScope(scope);
-      grant.addResourceScope(getIssuer(), scope);
-    }
-    const grantId = await grant.save();
-    const now = Math.floor(Date.now() / 1000);
-    const expiresIn = deviceCode.exp ? Math.max(deviceCode.exp - now, 1) : 600;
-
-    // Resolve the resource indicator from the original device auth request
-    // so the token exchange can issue audience-bound JWT access tokens.
-    const params =
-      typeof deviceCode.params === "object" && deviceCode.params !== null
-        ? (deviceCode.params as Record<string, unknown>)
-        : null;
-    const resourceFromParams = params?.resource;
-    const resource =
-      typeof resourceFromParams === "string" && resourceFromParams.length > 0
-        ? resourceFromParams
-        : typeof deviceCode.resource === "string" && deviceCode.resource.length > 0
-          ? deviceCode.resource
-          : getIssuer();
-
-    await adapter.upsert(
-      deviceCode.jti!,
-      {
-        ...deviceCode,
-        accountId: userId,
-        grantId,
-        scope,
-        resource,
-        authTime: now,
-        acr: typeof deviceCode.acr === "string" ? deviceCode.acr : "urn:pmth:session",
-        amr: Array.isArray(deviceCode.amr) ? deviceCode.amr : ["pwd"],
-        error: undefined,
-        errorDescription: undefined,
-      },
-      expiresIn,
+    const approved = await approveDeviceCodeForAccount(
+      normalizedUserCode,
+      clientId,
+      userId,
     );
+    if (!approved.ok) {
+      return errorResponse(approved.error, approved.description, approved.status);
+    }
 
     return NextResponse.json({ status: "authorized" });
   }

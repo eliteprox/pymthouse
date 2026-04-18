@@ -1,6 +1,6 @@
 import { db } from "@/db/index";
 import { sessions, oidcClients, developerApps } from "@/db/schema";
-import { eq, and, gt } from "drizzle-orm";
+import { eq, and, gt, or } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import type { NextRequest } from "next/server";
@@ -317,12 +317,31 @@ export async function authenticateAppClient(request: NextRequest): Promise<{
   const appRows = await db
     .select()
     .from(developerApps)
-    .where(eq(developerApps.oidcClientId, clientRow.id))
+    .where(
+      or(
+        eq(developerApps.oidcClientId, clientRow.id),
+        eq(developerApps.m2mOidcClientId, clientRow.id),
+      ),
+    )
     .limit(1);
   const app = appRows[0];
-  if (!app) return null;
+  const oidcRowIdForAppId = app?.oidcClientId ?? app?.m2mOidcClientId;
+  if (!app || !oidcRowIdForAppId) return null;
 
-  return { clientId, appId: clientId, scopes: clientRow.allowedScopes };
+  // Prefer the public (interactive) client row for appId; if only M2M is linked, use that row.
+  const appIdRows = await db
+    .select({ clientId: oidcClients.clientId })
+    .from(oidcClients)
+    .where(eq(oidcClients.id, oidcRowIdForAppId))
+    .limit(1);
+  const resolvedAppOidcClientId = appIdRows[0]?.clientId;
+  if (!resolvedAppOidcClientId) return null;
+
+  return {
+    clientId,
+    appId: resolvedAppOidcClientId,
+    scopes: clientRow.allowedScopes,
+  };
 }
 
 export class AuthError extends Error {

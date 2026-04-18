@@ -4,6 +4,7 @@ export const PROVIDER_ENDPOINT_PATHS = {
   userinfo: "/me",
   jwks: "/jwks",
   deviceAuthorization: "/device/auth",
+  endSession: "/session/end",
   introspection: "/token/introspection",
   revocation: "/token/revocation",
 } as const;

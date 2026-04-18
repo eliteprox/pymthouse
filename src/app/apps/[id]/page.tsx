@@ -25,6 +25,7 @@ export default function AppDetailPage() {
     domains: { id: string; domain: string }[];
     postLogoutRedirectUris: string[];
     initiateLoginUri: string | null;
+    deviceThirdPartyInitiateLogin: boolean;
     canEdit: boolean;
     canSubmitForReview: boolean;
   } | null>(null);
@@ -54,12 +55,14 @@ export default function AppDetailPage() {
             ],
             tokenEndpointAuthMethod:
               data.oidcClient?.tokenEndpointAuthMethod || "none",
+            backendDeviceHelper: Boolean(data.m2mOidcClient),
           },
           state: {
             id: data.id,
             clientId: data.oidcClient?.clientId || null,
             status: data.status,
             hasSecret: data.oidcClient?.hasSecret || false,
+            backendHelper: data.m2mOidcClient ?? null,
           },
           domains: (data.domains || []).map(
             (d: { id: string; domain: string }) => ({
@@ -69,6 +72,8 @@ export default function AppDetailPage() {
           ),
           postLogoutRedirectUris: data.oidcClient?.postLogoutRedirectUris || [],
           initiateLoginUri: data.oidcClient?.initiateLoginUri ?? null,
+          deviceThirdPartyInitiateLogin:
+            data.oidcClient?.deviceThirdPartyInitiateLogin === true,
           canEdit: data.canEdit === true,
           canSubmitForReview: data.canSubmitForReview === true,
         });
@@ -168,6 +173,9 @@ export default function AppDetailPage() {
         initialDomains={appData.domains}
         initialPostLogoutRedirectUris={appData.postLogoutRedirectUris}
         initialInitiateLoginUri={appData.initiateLoginUri}
+        initialDeviceThirdPartyInitiateLogin={
+          appData.deviceThirdPartyInitiateLogin
+        }
         canEdit={appData.canEdit}
         canSubmitForReview={appData.canSubmitForReview}
         onReviewSubmitted={handleReviewSubmitted}

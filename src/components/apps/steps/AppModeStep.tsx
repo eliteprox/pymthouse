@@ -69,6 +69,7 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
         tokenEndpointAuthMethod: "none",
         grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"],
         allowedScopes: USER_LOGIN_SCOPES,
+        backendDeviceHelper: false,
       });
       return;
     }
@@ -77,6 +78,7 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
       tokenEndpointAuthMethod: "client_secret_post",
       grantTypes: ["client_credentials"],
       allowedScopes: M2M_SCOPES,
+      backendDeviceHelper: false,
     });
   };
 
@@ -204,6 +206,31 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
                 </div>
               </label>
             </div>
+          </div>
+
+          <div className="rounded-xl border border-zinc-700/80 bg-zinc-800/20 p-4 space-y-2">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={Boolean(data.backendDeviceHelper)}
+                onChange={(e) =>
+                  onChange({ backendDeviceHelper: e.target.checked })
+                }
+                disabled={readOnly}
+                className="w-4 h-4 mt-0.5 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 shrink-0 disabled:opacity-50"
+              />
+              <div>
+                <p className="text-sm font-medium text-zinc-200">
+                  Backend device helper (confidential client)
+                </p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Provisions a separate <code className="font-mono text-zinc-400">m2m_</code> client for
+                  server-to-server device approval and Builder APIs (<code className="font-mono text-zinc-400">users:token</code>,{" "}
+                  <code className="font-mono text-zinc-400">users:write</code>). Your public client stays
+                  unauthenticated for SDK / CLI device login—required for Option B (NaaP-side approval).
+                </p>
+              </div>
+            </label>
           </div>
 
           <div className="space-y-3">

@@ -19,6 +19,7 @@ interface Props {
   /** Post-logout URIs and initiate-login URI (OIDC client metadata). */
   initialPostLogoutRedirectUris?: string[];
   initialInitiateLoginUri?: string | null;
+  initialDeviceThirdPartyInitiateLogin?: boolean;
   /** When false, settings are view-only (non-admin team members). */
   canEdit?: boolean;
   /** Only the app owner may submit for review (matches submit API). */
@@ -27,6 +28,15 @@ interface Props {
   onReviewSubmitted?: () => void;
   /** Called after reverting from submitted to draft (header badge, etc.). */
   onRevertedToDraft?: () => void;
+}
+
+/** Matches server expectations for initiate_login_uri when third-party device login is used. */
+function isValidInitiateLoginUri(uri: string): boolean {
+  const t = uri.trim();
+  return (
+    t.length > 0 &&
+    (t.startsWith("https://") || t.startsWith("http://localhost"))
+  );
 }
 
 function mergeFormData(initial: Partial<AppFormData>): AppFormData {
@@ -39,6 +49,7 @@ function mergeFormData(initial: Partial<AppFormData>): AppFormData {
         ? [...initial.grantTypes]
         : [...defaultAppFormData.grantTypes],
     allowedScopes: initial.allowedScopes ?? defaultAppFormData.allowedScopes,
+    backendDeviceHelper: initial.backendDeviceHelper ?? false,
   };
 }
 
@@ -49,6 +60,7 @@ export default function AppSettingsScreen({
   initialDomains,
   initialPostLogoutRedirectUris = [],
   initialInitiateLoginUri = null,
+  initialDeviceThirdPartyInitiateLogin = false,
   canEdit = true,
   canSubmitForReview = false,
   onReviewSubmitted,
@@ -68,6 +80,8 @@ export default function AppSettingsScreen({
   const [initiateLoginUri, setInitiateLoginUri] = useState(
     initialInitiateLoginUri ?? "",
   );
+  const [deviceThirdPartyInitiateLogin, setDeviceThirdPartyInitiateLogin] =
+    useState(initialDeviceThirdPartyInitiateLogin);
   const [newPostLogoutUri, setNewPostLogoutUri] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,16 +108,20 @@ export default function AppSettingsScreen({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...formData }),
       });
+      const putJson = (await res.json()) as {
+        success?: boolean;
+        m2mOidcClient?: { clientId: string; hasSecret: boolean } | null;
+        error?: string;
+      };
       if (!res.ok) {
-        const text = await res.text();
-        let msg = `Failed to save (${res.status})`;
-        try {
-          const data = text ? JSON.parse(text) : {};
-          if (data.error) msg = data.error;
-        } catch {
-          /* keep generic */
-        }
-        throw new Error(msg);
+        throw new Error(putJson.error || `Failed to save (${res.status})`);
+      }
+
+      if (putJson.m2mOidcClient) {
+        setAppState((s) => ({
+          ...s,
+          backendHelper: putJson.m2mOidcClient ?? null,
+        }));
       }
 
       const settingsRes = await fetch(`/api/v1/apps/${appId}/settings`, {
@@ -112,6 +130,7 @@ export default function AppSettingsScreen({
         body: JSON.stringify({
           postLogoutRedirectUris,
           initiateLoginUri: initiateLoginUri.trim() || null,
+          deviceThirdPartyInitiateLogin,
           tokenEndpointAuthMethod: formData.tokenEndpointAuthMethod,
         }),
       });
@@ -128,7 +147,14 @@ export default function AppSettingsScreen({
     } finally {
       setSaving(false);
     }
-  }, [appId, formData, postLogoutRedirectUris, initiateLoginUri, canEdit]);
+  }, [
+    appId,
+    formData,
+    postLogoutRedirectUris,
+    initiateLoginUri,
+    deviceThirdPartyInitiateLogin,
+    canEdit,
+  ]);
 
   const submitForReview = useCallback(async () => {
     if (!canSubmitForReview) return;
@@ -342,9 +368,18 @@ export default function AppSettingsScreen({
           domains={domains}
           onDomainsChange={setDomains}
           hasSecret={appState.hasSecret}
+          backendHelper={appState.backendHelper}
           onSecretGenerated={() => {
             setAppState((s) => ({ ...s, hasSecret: true }));
             updateFormData({ tokenEndpointAuthMethod: "client_secret_post" });
+          }}
+          onBackendSecretGenerated={() => {
+            setAppState((s) => ({
+              ...s,
+              backendHelper: s.backendHelper
+                ? { ...s.backendHelper, hasSecret: true }
+                : s.backendHelper,
+            }));
           }}
           readOnly={!canEdit}
         />
@@ -354,7 +389,8 @@ export default function AppSettingsScreen({
         <div>
           <h2 className="text-lg font-semibold text-zinc-100">Advanced OIDC</h2>
           <p className="text-sm text-zinc-500 mt-1">
-            Post-logout redirects and optional initiate-login URI. Saved with{" "}
+            Post-logout redirects, optional initiate-login URI, and device-flow
+            third-party login. Saved with{" "}
             <strong className="text-zinc-400">Save</strong> below.
           </p>
         </div>
@@ -415,12 +451,57 @@ export default function AppSettingsScreen({
           <input
             type="url"
             value={initiateLoginUri}
-            onChange={(e) => setInitiateLoginUri(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setInitiateLoginUri(v);
+              if (!isValidInitiateLoginUri(v)) {
+                setDeviceThirdPartyInitiateLogin(false);
+              }
+            }}
             placeholder="https://example.com/login"
             disabled={!canEdit}
             className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
           />
+          <p className="text-xs text-zinc-500 mt-2">
+            OIDC third-party login (iss, target_link_uri). When enabled below,
+            unauthenticated device verification can redirect here once before
+            PymtHouse login.
+          </p>
         </div>
+
+        <label
+          className={`flex items-start gap-3 ${
+            canEdit &&
+            (isValidInitiateLoginUri(initiateLoginUri) ||
+              deviceThirdPartyInitiateLogin)
+              ? "cursor-pointer"
+              : "cursor-not-allowed opacity-80"
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={deviceThirdPartyInitiateLogin}
+            onChange={(e) => setDeviceThirdPartyInitiateLogin(e.target.checked)}
+            disabled={
+              !canEdit ||
+              (!isValidInitiateLoginUri(initiateLoginUri) &&
+                !deviceThirdPartyInitiateLogin)
+            }
+            className="mt-1 rounded border-zinc-600 disabled:opacity-50"
+          />
+          <span>
+            <span className="block text-sm font-medium text-zinc-300">
+              Redirect device verification to initiate login URI
+            </span>
+            <span className="block text-xs text-zinc-500 mt-1">
+              Requires a valid HTTPS initiate login URI above (localhost HTTP
+              allowed for development). Your app must implement{" "}
+              <code className="text-zinc-400">initiate_login_uri</code> and
+              return users to{" "}
+              <code className="text-zinc-400">target_link_uri</code>.
+            </span>
+          </span>
+        </label>
       </section>
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-6 space-y-4">

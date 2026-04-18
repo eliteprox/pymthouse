@@ -3,7 +3,7 @@ import type { TestContext } from "node:test";
 import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "@/db/index";
-import { appUsers, developerApps, signerConfig, users } from "@/db/schema";
+import { appUsers, developerApps, oidcClients, signerConfig, users } from "@/db/schema";
 import { createAppClient, rotateClientSecret } from "@/lib/oidc/clients";
 import { createSession } from "@/lib/auth";
 
@@ -65,6 +65,11 @@ export async function seedDeveloperAppWithClient(opts?: {
   if (!clientSecret) {
     throw new Error("Failed to rotate client secret for test fixture");
   }
+
+  await db
+    .update(oidcClients)
+    .set({ tokenEndpointAuthMethod: "client_secret_post" })
+    .where(eq(oidcClients.clientId, clientId));
 
   const now = new Date().toISOString();
   await db.insert(developerApps).values({

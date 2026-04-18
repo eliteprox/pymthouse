@@ -12,9 +12,10 @@ import { getIssuer } from "./tokens";
 import { hashClientSecret } from "./clients";
 import { getTrustedLoginHosts, normalizeDomain } from "./custom-domains";
 import { ensureSigningKey } from "./jwks";
+import { initiateLoginUriAcceptedByOidcProvider } from "./third-party-initiate-login";
 import { db } from "@/db/index";
 import { oidcSigningKeys, oidcClients, appAllowedDomains, developerApps } from "@/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, or } from "drizzle-orm";
 import { timingSafeEqual } from "crypto";
 import * as jose from "jose";
 
@@ -101,6 +102,11 @@ async function loadClients(): Promise<ClientMetadata[]> {
     };
     meta.response_types = grantTypes.includes("authorization_code") ? ["code"] : [];
 
+    if (row.clientSecretHash) {
+      meta.client_secret = row.clientSecretHash;
+      meta.client_secret_expires_at = 0;
+    }
+
     // White-label client metadata
     if (row.postLogoutRedirectUris) {
       try {
@@ -108,22 +114,16 @@ async function loadClients(): Promise<ClientMetadata[]> {
         if (parsed.length > 0) meta.post_logout_redirect_uris = parsed;
       } catch { /* malformed JSON, skip */ }
     }
-    if (row.initiateLoginUri) meta.initiate_login_uri = row.initiateLoginUri;
+    if (
+      row.initiateLoginUri &&
+      initiateLoginUriAcceptedByOidcProvider(row.initiateLoginUri)
+    ) {
+      meta.initiate_login_uri = row.initiateLoginUri;
+    }
     if (row.logoUri) meta.logo_uri = row.logoUri;
     if (row.policyUri) meta.policy_uri = row.policyUri;
     if (row.tosUri) meta.tos_uri = row.tosUri;
     if (row.clientUri) meta.client_uri = row.clientUri;
-
-    if (row.clientSecretHash) {
-      meta.client_secret = row.clientSecretHash;
-      meta.client_secret_expires_at = 0;
-      if (!grantTypes.includes("client_credentials")) {
-        grantTypes.push("client_credentials");
-      }
-    } else if (meta.token_endpoint_auth_method !== "none") {
-      // Safety guard: clients without a secret cannot be confidential.
-      meta.token_endpoint_auth_method = "none";
-    }
 
     return meta;
   });
@@ -247,7 +247,12 @@ async function buildCorsSnapshot(): Promise<{
     const appRows = await db
       .select({ id: developerApps.id })
       .from(developerApps)
-      .where(eq(developerApps.oidcClientId, oc.id))
+      .where(
+        or(
+          eq(developerApps.oidcClientId, oc.id),
+          eq(developerApps.m2mOidcClientId, oc.id),
+        ),
+      )
       .limit(1);
     const app = appRows[0];
     if (!app) continue;
@@ -329,6 +334,7 @@ export async function getProvider(): Promise<Provider> {
       "users:read",
       "users:write",
       "users:token",
+      "device:approve",
       "admin",
     ],
 
@@ -338,6 +344,7 @@ export async function getProvider(): Promise<Provider> {
       "users:read": ["sub"],
       "users:write": ["sub"],
       "users:token": ["sub"],
+      "device:approve": ["sub"],
       admin: ["sub"],
     },
 
@@ -372,12 +379,19 @@ export async function getProvider(): Promise<Provider> {
         // Without these overrides, visiting `/api/v1/oidc/device/<code>` renders
         // the provider's default HTML which fails (devInteractions is off).
         userCodeInputSource: async (ctx, _form, _out, _err) => {
-          ctx.redirect(`${issuer.replace(/\/api\/v1\/oidc$/, "")}/oidc/device`);
+          const u = new URL(`${issuer.replace(/\/api\/v1\/oidc$/, "")}/oidc/device`);
+          const cid = ctx.oidc?.client?.clientId;
+          if (cid) u.searchParams.set("client_id", cid);
+          u.searchParams.set("iss", getIssuer());
+          ctx.redirect(u.toString());
         },
-        userCodeConfirmSource: async (ctx, _form, _client, _deviceInfo, userCode) => {
-          ctx.redirect(
-            `${issuer.replace(/\/api\/v1\/oidc$/, "")}/oidc/device?user_code=${encodeURIComponent(userCode)}`,
-          );
+        userCodeConfirmSource: async (ctx, _form, client, _deviceInfo, userCode) => {
+          const u = new URL(`${issuer.replace(/\/api\/v1\/oidc$/, "")}/oidc/device`);
+          u.searchParams.set("user_code", userCode);
+          const cid = client?.clientId ?? ctx.oidc?.client?.clientId;
+          if (cid) u.searchParams.set("client_id", cid);
+          u.searchParams.set("iss", getIssuer());
+          ctx.redirect(u.toString());
         },
         successSource: async (ctx) => {
           ctx.body = `<!DOCTYPE html><html><head><title>Device Authorized</title></head>`
@@ -403,7 +417,7 @@ export async function getProvider(): Promise<Provider> {
             throw new Error(`Unknown resource indicator: ${resourceIndicator}`);
           }
           return {
-            scope: "openid sign:job users:read users:write users:token admin",
+            scope: "openid sign:job users:read users:write users:token device:approve admin",
             audience: issuer,
             accessTokenFormat: "jwt" as const,
             accessTokenTTL: 3600,

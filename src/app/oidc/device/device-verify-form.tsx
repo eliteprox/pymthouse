@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { normalizeUserCode } from "@/lib/oidc/device";
 
@@ -8,6 +8,7 @@ interface DeviceInfo {
   clientName: string;
   scopes: string[];
   primaryColor?: string;
+  impliedDeviceConsent?: boolean;
 }
 
 export default function DeviceVerifyForm() {
@@ -19,24 +20,13 @@ export default function DeviceVerifyForm() {
   >("idle");
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [step, setStep] = useState<"enter" | "confirm">(
-    prefilled ? "confirm" : "enter"
-  );
+  const [step, setStep] = useState<"enter" | "confirm">("enter");
+  const impliedConsentStartedRef = useRef(false);
 
   const rawPrimaryColor = deviceInfo?.primaryColor || "#10b981";
   const primaryColor = /^#[0-9a-fA-F]{6}$/.test(rawPrimaryColor) ? rawPrimaryColor : "#10b981";
 
-  // If prefilled, immediately look up the device code
-  useEffect(() => {
-    if (prefilled) {
-      const normalized = normalizeUserCode(prefilled);
-      setUserCode(normalized);
-      lookupCode(normalized);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function lookupCode(code: string) {
+  const lookupCode = useCallback(async (code: string): Promise<boolean> => {
     setStatus("loading");
     setError(null);
     try {
@@ -49,22 +39,28 @@ export default function DeviceVerifyForm() {
       if (!res.ok) {
         setError(data.error_description || data.error || "Invalid code");
         setStatus("error");
-        return;
+        setStep("enter");
+        return false;
       }
-      setDeviceInfo({ 
-        clientName: data.client_name, 
+      setDeviceInfo({
+        clientName: data.client_name,
         scopes: data.scopes,
         primaryColor: data.branding?.primaryColor,
+        impliedDeviceConsent: data.implied_device_consent === true,
       });
       setStep("confirm");
       setStatus("idle");
+      return true;
     } catch {
       setError("Failed to verify code. Please try again.");
       setStatus("error");
+      setStep("enter");
+      return false;
     }
-  }
+  }, []);
 
-  async function authorize(allow: boolean) {
+  const authorize = useCallback(async (allow: boolean, codeOverride?: string) => {
+    const code = normalizeUserCode((codeOverride ?? userCode).trim());
     setStatus("loading");
     setError(null);
     try {
@@ -72,7 +68,7 @@ export default function DeviceVerifyForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          user_code: userCode,
+          user_code: code,
           action: allow ? "approve" : "deny",
         }),
       });
@@ -87,7 +83,42 @@ export default function DeviceVerifyForm() {
       setError("Something went wrong. Please try again.");
       setStatus("error");
     }
-  }
+  }, [userCode]);
+
+  // If prefilled, immediately look up the device code
+  useEffect(() => {
+    if (!prefilled) {
+      return;
+    }
+    const normalized = normalizeUserCode(prefilled);
+    void (async () => {
+      await Promise.resolve();
+      setUserCode(normalized);
+      const result = await lookupCode(normalized);
+      if (!result) {
+        setStep("enter");
+        setStatus("error");
+        setError("Failed to verify code. Please try again.");
+      }
+    })();
+  }, [prefilled, lookupCode]);
+
+  useEffect(() => {
+    if (
+      !prefilled ||
+      !deviceInfo?.impliedDeviceConsent ||
+      impliedConsentStartedRef.current ||
+      step !== "confirm" ||
+      status !== "idle"
+    ) {
+      return;
+    }
+    impliedConsentStartedRef.current = true;
+    const code = normalizeUserCode(prefilled);
+    void Promise.resolve().then(() => {
+      void authorize(true, code);
+    });
+  }, [prefilled, deviceInfo, step, status, authorize]);
 
   function handleSubmitCode(e: React.FormEvent) {
     e.preventDefault();

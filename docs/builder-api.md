@@ -75,12 +75,33 @@ Base path: `/api/v1/apps/{clientId}/users`
 - `admin` is explicitly rejected.
 - Default scope (when omitted): `sign:job`.
 
+## Complete device authorization (server-side, RFC 8693)
+
+Use the **token endpoint** (`POST {issuer}/token`) with `grant_type=urn:ietf:params:oauth:grant-type:token-exchange` — not a separate Builder URL.
+
+1. Mint a **user-scoped access token** (JWT) for the end user via `POST /api/v1/apps/{publicClientId}/users/{externalUserId}/token` (same as normal Builder flow; subject token must carry `client_id` = public `app_…`).
+2. Call **`POST {issuer}/token`** with confidential **M2M Basic auth** (`m2m_…` client) and form body:
+
+| Field | Value |
+| --- | --- |
+| `grant_type` | `urn:ietf:params:oauth:grant-type:token-exchange` |
+| `subject_token` | JWT from step 1 |
+| `subject_token_type` | `urn:ietf:params:oauth:token-type:access_token` |
+| `resource` | `urn:pmth:device_code:<user_code>` (same code the CLI received; normalization matches `/oidc/device`) |
+
+- M2M client must allow **`device:approve`** or **`users:token`**.
+- **`subject_token`** must be a valid access token issued by this issuer to the **public** `app_…` client for that app (`client_id` / `azp` claim).
+- The **public** OIDC client must have **Redirect device verification to initiate login URI** enabled (`device_third_party_initiate_login`).
+- On success, the pending RFC 8628 device grant is bound; response follows RFC 8693 (`access_token`, `issued_token_type`, etc.). Implementation: [`src/lib/oidc/device-token-exchange.ts`](../src/lib/oidc/device-token-exchange.ts).
+
 ## End-to-end flow (recommended)
 
 1. Backend obtains machine token via `client_credentials`.
 2. Backend creates or upserts external user mapping via `/users`.
 3. Backend issues user-scoped JWT via `/users/{externalUserId}/token`.
 4. Backend returns that JWT to the app session that represents the same external user.
+
+For **RFC 8628 device login** (after step 3), call **`POST {issuer}/token`** with RFC 8693 token exchange and `resource=urn:pmth:device_code:<user_code>` as described under “Complete device authorization” above.
 
 ## Security boundaries and privilege model
 
@@ -119,4 +140,5 @@ curl -sS -u "${CLIENT_ID}:${CLIENT_SECRET}" \
 
 - [`src/app/api/v1/apps/[id]/users/route.ts`](../src/app/api/v1/apps/[id]/users/route.ts)
 - [`src/app/api/v1/apps/[id]/users/[externalUserId]/token/route.ts`](../src/app/api/v1/apps/[id]/users/[externalUserId]/token/route.ts)
+- [`src/lib/oidc/device-token-exchange.ts`](../src/lib/oidc/device-token-exchange.ts)
 - [`src/lib/auth.ts`](../src/lib/auth.ts) (`authenticateAppClient`, JWT auth parsing)
