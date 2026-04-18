@@ -1,5 +1,10 @@
 /**
  * Apply Drizzle SQL migrations to PostgreSQL (DATABASE_URL).
+ *
+ * Drizzle applies a migration only when its journal `when` value is greater than the
+ * latest row in `drizzle.__drizzle_migrations` (by `created_at`). After editing the
+ * journal or restoring a DB from backup, new entries must use a `when` timestamp above
+ * that maximum or they will be skipped silently.
  */
 import "./load-env-first";
 import path from "path";

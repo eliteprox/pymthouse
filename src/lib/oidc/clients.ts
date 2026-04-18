@@ -1,5 +1,5 @@
 import { db } from "@/db/index";
-import { oidcClients } from "@/db/schema";
+import { developerApps, oidcClients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { randomBytes } from "crypto";
@@ -224,6 +224,11 @@ export function generateClientId(): string {
   return `app_${randomBytes(12).toString("hex")}`;
 }
 
+/** Confidential sibling client_id for Builder API + RFC 8693 device approval token exchange (not used in public SDK config). */
+export function generateM2mClientId(): string {
+  return `m2m_${randomBytes(12).toString("hex")}`;
+}
+
 export function generateClientSecret(): string {
   return `pmth_cs_${randomBytes(32).toString("hex")}`;
 }
@@ -274,11 +279,65 @@ export async function rotateClientSecret(clientId: string): Promise<string | nul
     .update(oidcClients)
     .set({
       clientSecretHash: secretHash,
-      tokenEndpointAuthMethod: "client_secret_post",
     })
     .where(eq(oidcClients.clientId, clientId));
 
   return secret;
+}
+
+/**
+ * Ensures a confidential M2M OIDC row exists for interactive apps that need
+ * Builder API / device approval without turning the public client confidential.
+ */
+export async function ensureM2mBackendClient(params: {
+  appInternalId: string;
+  appDisplayName: string;
+}): Promise<{ id: string; clientId: string } | null> {
+  const appRows = await db
+    .select()
+    .from(developerApps)
+    .where(eq(developerApps.id, params.appInternalId))
+    .limit(1);
+  const app = appRows[0];
+  if (!app?.oidcClientId) {
+    return null;
+  }
+
+  if (app.m2mOidcClientId) {
+    const existing = await db
+      .select()
+      .from(oidcClients)
+      .where(eq(oidcClients.id, app.m2mOidcClientId))
+      .limit(1);
+    if (existing[0]) {
+      return { id: existing[0].id, clientId: existing[0].clientId };
+    }
+  }
+
+  const id = uuidv4();
+  const clientId = generateM2mClientId();
+  const display =
+    params.appDisplayName.trim().slice(0, 80) || "Provider app";
+
+  await db.insert(oidcClients).values({
+    id,
+    clientId,
+    clientSecretHash: null,
+    displayName: `${display} - backend helper`,
+    redirectUris: JSON.stringify([]),
+    allowedScopes: "users:token users:write device:approve",
+    grantTypes: "client_credentials",
+    tokenEndpointAuthMethod: "client_secret_basic",
+    deviceThirdPartyInitiateLogin: 0,
+    initiateLoginUri: null,
+  });
+
+  await db
+    .update(developerApps)
+    .set({ m2mOidcClientId: id })
+    .where(eq(developerApps.id, params.appInternalId));
+
+  return { id, clientId };
 }
 
 export async function updateClientConfig(

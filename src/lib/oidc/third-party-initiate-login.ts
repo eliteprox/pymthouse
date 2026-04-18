@@ -3,12 +3,12 @@ import { getPublicOrigin } from "@/lib/oidc/tokens";
 
 const INITIATE_SKIP_MAX_AGE_SEC = 120;
 
+/** True only for loopback hostnames (cleartext HTTP allowed in non-production). */
 function isLocalhostHostname(hostname: string): boolean {
   return (
     hostname === "localhost" ||
     hostname === "127.0.0.1" ||
-    hostname.startsWith("192.168.") ||
-    hostname.endsWith(".local")
+    hostname === "::1"
   );
 }
 
@@ -57,7 +57,7 @@ export function buildDeviceFlowTargetLinkUri(searchParams: {
 }
 
 /**
- * Registered initiate_login_uri must use HTTPS (HTTP allowed on localhost in non-production).
+ * Registered initiate_login_uri must use HTTPS (HTTP allowed on loopback hosts only in non-production).
  */
 export function validateInitiateLoginUri(uri: string): void {
   const u = new URL(uri);
@@ -75,6 +75,21 @@ export function validateInitiateLoginUri(uri: string): void {
     return;
   }
   throw new Error("initiate_login_uri must use HTTPS");
+}
+
+/**
+ * node-oidc-provider validates `initiate_login_uri` as HTTPS-only (no localhost HTTP exception).
+ * Forward only those values onto ClientMetadata; loopback HTTP in dev stays out of the provider
+ * so /device/auth does not 400 — device flow still uses the DB via getInitiateLoginUriForDeviceFlow().
+ */
+export function initiateLoginUriAcceptedByOidcProvider(uri: string): boolean {
+  try {
+    const u = new URL(uri);
+    if (u.hash) return false;
+    return u.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 /**

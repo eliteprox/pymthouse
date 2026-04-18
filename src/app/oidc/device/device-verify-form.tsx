@@ -20,15 +20,13 @@ export default function DeviceVerifyForm() {
   >("idle");
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [step, setStep] = useState<"enter" | "confirm">(
-    prefilled ? "confirm" : "enter"
-  );
+  const [step, setStep] = useState<"enter" | "confirm">("enter");
   const impliedConsentStartedRef = useRef(false);
 
   const rawPrimaryColor = deviceInfo?.primaryColor || "#10b981";
   const primaryColor = /^#[0-9a-fA-F]{6}$/.test(rawPrimaryColor) ? rawPrimaryColor : "#10b981";
 
-  async function lookupCode(code: string) {
+  const lookupCode = useCallback(async (code: string): Promise<boolean> => {
     setStatus("loading");
     setError(null);
     try {
@@ -41,7 +39,8 @@ export default function DeviceVerifyForm() {
       if (!res.ok) {
         setError(data.error_description || data.error || "Invalid code");
         setStatus("error");
-        return;
+        setStep("enter");
+        return false;
       }
       setDeviceInfo({
         clientName: data.client_name,
@@ -51,11 +50,14 @@ export default function DeviceVerifyForm() {
       });
       setStep("confirm");
       setStatus("idle");
+      return true;
     } catch {
       setError("Failed to verify code. Please try again.");
       setStatus("error");
+      setStep("enter");
+      return false;
     }
-  }
+  }, []);
 
   const authorize = useCallback(async (allow: boolean, codeOverride?: string) => {
     const code = normalizeUserCode((codeOverride ?? userCode).trim());
@@ -85,13 +87,20 @@ export default function DeviceVerifyForm() {
 
   // If prefilled, immediately look up the device code
   useEffect(() => {
-    if (prefilled) {
-      const normalized = normalizeUserCode(prefilled);
-      setUserCode(normalized);
-      lookupCode(normalized);
+    if (!prefilled) {
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const normalized = normalizeUserCode(prefilled);
+    setUserCode(normalized);
+    void (async () => {
+      const result = await lookupCode(normalized);
+      if (!result) {
+        setStep("enter");
+        setStatus("error");
+        setError("Failed to verify code. Please try again.");
+      }
+    })();
+  }, [prefilled, lookupCode]);
 
   useEffect(() => {
     if (

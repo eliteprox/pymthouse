@@ -42,6 +42,12 @@ export const OIDC_SCOPES: ScopeDefinition[] = [
       "Issue app-user access tokens for provider-managed backends. Enables per-user usage attribution.",
   },
   {
+    value: "device:approve",
+    label: "Approve device codes",
+    description:
+      "RFC 8693 token exchange to bind RFC 8628 device codes after third-party login (confidential client only).",
+  },
+  {
     value: "admin",
     label: "Admin",
     description: "Administrative access to provider configuration surfaces",

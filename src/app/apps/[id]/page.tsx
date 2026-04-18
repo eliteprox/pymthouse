@@ -55,12 +55,14 @@ export default function AppDetailPage() {
             ],
             tokenEndpointAuthMethod:
               data.oidcClient?.tokenEndpointAuthMethod || "none",
+            backendDeviceHelper: Boolean(data.m2mOidcClient),
           },
           state: {
             id: data.id,
             clientId: data.oidcClient?.clientId || null,
             status: data.status,
             hasSecret: data.oidcClient?.hasSecret || false,
+            backendHelper: data.m2mOidcClient ?? null,
           },
           domains: (data.domains || []).map(
             (d: { id: string; domain: string }) => ({

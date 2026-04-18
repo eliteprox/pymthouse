@@ -6,13 +6,23 @@ import { authOptions } from "@/lib/next-auth-options";
 import { developerApps, oidcClients, providerAdmins } from "@/db/schema";
 
 export async function getProviderAppByClientId(clientId: string) {
-  const rows = await db
+  const byPublic = await db
     .select({ app: developerApps })
     .from(developerApps)
     .innerJoin(oidcClients, eq(developerApps.oidcClientId, oidcClients.id))
     .where(eq(oidcClients.clientId, clientId))
     .limit(1);
-  return rows[0]?.app ?? null;
+  if (byPublic[0]?.app) {
+    return byPublic[0].app;
+  }
+
+  const byM2m = await db
+    .select({ app: developerApps })
+    .from(developerApps)
+    .innerJoin(oidcClients, eq(developerApps.m2mOidcClientId, oidcClients.id))
+    .where(eq(oidcClients.clientId, clientId))
+    .limit(1);
+  return byM2m[0]?.app ?? null;
 }
 
 export async function getProviderApp(appId: string) {

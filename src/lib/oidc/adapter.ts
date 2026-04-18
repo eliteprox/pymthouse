@@ -6,7 +6,7 @@
  */
 
 import type { Adapter, AdapterPayload } from "oidc-provider";
-import { and, eq, isNotNull, lt } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/db/index";
 import { oidcPayloads } from "@/db/schema";
 
@@ -91,6 +91,48 @@ export class PostgresOidcAdapter implements Adapter {
         ? { payload: row.payload, consumedAt: row.consumedAt }
         : undefined,
     );
+  }
+
+  /**
+   * Binds approval fields on a DeviceCode row only when it is still unbound.
+   * Prevents concurrent approvals from overwriting an existing binding.
+   */
+  async bindDeviceApprovalIfUnbound(
+    id: string,
+    payload: AdapterPayload,
+    expiresIn: number,
+  ): Promise<boolean> {
+    if (this.model !== "DeviceCode") {
+      throw new TypeError("bindDeviceApprovalIfUnbound is only for DeviceCode");
+    }
+    const expiresAt = expiresIn ? Math.floor(Date.now() / 1000) + expiresIn : null;
+    const payloadJson = JSON.stringify(payload);
+    const grantIdCol =
+      typeof (payload as Record<string, unknown>).grantId === "string"
+        ? ((payload as Record<string, unknown>).grantId as string)
+        : null;
+
+    const updated = await db
+      .update(oidcPayloads)
+      .set({
+        payload: payloadJson,
+        expiresAt,
+        uid: payload.uid ?? null,
+        userCode: payload.userCode ?? null,
+        grantId: grantIdCol,
+      })
+      .where(
+        and(
+          eq(oidcPayloads.id, id),
+          eq(oidcPayloads.model, this.model),
+          isNull(oidcPayloads.grantId),
+          sql`coalesce((${oidcPayloads.payload})::jsonb->>'accountId', '') = ''`,
+          sql`coalesce((${oidcPayloads.payload})::jsonb->>'grantId', '') = ''`,
+        ),
+      )
+      .returning({ id: oidcPayloads.id });
+
+    return updated.length > 0;
   }
 
   async findByUserCode(userCode: string): Promise<AdapterPayload | undefined> {

@@ -13,7 +13,10 @@ interface Props {
   domains: { id: string; domain: string }[];
   onDomainsChange: (domains: { id: string; domain: string }[]) => void;
   hasSecret: boolean;
+  /** Confidential M2M sibling (Builder + device approval token exchange); null until provisioned. */
+  backendHelper: { clientId: string; hasSecret: boolean } | null;
   onSecretGenerated: () => void;
+  onBackendSecretGenerated?: () => void;
   readOnly?: boolean;
 }
 
@@ -27,14 +30,18 @@ export default function TestingStep({
   domains,
   onDomainsChange,
   hasSecret,
+  backendHelper,
   onSecretGenerated,
+  onBackendSecretGenerated,
   readOnly = false,
 }: Props) {
   const [newUri, setNewUri] = useState("");
   const [newDomain, setNewDomain] = useState("");
   const [adding, setAdding] = useState(false);
   const [secret, setSecret] = useState<string | null>(null);
+  const [backendSecret, setBackendSecret] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [generatingBackend, setGeneratingBackend] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [redirectPersistError, setRedirectPersistError] = useState<string | null>(null);
   const [redirectSaving, setRedirectSaving] = useState(false);
@@ -169,6 +176,23 @@ export default function TestingStep({
     }
   }, [appId, onSecretGenerated, readOnly]);
 
+  const generateBackendSecret = useCallback(async () => {
+    if (readOnly || !appId) return;
+    setGeneratingBackend(true);
+    try {
+      const res = await fetch(`/api/v1/apps/${appId}/credentials`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBackendSecret(data.clientSecret);
+        onBackendSecretGenerated?.();
+      }
+    } finally {
+      setGeneratingBackend(false);
+    }
+  }, [appId, onBackendSecretGenerated, readOnly]);
+
   const copyToClipboard = useCallback(
     async (text: string, label: string) => {
       await navigator.clipboard.writeText(text);
@@ -205,13 +229,15 @@ export default function TestingStep({
         }).toString()}`
       : null;
 
-  const m2mCurlSnippet = clientId
+  const m2mClientIdForSnippet = isM2MOnly ? clientId : backendHelper?.clientId ?? null;
+
+  const m2mCurlSnippet = m2mClientIdForSnippet
     ? `curl -X POST ${typeof window !== "undefined" ? window.location.origin : ""}/api/v1/oidc/token \\
   -H "Content-Type: application/x-www-form-urlencoded" \\
   -d "grant_type=client_credentials" \\
-  -d "client_id=${clientId}" \\
+  -d "client_id=${m2mClientIdForSnippet}" \\
   -d "client_secret=YOUR_CLIENT_SECRET" \\
-  -d "scope=${effectiveScopes}"`
+  -d "scope=users:token users:write"`
     : "";
 
   return (
@@ -409,65 +435,167 @@ export default function TestingStep({
       {/* Divider */}
       <div className="border-t border-zinc-800" />
 
-      {/* Client ID */}
-      <div>
-        <label className="block text-sm font-medium text-zinc-300 mb-1.5">
-          Client ID
-        </label>
-        <div className="flex items-center gap-2">
-          <code className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-emerald-400 text-sm font-mono">
-            {clientId || "Create app first"}
-          </code>
-          {clientId && (
-            <button
-              onClick={() => copyToClipboard(clientId, "clientId")}
-              className="px-3 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 transition-colors"
-            >
-              {copied === "clientId" ? "Copied!" : "Copy"}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Client Secret */}
-      <div>
-        <label className="block text-sm font-medium text-zinc-300 mb-1.5">
-          Client Secret
-        </label>
-        {secret ? (
+      {isM2MOnly ? (
+        <>
           <div>
-            <div className="flex items-center gap-2 mb-2">
-              <code className="flex-1 px-3 py-2 bg-zinc-800/50 border border-amber-500/30 rounded-lg text-amber-400 text-sm font-mono break-all">
-                {secret}
+            <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+              Client ID
+            </label>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-emerald-400 text-sm font-mono">
+                {clientId || "Create app first"}
               </code>
-              <button
-                onClick={() => copyToClipboard(secret, "secret")}
-                className="px-3 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 transition-colors shrink-0"
-              >
-                {copied === "secret" ? "Copied!" : "Copy"}
-              </button>
+              {clientId && (
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(clientId, "clientId")}
+                  className="px-3 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 transition-colors"
+                >
+                  {copied === "clientId" ? "Copied!" : "Copy"}
+                </button>
+              )}
             </div>
-            <p className="text-xs text-amber-400/80">
-              Store this secret securely. It will not be shown again.
-            </p>
           </div>
-        ) : (
-          <div className="flex items-center gap-3">
-            {hasSecret && (
-              <p className="text-sm text-zinc-500">
-                A secret has been generated. Generate a new one to rotate it.
-              </p>
+
+          <div>
+            <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+              Client Secret
+            </label>
+            {secret ? (
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <code className="flex-1 px-3 py-2 bg-zinc-800/50 border border-amber-500/30 rounded-lg text-amber-400 text-sm font-mono break-all">
+                    {secret}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(secret, "secret")}
+                    className="px-3 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 transition-colors shrink-0"
+                  >
+                    {copied === "secret" ? "Copied!" : "Copy"}
+                  </button>
+                </div>
+                <p className="text-xs text-amber-400/80">
+                  Store this secret securely. It will not be shown again.
+                </p>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                {hasSecret && (
+                  <p className="text-sm text-zinc-500">
+                    A secret has been generated. Generate a new one to rotate it.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void generateSecret()}
+                  disabled={readOnly || generating || !appId}
+                  className="px-4 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 disabled:opacity-40 transition-colors"
+                >
+                  {generating ? "Generating..." : hasSecret ? "Rotate Secret" : "Generate Secret"}
+                </button>
+              </div>
             )}
-            <button
-              onClick={generateSecret}
-              disabled={readOnly || generating || !appId}
-              className="px-4 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 disabled:opacity-40 transition-colors"
-            >
-              {generating ? "Generating..." : hasSecret ? "Rotate Secret" : "Generate Secret"}
-            </button>
           </div>
-        )}
-      </div>
+        </>
+      ) : (
+        <>
+          <div>
+            <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+              Public / SDK client ID
+            </label>
+            <p className="text-xs text-zinc-500 mb-2">
+              Use this in SDKs, CLIs, and the device authorization flow. It stays public (no secret).
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-emerald-400 text-sm font-mono">
+                {clientId || "Create app first"}
+              </code>
+              {clientId && (
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(clientId, "clientId")}
+                  className="px-3 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 transition-colors"
+                >
+                  {copied === "clientId" ? "Copied!" : "Copy"}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {backendHelper ? (
+            <div className="mt-6 p-4 rounded-xl border border-cyan-500/20 bg-cyan-500/5 space-y-3">
+              <h3 className="text-sm font-semibold text-cyan-200/90">Backend helper (confidential)</h3>
+              <p className="text-xs text-zinc-500">
+                Use Basic auth with this client for Builder APIs and server-side device approval. Never embed in public apps.
+              </p>
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1">Client ID</label>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-cyan-300 text-sm font-mono">
+                    {backendHelper.clientId}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(backendHelper.clientId, "m2mClientId")}
+                    className="px-3 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 transition-colors"
+                  >
+                    {copied === "m2mClientId" ? "Copied!" : "Copy"}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1">Client Secret</label>
+                {backendSecret ? (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <code className="flex-1 px-3 py-2 bg-zinc-800/50 border border-amber-500/30 rounded-lg text-amber-400 text-sm font-mono break-all">
+                        {backendSecret}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(backendSecret, "backendSecret")}
+                        className="px-3 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 shrink-0"
+                      >
+                        {copied === "backendSecret" ? "Copied!" : "Copy"}
+                      </button>
+                    </div>
+                    <p className="text-xs text-amber-400/80">
+                      Store this secret securely. It will not be shown again.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {backendHelper.hasSecret && (
+                      <p className="text-sm text-zinc-500">
+                        A secret exists. Generate a new one to rotate.
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void generateBackendSecret()}
+                      disabled={readOnly || generatingBackend || !appId}
+                      className="px-4 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 disabled:opacity-40 transition-colors"
+                    >
+                      {generatingBackend
+                        ? "Generating..."
+                        : backendHelper.hasSecret
+                          ? "Rotate Secret"
+                          : "Generate Secret"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-500 mt-4">
+              Enable <strong className="text-zinc-400">Backend device helper</strong> in Auth &amp; Scopes,
+              save, then return here to create a confidential <code className="font-mono text-zinc-400">m2m_</code> client
+              for Builder APIs and NaaP-side device approval.
+            </p>
+          )}
+        </>
+      )}
 
       {/* Discovery URL */}
       <div>

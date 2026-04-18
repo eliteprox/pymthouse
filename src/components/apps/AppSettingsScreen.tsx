@@ -40,6 +40,7 @@ function mergeFormData(initial: Partial<AppFormData>): AppFormData {
         ? [...initial.grantTypes]
         : [...defaultAppFormData.grantTypes],
     allowedScopes: initial.allowedScopes ?? defaultAppFormData.allowedScopes,
+    backendDeviceHelper: initial.backendDeviceHelper ?? false,
   };
 }
 
@@ -98,16 +99,20 @@ export default function AppSettingsScreen({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...formData }),
       });
+      const putJson = (await res.json()) as {
+        success?: boolean;
+        m2mOidcClient?: { clientId: string; hasSecret: boolean } | null;
+        error?: string;
+      };
       if (!res.ok) {
-        const text = await res.text();
-        let msg = `Failed to save (${res.status})`;
-        try {
-          const data = text ? JSON.parse(text) : {};
-          if (data.error) msg = data.error;
-        } catch {
-          /* keep generic */
-        }
-        throw new Error(msg);
+        throw new Error(putJson.error || `Failed to save (${res.status})`);
+      }
+
+      if (putJson.m2mOidcClient) {
+        setAppState((s) => ({
+          ...s,
+          backendHelper: putJson.m2mOidcClient ?? null,
+        }));
       }
 
       const settingsRes = await fetch(`/api/v1/apps/${appId}/settings`, {
@@ -354,9 +359,18 @@ export default function AppSettingsScreen({
           domains={domains}
           onDomainsChange={setDomains}
           hasSecret={appState.hasSecret}
+          backendHelper={appState.backendHelper}
           onSecretGenerated={() => {
             setAppState((s) => ({ ...s, hasSecret: true }));
             updateFormData({ tokenEndpointAuthMethod: "client_secret_post" });
+          }}
+          onBackendSecretGenerated={() => {
+            setAppState((s) => ({
+              ...s,
+              backendHelper: s.backendHelper
+                ? { ...s.backendHelper, hasSecret: true }
+                : s.backendHelper,
+            }));
           }}
           readOnly={!canEdit}
         />

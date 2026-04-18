@@ -81,56 +81,26 @@ export async function POST(
     return NextResponse.json({ error: "externalUserId is required" }, { status: 400 });
   }
 
-  const existingRows = await db
-    .select()
-    .from(appUsers)
-    .where(
-      and(
-        eq(appUsers.clientId, access.app.id),
-        eq(appUsers.externalUserId, externalUserId),
-      ),
-    )
-    .limit(1);
-  const existing = existingRows[0];
-
-  if (existing) {
-    await db
-      .update(appUsers)
-      .set({
-        email,
-        status: typeof body.status === "string" ? body.status : existing.status,
-        role: "user",
-      })
-      .where(eq(appUsers.id, existing.id));
-
-    await writeAuditLog({
-      clientId: access.app.id,
-      actorUserId: access.actorUserId,
-      action: "app_user_upserted",
-      status: "success",
-      metadata: { externalUserId },
-    });
-
-    return NextResponse.json({
-      ...existing,
-      clientId,
-      email,
-      status: typeof body.status === "string" ? body.status : existing.status,
-      role: "user",
-    });
-  }
-
-  const user = {
+  const status = typeof body.status === "string" ? body.status : "active";
+  const newUser = {
     id: uuidv4(),
     clientId: access.app.id,
     externalUserId,
     email,
-    status: typeof body.status === "string" ? body.status : "active",
+    status,
     role: "user",
     createdAt: new Date().toISOString(),
   };
 
-  await db.insert(appUsers).values(user);
+  const upserted = await db
+    .insert(appUsers)
+    .values(newUser)
+    .onConflictDoUpdate({
+      target: [appUsers.clientId, appUsers.externalUserId],
+      set: { email, status, role: "user" },
+    })
+    .returning();
+  const row = upserted[0] ?? newUser;
 
   await writeAuditLog({
     clientId: access.app.id,
@@ -140,12 +110,13 @@ export async function POST(
     metadata: { externalUserId },
   });
 
+  const isNew = row.id === newUser.id;
   return NextResponse.json(
     {
-      ...user,
+      ...row,
       clientId,
     },
-    { status: 201 },
+    { status: isNew ? 201 : 200 },
   );
 }
 

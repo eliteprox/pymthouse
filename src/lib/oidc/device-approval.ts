@@ -15,6 +15,18 @@ export type DeviceApprovalFailure = {
 
 export type DeviceApprovalSuccess = { ok: true };
 
+function isDeviceCodeBound(payload: Record<string, unknown>): boolean {
+  const accountId = payload.accountId;
+  const grantId = payload.grantId;
+  if (typeof accountId === "string" && accountId.length > 0) {
+    return true;
+  }
+  if (typeof grantId === "string" && grantId.length > 0) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Bind a pending device code to an OIDC account and grant scopes.
  * `oidcClientId` must match the client that requested the device code.
@@ -72,26 +84,6 @@ export async function approveDeviceCodeForAccount(
     };
   }
 
-  const provider = await getProvider();
-  const grant = new provider.Grant();
-  grant.clientId = oidcClientId;
-  grant.accountId = accountId;
-  const scope =
-    typeof deviceCode.scope === "string"
-      ? deviceCode.scope
-      : typeof deviceCode.params === "object" &&
-          deviceCode.params !== null &&
-          typeof (deviceCode.params as Record<string, unknown>).scope === "string"
-        ? ((deviceCode.params as Record<string, unknown>).scope as string)
-        : "";
-  if (scope) {
-    grant.addOIDCScope(scope);
-    grant.addResourceScope(getIssuer(), scope);
-  }
-  const grantId = await grant.save();
-  const now = Math.floor(Date.now() / 1000);
-  const expiresIn = deviceCode.exp ? Math.max(deviceCode.exp - now, 1) : 600;
-
   const params =
     typeof deviceCode.params === "object" && deviceCode.params !== null
       ? (deviceCode.params as Record<string, unknown>)
@@ -104,22 +96,61 @@ export async function approveDeviceCodeForAccount(
         ? deviceCode.resource
         : getIssuer();
 
-  await adapter.upsert(
+  const scope =
+    typeof deviceCode.scope === "string"
+      ? deviceCode.scope
+      : params && typeof params.scope === "string"
+        ? params.scope
+        : "";
+
+  const latest = await adapter.find(deviceCode.jti!);
+  if (!latest) {
+    return {
+      ok: false,
+      error: "invalid_grant",
+      description: "Invalid, expired, or already used device code",
+      status: 400,
+    };
+  }
+
+  if (isDeviceCodeBound(latest as Record<string, unknown>)) {
+    return { ok: true };
+  }
+
+  const provider = await getProvider();
+  const grant = new provider.Grant();
+  grant.clientId = oidcClientId;
+  grant.accountId = accountId;
+  if (scope) {
+    grant.addOIDCScope(scope);
+    grant.addResourceScope(resource, scope);
+  }
+  const newGrantId = await grant.save();
+
+  const now = Math.floor(Date.now() / 1000);
+  const expiresIn = deviceCode.exp ? Math.max(deviceCode.exp - now, 1) : 600;
+
+  const bound = await adapter.bindDeviceApprovalIfUnbound(
     deviceCode.jti!,
     {
-      ...deviceCode,
+      ...latest,
       accountId,
-      grantId,
+      grantId: newGrantId,
       scope,
       resource,
       authTime: now,
-      acr: typeof deviceCode.acr === "string" ? deviceCode.acr : "urn:pmth:session",
-      amr: Array.isArray(deviceCode.amr) ? deviceCode.amr : ["pwd"],
+      acr: typeof latest.acr === "string" ? latest.acr : "urn:pmth:session",
+      amr: Array.isArray(latest.amr) ? latest.amr : ["pwd"],
       error: undefined,
       errorDescription: undefined,
     },
     expiresIn,
   );
+
+  if (!bound) {
+    await grant.destroy();
+    return { ok: true };
+  }
 
   return { ok: true };
 }

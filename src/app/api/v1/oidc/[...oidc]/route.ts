@@ -20,6 +20,10 @@ import {
   handleGatewayTokenExchange,
   isGatewayTokenExchangeRequest,
 } from "@/lib/oidc/gateway-token-exchange";
+import {
+  handleDeviceApprovalTokenExchange,
+  isDeviceApprovalTokenExchangeRequest,
+} from "@/lib/oidc/device-token-exchange";
 import { rotateProgrammaticRefreshToken } from "@/lib/oidc/programmatic-tokens";
 
 const RESOURCE_REQUIRED_GRANTS = new Set([
@@ -119,7 +123,27 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
         exchangeParams,
       );
       const subjectTokenType = exchangeParams.get("subject_token_type") || "";
+      const resourceParam = exchangeParams.get("resource");
       try {
+        if (
+          isDeviceApprovalTokenExchangeRequest({
+            grantType,
+            subjectTokenType,
+            resource: resourceParam,
+          })
+        ) {
+          const result = await handleDeviceApprovalTokenExchange({
+            clientId,
+            clientSecret,
+            subjectToken: exchangeParams.get("subject_token") || "",
+            subjectTokenType,
+            resource: resourceParam,
+          });
+          return NextResponse.json(result, {
+            headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
+          });
+        }
+
         if (
           isGatewayTokenExchangeRequest({
             grantType,

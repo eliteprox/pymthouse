@@ -4,7 +4,8 @@ import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
 import { developerApps, oidcClients, appAllowedDomains } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { updateClientConfig } from "@/lib/oidc/clients";
+import { ensureM2mBackendClient, updateClientConfig } from "@/lib/oidc/clients";
+import { resetProvider } from "@/lib/oidc/provider";
 import { DEFAULT_OIDC_SCOPES, OIDC_SCOPES } from "@/lib/oidc/scopes";
 import {
   canEditProviderApp,
@@ -27,6 +28,10 @@ export async function GET(
   const { app } = auth;
 
   let clientInfo = null;
+  let m2mOidcClient: {
+    clientId: string;
+    hasSecret: boolean;
+  } | null = null;
   if (app.oidcClientId) {
     const clientRowsGet = await db
       .select()
@@ -56,6 +61,21 @@ export async function GET(
     }
   }
 
+  if (app.m2mOidcClientId) {
+    const m2mRows = await db
+      .select()
+      .from(oidcClients)
+      .where(eq(oidcClients.id, app.m2mOidcClientId))
+      .limit(1);
+    const m2m = m2mRows[0];
+    if (m2m) {
+      m2mOidcClient = {
+        clientId: m2m.clientId,
+        hasSecret: !!m2m.clientSecretHash,
+      };
+    }
+  }
+
   const domains = await db
     .select()
     .from(appAllowedDomains)
@@ -81,6 +101,7 @@ export async function GET(
           allowedScopes: clientInfo.allowedScopes ?? DEFAULT_OIDC_SCOPES,
         }
       : null,
+    m2mOidcClient,
     domains,
   });
 }
@@ -151,7 +172,38 @@ export async function PUT(
     }
   }
 
-  return NextResponse.json({ success: true });
+  let m2mAfter: { clientId: string; hasSecret: boolean } | null = null;
+  if (body.backendDeviceHelper === true) {
+    await ensureM2mBackendClient({
+      appInternalId: app.id,
+      appDisplayName: typeof body.name === "string" && body.name.trim()
+        ? body.name.trim()
+        : app.name,
+    });
+    resetProvider();
+    const refreshed = await db
+      .select({ m2mOidcClientId: developerApps.m2mOidcClientId })
+      .from(developerApps)
+      .where(eq(developerApps.id, app.id))
+      .limit(1);
+    const m2mPk = refreshed[0]?.m2mOidcClientId;
+    if (m2mPk) {
+      const m2mRows = await db
+        .select()
+        .from(oidcClients)
+        .where(eq(oidcClients.id, m2mPk))
+        .limit(1);
+      const m2m = m2mRows[0];
+      if (m2m) {
+        m2mAfter = {
+          clientId: m2m.clientId,
+          hasSecret: !!m2m.clientSecretHash,
+        };
+      }
+    }
+  }
+
+  return NextResponse.json({ success: true, m2mOidcClient: m2mAfter });
 }
 
 export async function DELETE(

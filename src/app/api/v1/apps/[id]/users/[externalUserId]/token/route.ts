@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { authenticateAppClient, hasScope } from "@/lib/auth";
 import { db } from "@/db/index";
-import { appUsers } from "@/db/schema";
+import { appUsers, oidcClients } from "@/db/schema";
 import { createCorrelationId, writeAuditLog } from "@/lib/audit";
 import { issueProgrammaticTokens, ProgrammaticTokenError } from "@/lib/oidc/programmatic-tokens";
 import { getProviderApp } from "@/lib/provider-apps";
@@ -78,8 +78,14 @@ export async function POST(
     ? requestedScopes
     : ["sign:job"];
 
+  const publicClientRows = await db
+    .select({ allowedScopes: oidcClients.allowedScopes })
+    .from(oidcClients)
+    .where(eq(oidcClients.clientId, client.appId))
+    .limit(1);
+  const publicAllowedScopes = publicClientRows[0]?.allowedScopes ?? "";
   const invalidScope = scopes.find(
-    (scope) => !hasScope(client.scopes, scope) || scope === "admin",
+    (scope) => !hasScope(publicAllowedScopes, scope) || scope === "admin",
   );
   if (invalidScope) {
     await writeAuditLog({
@@ -133,7 +139,7 @@ export async function POST(
   try {
     tokens = await issueProgrammaticTokens({
       developerAppId: app.id,
-      oauthClientId: client.clientId,
+      oauthClientId: client.appId,
       appUserId: appUser.id,
       scopes,
     });

@@ -33,6 +33,7 @@ Grants in use:
 - `npm run oidc:seed` now initializes only signing keys.
 - Clients are created and managed through app registration (dashboard/API).
 - Each confidential client authenticates at the token endpoint using its own `client_id` + `client_secret`.
+- **Interactive apps** that need both a **public** client (SDK / RFC 8628 device flow, `token_endpoint_auth_method: none`) and a **confidential** backend (Builder API + RFC 8693 **device approval** token exchange at `POST {issuer}/token`) use **two OIDC clients** linked to one developer app: the primary `app_…` row plus an optional **`m2m_…`** sibling (`developer_apps.m2m_oidc_client_id`). Generating a secret on the public client would break device login; secrets belong only on the M2M client.
 
 ## Device authorization (RFC 8628) and third-party initiate login
 
@@ -44,10 +45,36 @@ For clients that use the device code grant, the `/device/auth` response is rewri
 Unauthenticated users may be redirected once to your registered **`initiate_login_uri`** (OIDC Core — initiating login from a third party) when the app opts in. The redirect target is loaded **from the database for `client_id`**; `/oidc/device/initiate-login` does not accept an arbitrary `initiate_login_uri` query parameter (open-redirect safe).
 
 - **Opt-in:** In app settings, enable **Redirect device verification to initiate login URI** and set **Initiate login URI** to your HTTPS endpoint that accepts `iss`, `target_link_uri`, and optional `login_hint`.
-- **Your endpoint** must validate `iss` against discovery (must equal this deployment’s issuer), validate `target_link_uri`, then complete login at your IdP and redirect the user to `target_link_uri` so they land back on `/oidc/device` with the same query parameters.
+- **Your endpoint** must validate `iss` against discovery (must equal this deployment’s issuer), validate `target_link_uri`, then complete login at your IdP. **Option B (NaaP):** after login, NaaP mints a user JWT via Builder, then calls **`POST {issuer}/token`** with `grant_type=token-exchange` and `resource=urn:pmth:device_code:<user_code>` (M2M Basic auth), and shows `/oidc/device-approved` instead of redirecting the browser back to `target_link_uri`.
 - **Security:** Treat `initiate_login_uri` as a sensitive redirect; use HTTPS only (HTTP on localhost allowed in development), avoid open redirects on your handler, and use CSRF protection on any form that starts login. The OP sets a short-lived, per-client cookie so a failed RP round-trip does not loop redirects indefinitely.
 
-**Confidential backends** can complete the device grant without a browser session using the Builder API: `POST /api/v1/apps/{clientId}/device/approve` (requires `users:token` or `users:write`, third-party device login enabled, and Basic auth). See [Builder API](builder-api.md).
+**Confidential backends** complete the device grant with **`POST {issuer}/token`** (RFC 8693 token exchange: **`m2m_…`** Basic auth, `device:approve` or `users:token`, `resource=urn:pmth:device_code:<user_code>`, `subject_token` = user JWT for the **public** `app_…` client). Third-party device login must be enabled on the **public** client. See [Builder API](builder-api.md) (“Complete device authorization”).
+
+```mermaid
+sequenceDiagram
+  participant M2M as Confidential client (m2m_…)
+  participant Issuer as PymtHouse /token
+  M2M->>Issuer: POST token-exchange + resource urn:pmth:device_code:USERCODE
+  Note over M2M,Issuer: Basic auth; subject_token = user access JWT (public app client_id)
+  Issuer-->>M2M: 200 RFC 8693 (bind device grant as side-effect)
+```
+
+Example (after minting `USER_JWT` via `POST /api/v1/apps/{publicClientId}/users/{externalUserId}/token`):
+
+```bash
+ISSUER="https://your-pymthouse.example/api/v1/oidc"
+M2M_ID="m2m_..."
+M2M_SECRET="pmth_cs_..."
+USER_JWT="eyJ..."   # access_token from Builder user-token step (sign:job)
+
+curl -sS -u "${M2M_ID}:${M2M_SECRET}" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
+  --data-urlencode "subject_token=${USER_JWT}" \
+  --data-urlencode "subject_token_type=urn:ietf:params:oauth:token-type:access_token" \
+  --data-urlencode "resource=urn:pmth:device_code:ABCD-EFGH" \
+  "${ISSUER}/token"
+```
 
 **Implied consent (integration flow):** For confidential clients with third-party device login enabled, when the user opens the verification UI with a **prefilled** `user_code` from `verification_uri_complete`, the secondary “Authorize” confirmation step is skipped after a successful lookup (the user still authenticated at your site or the OP).
 

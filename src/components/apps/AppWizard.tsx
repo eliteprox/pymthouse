@@ -22,6 +22,8 @@ export interface AppFormData {
   redirectUris: string[];
   allowedScopes: string;
   grantTypes: string[];
+  /** Provisions the confidential M2M sibling (Builder API + device approval via token exchange); keeps the public client unauthenticated. */
+  backendDeviceHelper: boolean;
 }
 
 export interface AppState {
@@ -29,6 +31,8 @@ export interface AppState {
   clientId: string | null;
   status: string;
   hasSecret: boolean;
+  /** Confidential backend helper client (null until provisioned). */
+  backendHelper: { clientId: string; hasSecret: boolean } | null;
   pendingRevisionSubmittedAt?: string | null;
 }
 
@@ -41,6 +45,7 @@ export const defaultAppFormData: AppFormData = {
   redirectUris: [],
   allowedScopes: DEFAULT_OIDC_SCOPES,
   grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"],
+  backendDeviceHelper: false,
 };
 
 interface Props {
@@ -57,7 +62,13 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
     ...initialData,
   });
   const [appState, setAppState] = useState<AppState>(
-    initialState || { id: null, clientId: null, status: "new", hasSecret: false }
+    initialState || {
+      id: null,
+      clientId: null,
+      status: "new",
+      hasSecret: false,
+      backendHelper: null,
+    },
   );
   const [domains, setDomains] = useState<{ id: string; domain: string }[]>(
     initialDomains || []
@@ -101,6 +112,7 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
           clientId: data.clientId,
           status: data.status ?? "draft",
           hasSecret: false,
+          backendHelper: null,
         });
       } else {
         const res = await fetch(`/api/v1/apps/${appState.id}`, {
@@ -112,6 +124,15 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
           const text = await res.text();
           const data = text ? JSON.parse(text) : {};
           throw new Error(data.error || `Failed to update app (${res.status})`);
+        }
+        const data = (await res.json()) as {
+          m2mOidcClient?: { clientId: string; hasSecret: boolean } | null;
+        };
+        if (data.m2mOidcClient) {
+          setAppState((s) => ({
+            ...s,
+            backendHelper: data.m2mOidcClient ?? null,
+          }));
         }
       }
     } catch (err) {
@@ -233,9 +254,18 @@ export default function AppWizard({ initialData, initialState, initialDomains }:
             domains={domains}
             onDomainsChange={setDomains}
             hasSecret={appState.hasSecret}
+            backendHelper={appState.backendHelper}
             onSecretGenerated={() => {
               setAppState((s) => ({ ...s, hasSecret: true }));
               updateFormData({ tokenEndpointAuthMethod: "client_secret_post" });
+            }}
+            onBackendSecretGenerated={() => {
+              setAppState((s) => ({
+                ...s,
+                backendHelper: s.backendHelper
+                  ? { ...s.backendHelper, hasSecret: true }
+                  : s.backendHelper,
+              }));
             }}
           />
         )}
