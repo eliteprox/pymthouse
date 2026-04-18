@@ -20,8 +20,8 @@ export async function PATCH(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { id: clientId } = await params;
-  const app = await getProviderApp(clientId);
+  const { id: appIdOrClientId } = await params;
+  const app = await getProviderApp(appIdOrClientId);
 
   if (!app) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

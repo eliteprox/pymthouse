@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/next-auth-options";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { AppCard, type HomeApp } from "@/components/AppCard";
 import { MarketingFooter } from "@/components/MarketingFooter";
 import { db } from "@/db/index";
 import { developerApps, oidcClients } from "@/db/schema";
@@ -10,26 +11,8 @@ import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 const DEFAULT_DOCS_URL =
   "https://github.com/eliteprox/pymthouse/tree/main/docs";
 
-// ─── App card types & helpers ────────────────────────────────────────────────
+// ─── App showcase helpers ────────────────────────────────────────────────────
 
-const CATEGORY_COLORS: Record<string, string> = {
-  "AI Video": "bg-purple-500/15 text-purple-400 border-purple-500/20",
-  Streaming: "bg-blue-500/15 text-blue-400 border-blue-500/20",
-  Gaming: "bg-red-500/15 text-red-400 border-red-500/20",
-  Social: "bg-pink-500/15 text-pink-400 border-pink-500/20",
-  Tools: "bg-amber-500/15 text-amber-400 border-amber-500/20",
-};
-const DEFAULT_CATEGORY_COLOR =
-  "bg-zinc-500/15 text-zinc-400 border-zinc-500/20";
-
-type HomeApp = {
-  id: string;
-  name: string;
-  subtitle: string | null;
-  description: string | null;
-  category: string | null;
-  developerName: string | null;
-};
 type PublishedAppRow = HomeApp & { featured: boolean };
 
 function toHomeApp(row: PublishedAppRow): HomeApp {
@@ -43,49 +26,8 @@ function toHomeApp(row: PublishedAppRow): HomeApp {
   };
 }
 
-function AppCard({ app }: { app: HomeApp }) {
-  return (
-    <Link
-      href={`/marketplace/${app.id}`}
-      className="block p-5 border border-zinc-800 rounded-xl bg-zinc-900/30 hover:border-zinc-700 hover:bg-zinc-900/60 transition-colors group"
-    >
-      <div className="flex items-start gap-3 mb-3">
-        <div className="w-11 h-11 bg-gradient-to-br from-emerald-500/20 to-teal-500/20 rounded-xl flex items-center justify-center text-emerald-400 text-sm font-bold shrink-0">
-          {app.name[0]?.toUpperCase()}
-        </div>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-zinc-200 group-hover:text-emerald-400 transition-colors truncate">
-            {app.name}
-          </h3>
-          {app.subtitle && (
-            <p className="text-xs text-zinc-500 truncate">{app.subtitle}</p>
-          )}
-        </div>
-      </div>
-      {app.description && (
-        <p className="text-xs text-zinc-400 mb-3 line-clamp-2 leading-relaxed">
-          {app.description}
-        </p>
-      )}
-      <div className="flex items-center gap-2 flex-wrap">
-        {app.category && (
-          <span
-            className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${
-              CATEGORY_COLORS[app.category] || DEFAULT_CATEGORY_COLOR
-            }`}
-          >
-            {app.category}
-          </span>
-        )}
-        {app.developerName && (
-          <span className="text-[11px] text-zinc-500">by {app.developerName}</span>
-        )}
-      </div>
-    </Link>
-  );
-}
-
 // ─── Illustration components ─────────────────────────────────────────────────
+
 
 function TokenFlowDiagram() {
   return (
@@ -434,7 +376,7 @@ export default async function HomePage() {
       </section>
 
       {/* ── Use-case sections ── */}
-      <div className="max-w-5xl mx-auto px-6 py-20 space-y-28">
+      <div id="solutions" className="max-w-5xl mx-auto px-6 py-20 space-y-28 scroll-mt-24">
         {USE_CASES.map(({ tag, tagColor, headline, body, bullets, visual, flip }) => (
           <section
             key={tag}
