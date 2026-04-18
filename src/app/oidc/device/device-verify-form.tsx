@@ -91,8 +91,9 @@ export default function DeviceVerifyForm() {
       return;
     }
     const normalized = normalizeUserCode(prefilled);
-    setUserCode(normalized);
     void (async () => {
+      await Promise.resolve();
+      setUserCode(normalized);
       const result = await lookupCode(normalized);
       if (!result) {
         setStep("enter");
@@ -113,7 +114,10 @@ export default function DeviceVerifyForm() {
       return;
     }
     impliedConsentStartedRef.current = true;
-    void authorize(true, normalizeUserCode(prefilled));
+    const code = normalizeUserCode(prefilled);
+    void Promise.resolve().then(() => {
+      void authorize(true, code);
+    });
   }, [prefilled, deviceInfo, step, status, authorize]);
 
   function handleSubmitCode(e: React.FormEvent) {
