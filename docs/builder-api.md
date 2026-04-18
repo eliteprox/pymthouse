@@ -47,6 +47,27 @@ Use **discovery** in production so paths stay aligned with the deployment:
 
 Clients are created through app registration (dashboard/API). `npm run oidc:seed` initializes signing keys only.
 
+### API surfaces (at a glance)
+
+```mermaid
+flowchart TB
+  subgraph callers["Integrator side"]
+    direction TB
+    BE["Backend service<br/>(Bearer or Basic, confidential)"]
+    UA["Browser, CLI, or SDK<br/>(public client, PKCE / device codes)"]
+  end
+  subgraph ph["PymtHouse"]
+    direction TB
+    OIDC["OIDC issuer<br/>/api/v1/oidc"]
+    BLDR["Builder API<br/>/api/v1/apps/.../users"]
+    USE["Usage API<br/>/api/v1/apps/.../usage"]
+  end
+  UA --> OIDC
+  BE --> OIDC
+  BE --> BLDR
+  BE --> USE
+```
+
 ---
 
 ## OIDC issuer
@@ -184,13 +205,44 @@ Treat `initiate_login_uri` as a sensitive redirect (HTTPS in production; HTTP on
 - The **public** OIDC client must have **Redirect device verification to initiate login URI** enabled (`device_third_party_initiate_login`) where required.
 - On success, the pending RFC 8628 device grant is bound; the response follows RFC 8693 (`access_token`, `issued_token_type`, etc.).
 
+**End-to-end device login** (high level):
+
 ```mermaid
 sequenceDiagram
-  participant M2M as Confidential client (m2m_…)
-  participant Issuer as PymtHouse /token
-  M2M->>Issuer: POST token-exchange + resource urn:pmth:device_code:USERCODE
-  Note over M2M,Issuer: Basic auth; subject_token = user access JWT (public app client_id)
-  Issuer-->>M2M: 200 RFC 8693 (bind device grant as side-effect)
+  autonumber
+  participant Dev as CLI or device
+  participant Tok as Issuer POST /token
+  participant Br as Browser
+  participant IdP as Your login / session
+  participant Bld as Builder API
+  participant M2M as Your backend M2M
+
+  Dev->>Tok: Device authorization (RFC 8628)<br/>public app client_id
+  Tok-->>Dev: device_code, user_code, verification URIs
+  Br->>Tok: User opens verification UI
+  Note over Br,IdP: Optional third-party initiate_login to your IdP
+  IdP->>M2M: User authenticated
+  M2M->>Bld: Mint user JWT for end user<br/>Basic m2m credentials
+  Bld-->>M2M: Access JWT (audience = public app_)
+  M2M->>Tok: Token exchange RFC 8693<br/>resource = urn:pmth:device_code:...<br/>Basic m2m credentials
+  Note right of Tok: Binds pending device grant
+  Tok-->>M2M: 200 RFC 8693 response
+  Dev->>Tok: Poll with device_code
+  Tok-->>Dev: End-user tokens for device session
+```
+
+**Token-exchange step only** (what most server integrations implement after minting `USER_JWT`):
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant M2M as M2M client
+  participant Tok as Issuer POST /token
+
+  M2M->>Tok: grant_type=token-exchange
+  Note right of M2M: Authorization Basic<br/>client_id:client_secret = m2m_:secret
+  Note right of M2M: subject_token = user JWT from Builder<br/>subject_token_type = access_token<br/>resource = urn:pmth:device_code:USERCODE
+  Tok-->>M2M: access_token, issued_token_type, ...<br/>device grant bound as side effect
 ```
 
 Example (after minting `USER_JWT` via Builder):
@@ -230,6 +282,17 @@ scope=sign:job
 
 - The authenticated `client_id` must match the `subject_token` audience / client binding (`client_id` or `azp`).
 - The `subject_token` must already include `sign:job` scope.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Cli as OAuth client
+  participant Tok as Issuer POST /token
+
+  Cli->>Tok: grant_type=token-exchange<br/>subject_token = short-lived access JWT
+  Note right of Cli: Same client_id/azp as subject JWT
+  Tok-->>Cli: Remote signer session token pmth_*
+```
 
 ---
 
@@ -369,6 +432,13 @@ curl -sS -u "${CLIENT_ID}:${CLIENT_SECRET}" \
 2. Backend creates or upserts the external user via `/users`.
 3. Backend issues a user-scoped JWT via `/users/{externalUserId}/token`.
 4. Backend returns that JWT to the app session for the same external user.
+
+```mermaid
+flowchart LR
+  A["1. client_credentials"] --> B["2. POST .../users"]
+  B --> C["3. POST .../users/.../token"]
+  C --> D["4. Deliver JWT to app session"]
+```
 
 For **RFC 8628 device login**, after step 3 call **`POST {issuer}/token`** with RFC 8693 token exchange and `resource=urn:pmth:device_code:<user_code>` as described in [Complete device authorization](#complete-device-authorization-rfc-8628--rfc-8693).
 
