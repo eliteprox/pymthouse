@@ -325,21 +325,21 @@ export async function authenticateAppClient(request: NextRequest): Promise<{
     )
     .limit(1);
   const app = appRows[0];
-  // Invariant: developer_apps.oidc_client_id is always set at creation; we return
-  // the app's public client_id whether the M2M row or the public row matched credentials.
-  if (!app?.oidcClientId) return null;
+  const oidcRowIdForAppId = app?.oidcClientId ?? app?.m2mOidcClientId;
+  if (!app || !oidcRowIdForAppId) return null;
 
-  const publicRows = await db
+  // Prefer the public (interactive) client row for appId; if only M2M is linked, use that row.
+  const appIdRows = await db
     .select({ clientId: oidcClients.clientId })
     .from(oidcClients)
-    .where(eq(oidcClients.id, app.oidcClientId))
+    .where(eq(oidcClients.id, oidcRowIdForAppId))
     .limit(1);
-  const publicClientId = publicRows[0]?.clientId;
-  if (!publicClientId) return null;
+  const resolvedAppOidcClientId = appIdRows[0]?.clientId;
+  if (!resolvedAppOidcClientId) return null;
 
   return {
     clientId,
-    appId: publicClientId,
+    appId: resolvedAppOidcClientId,
     scopes: clientRow.allowedScopes,
   };
 }
