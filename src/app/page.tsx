@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/db/index";
 import { developerApps, oidcClients } from "@/db/schema";
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 
 const DEFAULT_DOCS_URL =
   "https://github.com/eliteprox/pymthouse/tree/main/docs";
@@ -30,6 +30,17 @@ type HomeApp = {
 };
 
 type PublishedAppRow = HomeApp & { featured: boolean };
+
+function toHomeApp(row: PublishedAppRow): HomeApp {
+  return {
+    id: row.id,
+    name: row.name,
+    subtitle: row.subtitle,
+    description: row.description,
+    category: row.category,
+    developerName: row.developerName,
+  };
+}
 
 function AppCard({ app }: { app: HomeApp }) {
   return (
@@ -113,14 +124,45 @@ export default async function LandingPage() {
       featured: r.marketplaceFeatured === 1,
     }));
 
-  const featuredRows = mapped.filter((a) => a.featured).slice(0, 6);
-  const featuredIds = new Set(featuredRows.map((a) => a.id));
-  const moreRows = mapped.filter((a) => !featuredIds.has(a.id));
+  const featuredApps: HomeApp[] = mapped
+    .filter((a) => a.featured)
+    .slice(0, 6)
+    .map(toHomeApp);
 
-  const featuredApps: HomeApp[] = featuredRows.map(
-    ({ featured: _f, ...app }) => app,
-  );
-  const moreApps: HomeApp[] = moreRows.map(({ featured: _f, ...app }) => app);
+  let showcaseApps: HomeApp[] = featuredApps;
+  let showcaseTitle = "Featured apps";
+  let showcaseSubtitle = "Hand-picked listings from the marketplace";
+
+  if (featuredApps.length === 0 && mapped.length > 0) {
+    const rankRows = await db.execute<{ id: string }>(sql`
+      SELECT d.id
+      FROM developer_apps d
+      LEFT JOIN (
+        SELECT COALESCE(client_id, app_id) AS aid, COUNT(*)::bigint AS cnt
+        FROM transactions
+        WHERE type = 'usage'
+          AND status = 'confirmed'
+          AND COALESCE(client_id, app_id) IS NOT NULL
+        GROUP BY COALESCE(client_id, app_id)
+      ) u ON u.aid = d.id
+      WHERE d.status = 'approved'
+        AND d.published_at IS NOT NULL
+      ORDER BY COALESCE(u.cnt, 0) DESC, d.published_at::timestamptz DESC NULLS LAST
+      LIMIT 6
+    `);
+
+    const byId = new Map(mapped.map((m) => [m.id, toHomeApp(m)]));
+    showcaseApps = rankRows
+      .map((r) => byId.get(r.id))
+      .filter((a): a is HomeApp => a !== undefined);
+
+    if (showcaseApps.length === 0) {
+      showcaseApps = mapped.slice(0, 6).map(toHomeApp);
+    }
+
+    showcaseTitle = "Popular apps";
+    showcaseSubtitle = "Top apps by usage on the network";
+  }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
@@ -174,59 +216,31 @@ export default async function LandingPage() {
         </div>
       </div>
 
-      {(featuredApps.length > 0 || moreApps.length > 0) && (
-        <div className="max-w-5xl mx-auto px-6 pb-16 space-y-14">
-          {featuredApps.length > 0 && (
-            <section>
-              <div className="flex items-end justify-between gap-4 mb-6">
-                <div>
-                  <h3 className="text-lg font-semibold text-zinc-100">
-                    Featured apps
-                  </h3>
-                  <p className="text-sm text-zinc-500 mt-1">
-                    Hand-picked listings from the marketplace
-                  </p>
-                </div>
-                <Link
-                  href="/marketplace"
-                  className="text-sm text-emerald-400 hover:text-emerald-300 shrink-0"
-                >
-                  View all
-                </Link>
+      {showcaseApps.length > 0 && (
+        <div className="max-w-5xl mx-auto px-6 pb-16">
+          <section>
+            <div className="flex items-end justify-between gap-4 mb-6">
+              <div>
+                <h3 className="text-lg font-semibold text-zinc-100">
+                  {showcaseTitle}
+                </h3>
+                <p className="text-sm text-zinc-500 mt-1">
+                  {showcaseSubtitle}
+                </p>
               </div>
-              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                {featuredApps.map((app) => (
-                  <AppCard key={app.id} app={app} />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {moreApps.length > 0 && (
-            <section>
-              <div className="flex items-end justify-between gap-4 mb-6">
-                <div>
-                  <h3 className="text-lg font-semibold text-zinc-100">
-                    {featuredApps.length > 0 ? "More apps" : "Published apps"}
-                  </h3>
-                  <p className="text-sm text-zinc-500 mt-1">
-                    Recently approved on the marketplace
-                  </p>
-                </div>
-                <Link
-                  href="/marketplace"
-                  className="text-sm text-emerald-400 hover:text-emerald-300 shrink-0"
-                >
-                  Browse marketplace
-                </Link>
-              </div>
-              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                {moreApps.map((app) => (
-                  <AppCard key={app.id} app={app} />
-                ))}
-              </div>
-            </section>
-          )}
+              <Link
+                href="/marketplace"
+                className="text-sm text-emerald-400 hover:text-emerald-300 shrink-0"
+              >
+                View all
+              </Link>
+            </div>
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {showcaseApps.map((app) => (
+                <AppCard key={app.id} app={app} />
+              ))}
+            </div>
+          </section>
         </div>
       )}
 
