@@ -213,24 +213,24 @@ export default async function LandingPage() {
           Hosted billing, identity, and signer proxy infrastructure for early
           Livepeer-powered providers.
         </p>
-        <div className="flex flex-wrap items-center justify-center gap-3">
+        <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-3 sm:flex-row sm:items-center">
           <a
             href={docsUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-6 py-2.5 text-sm font-medium text-zinc-100 border border-zinc-600 rounded-lg hover:border-zinc-500 hover:bg-zinc-900/50 transition-colors"
+            className="w-full max-w-xs px-6 py-2.5 text-center text-sm font-medium text-zinc-100 border border-zinc-600 rounded-lg hover:border-zinc-500 hover:bg-zinc-900/50 transition-colors sm:flex sm:max-w-none sm:flex-1 sm:justify-end"
           >
             Docs
           </a>
           <Link
             href="/login"
-            className="px-6 py-2.5 text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors"
+            className="w-full max-w-xs px-6 py-2.5 text-center text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors sm:order-none sm:w-auto sm:max-w-none sm:shrink-0"
           >
             Start Building
           </Link>
           <Link
             href="/marketplace"
-            className="px-6 py-2.5 text-sm font-medium text-zinc-100 border border-zinc-600 rounded-lg hover:border-zinc-500 hover:bg-zinc-900/50 transition-colors"
+            className="w-full max-w-xs px-6 py-2.5 text-center text-sm font-medium text-zinc-100 border border-zinc-600 rounded-lg hover:border-zinc-500 hover:bg-zinc-900/50 transition-colors sm:flex sm:max-w-none sm:flex-1 sm:justify-start"
           >
             Marketplace
           </Link>
