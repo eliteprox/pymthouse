@@ -13,7 +13,7 @@ import { hasScope } from "@/lib/auth";
 import { validateClientSecret } from "@/lib/oidc/clients";
 import { normalizeUserCode } from "@/lib/oidc/device";
 import { approveDeviceCodeForAccount } from "@/lib/oidc/device-approval";
-import { verifyAccessToken } from "@/lib/oidc/tokens";
+import { getIssuer, verifyAccessToken } from "@/lib/oidc/tokens";
 import { TokenExchangeError } from "@/lib/oidc/token-exchange";
 import { findOrCreateAppEndUser } from "@/lib/billing";
 import { createCorrelationId, writeAuditLog } from "@/lib/audit";
@@ -64,6 +64,45 @@ function parseDeviceCodeFromResource(resource: string): string | null {
   const rest = resource.slice(DEVICE_CODE_RESOURCE_PREFIX.length).trim();
   if (!rest) return null;
   return rest;
+}
+
+/** Normalize issuer / audience strings for comparison (trailing slashes). */
+function normalizeResourceOrAudienceUri(value: string): string {
+  return value.trim().replace(/\/+$/, "");
+}
+
+/**
+ * RFC 8693 §2.1: `requested_token_type` is optional; if present, must match what we issue.
+ */
+function assertRequestedTokenTypeForDeviceApproval(
+  requested: string | null | undefined,
+): void {
+  if (requested == null || requested.trim() === "") return;
+  if (requested.trim() === ISSUED_ACCESS_TOKEN_TYPE) return;
+  throw new TokenExchangeError(
+    "invalid_request",
+    `requested_token_type must be ${ISSUED_ACCESS_TOKEN_TYPE} or omitted`,
+    "The requested token type is not supported for this token exchange",
+  );
+}
+
+/**
+ * RFC 8707 / RFC 8693 §2.1: when `audience` is sent, it must name this AS/RS (`getIssuer()`).
+ * Issued token is a passthrough of the subject JWT, which is always audience-bound to the issuer.
+ */
+function assertDeviceApprovalAudiences(audiences: string[]): void {
+  const nonEmpty = audiences.map((a) => a.trim()).filter(Boolean);
+  if (nonEmpty.length === 0) return;
+  const issuer = normalizeResourceOrAudienceUri(getIssuer());
+  for (const raw of nonEmpty) {
+    if (normalizeResourceOrAudienceUri(raw) !== issuer) {
+      throw new TokenExchangeError(
+        "invalid_target",
+        "audience does not match this authorization server",
+        "Invalid audience for token exchange",
+      );
+    }
+  }
 }
 
 /**
@@ -121,6 +160,10 @@ export async function handleDeviceApprovalTokenExchange(
     subjectToken: string;
     subjectTokenType: string;
     resource: string | null | undefined;
+    /** RFC 8693 §2.1 `requested_token_type` (optional). */
+    requestedTokenType?: string | null;
+    /** RFC 8693 §2.1 `audience` — repeated form fields from the token request. */
+    audience?: string[];
   },
   deps: Partial<DeviceApprovalTokenExchangeDeps> = {},
 ): Promise<{
@@ -140,7 +183,14 @@ export async function handleDeviceApprovalTokenExchange(
     createCorrelationId: newCorrelationId,
   } = { ...defaultDeviceApprovalDeps, ...deps };
 
-  const { clientId, clientSecret, subjectToken, resource } = params;
+  const {
+    clientId,
+    clientSecret,
+    subjectToken,
+    resource,
+    requestedTokenType,
+    audience: audienceParams,
+  } = params;
 
   if (!(await validateSecret(clientId, clientSecret))) {
     throw new TokenExchangeError(
@@ -175,19 +225,12 @@ export async function handleDeviceApprovalTokenExchange(
     );
   }
 
-  const publicClientId = await resolvePublicClientIdForOidcRow(dbConn, m2mRow.id);
-  if (!publicClientId) {
-    throw new TokenExchangeError(
-      "invalid_client",
-      "No developer app linked to this client",
-      "Invalid client credentials",
-    );
-  }
+  assertRequestedTokenTypeForDeviceApproval(requestedTokenType);
 
   const resourceStr = resource?.trim() ?? "";
   if (!resourceStr.startsWith(DEVICE_CODE_RESOURCE_PREFIX)) {
     throw new TokenExchangeError(
-      "invalid_request",
+      "invalid_target",
       `resource must start with ${DEVICE_CODE_RESOURCE_PREFIX}`,
       "Invalid resource for device approval",
     );
@@ -196,12 +239,23 @@ export async function handleDeviceApprovalTokenExchange(
   const userCodeRaw = parseDeviceCodeFromResource(resourceStr);
   if (!userCodeRaw) {
     throw new TokenExchangeError(
-      "invalid_request",
+      "invalid_target",
       "device user_code missing from resource",
       "Invalid resource for device approval",
     );
   }
   const normalizedUserCode = normalizeUserCode(userCodeRaw);
+
+  assertDeviceApprovalAudiences(audienceParams ?? []);
+
+  const publicClientId = await resolvePublicClientIdForOidcRow(dbConn, m2mRow.id);
+  if (!publicClientId) {
+    throw new TokenExchangeError(
+      "invalid_client",
+      "No developer app linked to this client",
+      "Invalid client credentials",
+    );
+  }
 
   const payload = await verifySubject(subjectToken);
   if (!payload || typeof payload.sub !== "string" || !payload.sub) {

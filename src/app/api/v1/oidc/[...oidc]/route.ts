@@ -138,6 +138,8 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
             subjectToken: exchangeParams.get("subject_token") || "",
             subjectTokenType,
             resource: resourceParam,
+            requestedTokenType: exchangeParams.get("requested_token_type"),
+            audience: exchangeParams.getAll("audience"),
           });
           return NextResponse.json(result, {
             headers: { "Cache-Control": "no-store", Pragma: "no-cache" },

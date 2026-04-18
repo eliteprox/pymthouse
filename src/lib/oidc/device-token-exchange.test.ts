@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 
 import {
   handleDeviceApprovalTokenExchange,
@@ -7,6 +8,7 @@ import {
   type DrizzleDb,
 } from "./device-token-exchange";
 import { TokenExchangeError } from "./token-exchange";
+import { getIssuer } from "./tokens";
 
 function dbMock(rows: unknown[][]): DrizzleDb {
   let i = 0;
@@ -35,7 +37,7 @@ const dbMockSelectForbidden: DrizzleDb = {
 
 const M2M_ID = "m2m_test123";
 const PUBLIC_ID = "app_testpublic";
-const SUBJECT_JWT = "subject.jwt.value";
+const SUBJECT_JWT = randomUUID();
 
 const m2mRowOk = {
   id: "int-m2m",
@@ -125,6 +127,8 @@ test("handleDeviceApprovalTokenExchange returns subject_token as access_token on
       subjectToken: SUBJECT_JWT,
       subjectTokenType: "urn:ietf:params:oauth:token-type:access_token",
       resource: "urn:pmth:device_code:ABCD-EFGH",
+      requestedTokenType: "urn:ietf:params:oauth:token-type:access_token",
+      audience: [getIssuer()],
     },
     {
       validateClientSecret: async () => true,
@@ -206,7 +210,7 @@ test("handleDeviceApprovalTokenExchange invalid_client when no developer app sib
   );
 });
 
-test("handleDeviceApprovalTokenExchange invalid_request for bad resource prefix", async () => {
+test("handleDeviceApprovalTokenExchange invalid_target for bad resource prefix", async () => {
   await rejectsWithCode(
     () =>
       handleDeviceApprovalTokenExchange(
@@ -219,14 +223,14 @@ test("handleDeviceApprovalTokenExchange invalid_request for bad resource prefix"
         },
         {
           validateClientSecret: async () => true,
-          db: dbMock(rowsForHappyPath()),
+          db: dbMock([[m2mRowOk]]),
         },
       ),
-    "invalid_request",
+    "invalid_target",
   );
 });
 
-test("handleDeviceApprovalTokenExchange invalid_request when user_code missing from resource", async () => {
+test("handleDeviceApprovalTokenExchange invalid_target when user_code missing from resource", async () => {
   await rejectsWithCode(
     () =>
       handleDeviceApprovalTokenExchange(
@@ -239,10 +243,52 @@ test("handleDeviceApprovalTokenExchange invalid_request when user_code missing f
         },
         {
           validateClientSecret: async () => true,
-          db: dbMock(rowsForHappyPath()),
+          db: dbMock([[m2mRowOk]]),
+        },
+      ),
+    "invalid_target",
+  );
+});
+
+test("handleDeviceApprovalTokenExchange invalid_request when requested_token_type is not access_token", async () => {
+  await rejectsWithCode(
+    () =>
+      handleDeviceApprovalTokenExchange(
+        {
+          clientId: M2M_ID,
+          clientSecret: "secret",
+          subjectToken: SUBJECT_JWT,
+          subjectTokenType: "urn:ietf:params:oauth:token-type:access_token",
+          resource: "urn:pmth:device_code:ABCD-EFGH",
+          requestedTokenType: "urn:ietf:params:oauth:token-type:jwt",
+        },
+        {
+          validateClientSecret: async () => true,
+          db: dbMock([[m2mRowOk]]),
         },
       ),
     "invalid_request",
+  );
+});
+
+test("handleDeviceApprovalTokenExchange invalid_target when audience does not match issuer", async () => {
+  await rejectsWithCode(
+    () =>
+      handleDeviceApprovalTokenExchange(
+        {
+          clientId: M2M_ID,
+          clientSecret: "secret",
+          subjectToken: SUBJECT_JWT,
+          subjectTokenType: "urn:ietf:params:oauth:token-type:access_token",
+          resource: "urn:pmth:device_code:ABCD-EFGH",
+          audience: ["https://unknown-resource-server.example/"],
+        },
+        {
+          validateClientSecret: async () => true,
+          db: dbMock([[m2mRowOk]]),
+        },
+      ),
+    "invalid_target",
   );
 });
 
