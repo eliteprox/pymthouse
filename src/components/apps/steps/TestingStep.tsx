@@ -42,6 +42,8 @@ export default function TestingStep({
   const [backendSecret, setBackendSecret] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generatingBackend, setGeneratingBackend] = useState(false);
+  const [secretFetchError, setSecretFetchError] = useState<string | null>(null);
+  const [backendSecretFetchError, setBackendSecretFetchError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [redirectPersistError, setRedirectPersistError] = useState<string | null>(null);
   const [redirectSaving, setRedirectSaving] = useState(false);
@@ -159,18 +161,32 @@ export default function TestingStep({
       ? `${window.location.origin}/.well-known/openid-configuration`
       : "";
 
+  const parseCredentialsError = async (res: Response): Promise<string> => {
+    const text = await res.text();
+    try {
+      const data = text ? JSON.parse(text) : {};
+      if (typeof data.error === "string" && data.error) return data.error;
+    } catch {
+      /* keep generic */
+    }
+    return text.trim() || res.statusText || `Failed to generate secret (${res.status})`;
+  };
+
   const generateSecret = useCallback(async () => {
     if (readOnly || !appId) return;
     setGenerating(true);
+    setSecretFetchError(null);
     try {
       const res = await fetch(`/api/v1/apps/${appId}/credentials`, {
         method: "POST",
       });
-      if (res.ok) {
-        const data = await res.json();
-        setSecret(data.clientSecret);
-        onSecretGenerated();
+      if (!res.ok) {
+        setSecretFetchError(await parseCredentialsError(res));
+        return;
       }
+      const data = (await res.json()) as { clientSecret?: string };
+      setSecret(data.clientSecret ?? null);
+      onSecretGenerated();
     } finally {
       setGenerating(false);
     }
@@ -179,15 +195,18 @@ export default function TestingStep({
   const generateBackendSecret = useCallback(async () => {
     if (readOnly || !appId) return;
     setGeneratingBackend(true);
+    setBackendSecretFetchError(null);
     try {
       const res = await fetch(`/api/v1/apps/${appId}/credentials`, {
         method: "POST",
       });
-      if (res.ok) {
-        const data = await res.json();
-        setBackendSecret(data.clientSecret);
-        onBackendSecretGenerated?.();
+      if (!res.ok) {
+        setBackendSecretFetchError(await parseCredentialsError(res));
+        return;
       }
+      const data = (await res.json()) as { clientSecret?: string };
+      setBackendSecret(data.clientSecret ?? null);
+      onBackendSecretGenerated?.();
     } finally {
       setGeneratingBackend(false);
     }
@@ -231,13 +250,19 @@ export default function TestingStep({
 
   const m2mClientIdForSnippet = isM2MOnly ? clientId : backendHelper?.clientId ?? null;
 
+  const scopesForM2mSnippet =
+    allowedScopes
+      .split(/\s+/)
+      .filter((s) => s && validScopeValues.has(s) && s !== "openid")
+      .join(" ") || "YOUR_CONFIGURED_SCOPES";
+
   const m2mCurlSnippet = m2mClientIdForSnippet
     ? `curl -X POST ${typeof window !== "undefined" ? window.location.origin : ""}/api/v1/oidc/token \\
   -H "Content-Type: application/x-www-form-urlencoded" \\
   -d "grant_type=client_credentials" \\
   -d "client_id=${m2mClientIdForSnippet}" \\
   -d "client_secret=YOUR_CLIENT_SECRET" \\
-  -d "scope=users:token users:write"`
+  -d "scope=${scopesForM2mSnippet}"`
     : "";
 
   return (
@@ -278,6 +303,9 @@ export default function TestingStep({
             </svg>
             The response will include an <code className="text-zinc-400 mx-0.5">access_token</code>. Pass it as a Bearer token on all API calls.
           </div>
+          <p className="text-xs text-zinc-500">
+            The <code className="text-zinc-400">scope</code> value is derived from your app&apos;s allowed scopes (Auth &amp; Scopes). Replace it in the command if your configured scopes differ.
+          </p>
         </div>
       )}
 
@@ -496,6 +524,9 @@ export default function TestingStep({
                 </button>
               </div>
             )}
+            {secretFetchError && (
+              <p className="text-xs text-red-400 mt-2">{secretFetchError}</p>
+            )}
           </div>
         </>
       ) : (
@@ -584,6 +615,9 @@ export default function TestingStep({
                           : "Generate Secret"}
                     </button>
                   </div>
+                )}
+                {backendSecretFetchError && (
+                  <p className="text-xs text-red-400 mt-2">{backendSecretFetchError}</p>
                 )}
               </div>
             </div>

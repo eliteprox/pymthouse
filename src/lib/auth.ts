@@ -325,6 +325,8 @@ export async function authenticateAppClient(request: NextRequest): Promise<{
     )
     .limit(1);
   const app = appRows[0];
+  // Invariant: developer_apps.oidc_client_id is always set at creation; we return
+  // the app's public client_id whether the M2M row or the public row matched credentials.
   if (!app?.oidcClientId) return null;
 
   const publicRows = await db

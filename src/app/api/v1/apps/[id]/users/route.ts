@@ -76,12 +76,14 @@ export async function POST(
 
   const body = await request.json();
   const externalUserId = String(body.externalUserId || "").trim();
-  const email = typeof body.email === "string" ? body.email.trim() : null;
+  const hasEmail = typeof body.email === "string";
+  const hasStatus = typeof body.status === "string";
+  const email = hasEmail ? body.email.trim() : null;
   if (!externalUserId) {
     return NextResponse.json({ error: "externalUserId is required" }, { status: 400 });
   }
 
-  const status = typeof body.status === "string" ? body.status : "active";
+  const status = hasStatus ? body.status : "active";
   const newUser = {
     id: uuidv4(),
     clientId: access.app.id,
@@ -92,12 +94,18 @@ export async function POST(
     createdAt: new Date().toISOString(),
   };
 
+  const updateSet: { email?: string | null; status?: string; role: "user" } = {
+    role: "user",
+  };
+  if (hasEmail) updateSet.email = email;
+  if (hasStatus) updateSet.status = status;
+
   const upserted = await db
     .insert(appUsers)
     .values(newUser)
     .onConflictDoUpdate({
       target: [appUsers.clientId, appUsers.externalUserId],
-      set: { email, status, role: "user" },
+      set: updateSet,
     })
     .returning();
   const row = upserted[0] ?? newUser;

@@ -229,29 +229,28 @@ export async function handleDeviceApprovalTokenExchange(
 
   const publicOidcRows = await dbConn
     .select({
+      id: oidcClients.id,
       deviceThirdPartyInitiateLogin: oidcClients.deviceThirdPartyInitiateLogin,
     })
     .from(oidcClients)
     .where(eq(oidcClients.clientId, publicClientId))
     .limit(1);
   const publicOidc = publicOidcRows[0];
-  if (!publicOidc || publicOidc.deviceThirdPartyInitiateLogin !== 1) {
+  if (!publicOidc) {
+    throw new TokenExchangeError(
+      "invalid_client",
+      "Public client not found",
+      "Public client not found",
+    );
+  }
+  if (publicOidc.deviceThirdPartyInitiateLogin !== 1) {
     throw new TokenExchangeError(
       "invalid_client",
       "Device third-party login is not enabled for this client",
       "Device third-party login is not enabled for this client",
     );
   }
-
-  const publicInternalRows = await dbConn
-    .select({ id: oidcClients.id })
-    .from(oidcClients)
-    .where(eq(oidcClients.clientId, publicClientId))
-    .limit(1);
-  const publicInternalId = publicInternalRows[0]?.id;
-  if (!publicInternalId) {
-    throw new TokenExchangeError("invalid_client", "Public client not found");
-  }
+  const publicInternalId = publicOidc.id;
 
   const devAppRows = await dbConn
     .select({ id: developerApps.id })
@@ -260,7 +259,11 @@ export async function handleDeviceApprovalTokenExchange(
     .limit(1);
   const developerAppId = devAppRows[0]?.id;
   if (!developerAppId) {
-    throw new TokenExchangeError("invalid_client", "Developer app not found");
+    throw new TokenExchangeError(
+      "invalid_client",
+      "Developer app not found",
+      "Developer app not found",
+    );
   }
 
   // subject_token `sub` is an app_users.id (see programmatic-tokens.ts), but
@@ -310,6 +313,13 @@ export async function handleDeviceApprovalTokenExchange(
     },
   });
 
+  /**
+   * Intentional passthrough: we return the validated `subjectToken` as `access_token`
+   * instead of minting a new JWT. Callers receive the same token lifetime, audience,
+   * and `scope` as the subject token (`expires_in` and `scope` here mirror the subject
+   * payload). Any security assumptions (e.g. audience, expiry) must already hold for
+   * `subjectToken` after `verifyAccessToken`.
+   */
   return {
     access_token: subjectToken,
     token_type: "Bearer",

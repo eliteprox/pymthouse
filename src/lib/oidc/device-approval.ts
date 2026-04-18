@@ -103,7 +103,16 @@ export async function approveDeviceCodeForAccount(
         ? params.scope
         : "";
 
-  const latest = await adapter.find(deviceCode.jti!);
+  if (typeof deviceCode.jti !== "string" || deviceCode.jti.length === 0) {
+    return {
+      ok: false,
+      error: "invalid_grant",
+      description: "Invalid, expired, or already used device code",
+      status: 400,
+    };
+  }
+
+  const latest = await adapter.find(deviceCode.jti);
   if (!latest) {
     return {
       ok: false,
@@ -131,7 +140,7 @@ export async function approveDeviceCodeForAccount(
   const expiresIn = deviceCode.exp ? Math.max(deviceCode.exp - now, 1) : 600;
 
   const bound = await adapter.bindDeviceApprovalIfUnbound(
-    deviceCode.jti!,
+    deviceCode.jti,
     {
       ...latest,
       accountId,

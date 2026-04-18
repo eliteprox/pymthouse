@@ -26,6 +26,13 @@ function dbMock(rows: unknown[][]): DrizzleDb {
   } as unknown as DrizzleDb;
 }
 
+/** Fails fast if any DB read runs (e.g. invalid client secret path must not query). */
+const dbMockSelectForbidden: DrizzleDb = {
+  select: () => {
+    throw new Error("unexpected db.select — validateClientSecret should short-circuit first");
+  },
+} as unknown as DrizzleDb;
+
 const M2M_ID = "m2m_test123";
 const PUBLIC_ID = "app_testpublic";
 const SUBJECT_JWT = "subject.jwt.value";
@@ -37,13 +44,19 @@ const m2mRowOk = {
   clientId: M2M_ID,
 };
 
+// dbMock consumes rows in strict call order; each entry is the next `.limit()` result:
+// 0: oidcClients by M2M client_id
+// 1: developerApps sibling (public oidc row id)
+// 2: oidcClients.id → client_id (resolvePublicClientIdForOidcRow)
+// 3: oidcClients by public client_id — { id, deviceThirdPartyInitiateLogin } (single merged query)
+// 4: developerApps by oidcClientId
+// 5: appUsers by subject_token.sub
 function rowsForHappyPath(): unknown[][] {
   return [
     [m2mRowOk],
     [{ oidcClientId: "pub-int" }],
     [{ clientId: PUBLIC_ID }],
-    [{ deviceThirdPartyInitiateLogin: 1 }],
-    [{ id: "pub-int" }],
+    [{ id: "pub-int", deviceThirdPartyInitiateLogin: 1 }],
     [{ id: "dev-app-1" }],
     [{ externalUserId: "ext-user-1" }],
   ];
@@ -144,7 +157,7 @@ test("handleDeviceApprovalTokenExchange invalid_client when client secret invali
         },
         {
           validateClientSecret: async () => false,
-          db: dbMock([]),
+          db: dbMockSelectForbidden,
         },
     ),
     "invalid_client",
@@ -259,7 +272,7 @@ test("handleDeviceApprovalTokenExchange invalid_grant when subject_token client_
 
 test("handleDeviceApprovalTokenExchange invalid_client when third-party device login disabled", async () => {
   const rows = rowsForHappyPath();
-  rows[3] = [{ deviceThirdPartyInitiateLogin: 0 }];
+  rows[3] = [{ id: "pub-int", deviceThirdPartyInitiateLogin: 0 }];
   await rejectsWithCode(
     () =>
       handleDeviceApprovalTokenExchange(
