@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { db } from "@/db/index";
 import { developerApps, oidcClients } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 
 export async function GET() {
-  const apps = await db
+  const rows = await db
     .select({
-      id: oidcClients.clientId,
+      id: developerApps.id,
       name: developerApps.name,
       subtitle: developerApps.subtitle,
       description: developerApps.description,
@@ -16,12 +16,24 @@ export async function GET() {
       developerName: developerApps.developerName,
       websiteUrl: developerApps.websiteUrl,
       supportUrl: developerApps.supportUrl,
-      clientId: oidcClients.clientId,
+      webOidcClientId: oidcClients.clientId,
       createdAt: developerApps.createdAt,
+      marketplaceFeatured: developerApps.marketplaceFeatured,
     })
     .from(developerApps)
     .leftJoin(oidcClients, eq(developerApps.oidcClientId, oidcClients.id))
-    .where(eq(developerApps.status, "approved"));
+    .where(
+      and(
+        eq(developerApps.status, "approved"),
+        isNotNull(developerApps.publishedAt),
+      ),
+    );
+
+  const apps = rows.map(({ marketplaceFeatured, webOidcClientId, ...app }) => ({
+    ...app,
+    clientId: webOidcClientId,
+    featured: marketplaceFeatured === 1,
+  }));
 
   return NextResponse.json({ apps });
 }

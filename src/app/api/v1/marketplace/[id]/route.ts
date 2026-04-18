@@ -1,42 +1,72 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db/index";
 import { developerApps, oidcClients } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNotNull } from "drizzle-orm";
+
+function publishedApprovedCondition() {
+  return and(
+    eq(developerApps.status, "approved"),
+    isNotNull(developerApps.publishedAt),
+  );
+}
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id: clientId } = await params;
+  const { id: routeId } = await params;
 
-  const results = await db
-    .select({
-      id: oidcClients.clientId,
-      name: developerApps.name,
-      subtitle: developerApps.subtitle,
-      description: developerApps.description,
-      category: developerApps.category,
-      logoLightUrl: developerApps.logoLightUrl,
-      logoDarkUrl: developerApps.logoDarkUrl,
-      developerName: developerApps.developerName,
-      websiteUrl: developerApps.websiteUrl,
-      supportUrl: developerApps.supportUrl,
-      privacyPolicyUrl: developerApps.privacyPolicyUrl,
-      tosUrl: developerApps.tosUrl,
-      clientId: oidcClients.clientId,
-      grantTypes: oidcClients.grantTypes,
-      createdAt: developerApps.createdAt,
-    })
+  const baseSelect = {
+    id: developerApps.id,
+    name: developerApps.name,
+    subtitle: developerApps.subtitle,
+    description: developerApps.description,
+    category: developerApps.category,
+    logoLightUrl: developerApps.logoLightUrl,
+    logoDarkUrl: developerApps.logoDarkUrl,
+    developerName: developerApps.developerName,
+    websiteUrl: developerApps.websiteUrl,
+    supportUrl: developerApps.supportUrl,
+    privacyPolicyUrl: developerApps.privacyPolicyUrl,
+    tosUrl: developerApps.tosUrl,
+    webOidcClientId: oidcClients.clientId,
+    grantTypes: oidcClients.grantTypes,
+    createdAt: developerApps.createdAt,
+    marketplaceFeatured: developerApps.marketplaceFeatured,
+  };
+
+  // Prefer developer app id (stable public key). Fall back to legacy web OIDC client_id in URL.
+  const byAppId = await db
+    .select(baseSelect)
     .from(developerApps)
-    .innerJoin(oidcClients, eq(developerApps.oidcClientId, oidcClients.id))
-    .where(and(eq(oidcClients.clientId, clientId), eq(developerApps.status, "approved")))
+    .leftJoin(oidcClients, eq(developerApps.oidcClientId, oidcClients.id))
+    .where(and(eq(developerApps.id, routeId), publishedApprovedCondition()))
     .limit(1);
 
-  const app = results[0];
+  const row =
+    byAppId[0] ??
+    (
+      await db
+        .select(baseSelect)
+        .from(developerApps)
+        .innerJoin(oidcClients, eq(developerApps.oidcClientId, oidcClients.id))
+        .where(
+          and(
+            eq(oidcClients.clientId, routeId),
+            publishedApprovedCondition(),
+          ),
+        )
+        .limit(1)
+    )[0];
 
-  if (!app) {
+  if (!row) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  return NextResponse.json(app);
+  const { marketplaceFeatured, webOidcClientId, ...app } = row;
+  return NextResponse.json({
+    ...app,
+    clientId: webOidcClientId,
+    featured: marketplaceFeatured === 1,
+  });
 }

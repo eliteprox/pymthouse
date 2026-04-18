@@ -31,6 +31,7 @@ export async function GET() {
         ownerEmail: users.email,
         ownerName: users.name,
         clientId: oidcClients.clientId,
+        marketplaceFeatured: developerApps.marketplaceFeatured,
       })
       .from(developerApps)
       .leftJoin(users, eq(developerApps.ownerId, users.id))

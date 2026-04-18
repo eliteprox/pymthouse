@@ -240,6 +240,8 @@ export const developerApps = pgTable("developer_apps", {
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
   publishedAt: text("published_at"),
+  /** 1 = show on homepage featured strip (admin-curated); 0 = not featured */
+  marketplaceFeatured: integer("marketplace_featured").notNull().default(0),
 });
 
 // Provider-managed application users for the MVP runtime path.

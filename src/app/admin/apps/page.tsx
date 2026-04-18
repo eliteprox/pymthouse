@@ -19,6 +19,7 @@ interface AdminApp {
   ownerEmail: string | null;
   ownerName: string | null;
   clientId: string | null;
+  marketplaceFeatured?: number | null;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -35,6 +36,7 @@ export default function AdminAppsReviewPage() {
   const [loading, setLoading] = useState(true);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [featuring, setFeaturing] = useState<string | null>(null);
   const [notesByAppId, setNotesByAppId] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
@@ -87,6 +89,34 @@ export default function AdminAppsReviewPage() {
       setError(err instanceof Error ? err.message : "Request failed");
     } finally {
       setReviewing(null);
+    }
+  };
+
+  const handleToggleFeatured = async (appId: string, featured: boolean) => {
+    setFeaturing(appId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/v1/admin/apps/${appId}/marketplace-featured`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ featured }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to update featured state");
+        return;
+      }
+      setApps((prev) =>
+        prev.map((a) =>
+          a.id === appId
+            ? { ...a, marketplaceFeatured: data.featured ? 1 : 0 }
+            : a,
+        ),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Request failed");
+    } finally {
+      setFeaturing(null);
     }
   };
 
@@ -311,13 +341,32 @@ export default function AdminAppsReviewPage() {
                     </div>
 
                     {app.status === "approved" && (
-                      <button
-                        onClick={() => handleRevoke(app.id)}
-                        disabled={revoking === app.id}
-                        className="mt-3 w-full px-3 py-1.5 text-xs text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-500/50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {revoking === app.id ? "Revoking..." : "Revoke Approval"}
-                      </button>
+                      <div className="mt-3 space-y-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleToggleFeatured(
+                              app.id,
+                              (app.marketplaceFeatured ?? 0) !== 1,
+                            )
+                          }
+                          disabled={featuring === app.id}
+                          className="w-full px-3 py-1.5 text-xs text-amber-400 hover:text-amber-300 border border-amber-500/30 hover:border-amber-500/50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {featuring === app.id
+                            ? "Updating..."
+                            : (app.marketplaceFeatured ?? 0) === 1
+                              ? "Remove from homepage featured"
+                              : "Feature on homepage"}
+                        </button>
+                        <button
+                          onClick={() => handleRevoke(app.id)}
+                          disabled={revoking === app.id}
+                          className="w-full px-3 py-1.5 text-xs text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-500/50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {revoking === app.id ? "Revoking..." : "Revoke Approval"}
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))}
