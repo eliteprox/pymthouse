@@ -139,22 +139,35 @@ export async function approveDeviceCodeForAccount(
   const now = Math.floor(Date.now() / 1000);
   const expiresIn = deviceCode.exp ? Math.max(deviceCode.exp - now, 1) : 600;
 
-  const bound = await adapter.bindDeviceApprovalIfUnbound(
-    deviceCode.jti,
-    {
-      ...latest,
-      accountId,
-      grantId: newGrantId,
-      scope,
-      resource,
-      authTime: now,
-      acr: typeof latest.acr === "string" ? latest.acr : "urn:pmth:session",
-      amr: Array.isArray(latest.amr) ? latest.amr : ["pwd"],
-      error: undefined,
-      errorDescription: undefined,
-    },
-    expiresIn,
-  );
+  let bound: boolean;
+  try {
+    bound = await adapter.bindDeviceApprovalIfUnbound(
+      deviceCode.jti,
+      {
+        ...latest,
+        accountId,
+        grantId: newGrantId,
+        scope,
+        resource,
+        authTime: now,
+        acr: typeof latest.acr === "string" ? latest.acr : "urn:pmth:session",
+        amr: Array.isArray(latest.amr) ? latest.amr : ["pwd"],
+        error: undefined,
+        errorDescription: undefined,
+      },
+      expiresIn,
+    );
+  } catch (err) {
+    const after = await adapter.find(deviceCode.jti);
+    const payloadGrantId =
+      after && typeof (after as Record<string, unknown>).grantId === "string"
+        ? ((after as Record<string, unknown>).grantId as string)
+        : "";
+    if (payloadGrantId !== newGrantId) {
+      await grant.destroy();
+    }
+    throw err;
+  }
 
   if (!bound) {
     await grant.destroy();

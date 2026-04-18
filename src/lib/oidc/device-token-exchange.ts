@@ -187,6 +187,7 @@ export async function handleDeviceApprovalTokenExchange(
     clientId,
     clientSecret,
     subjectToken,
+    subjectTokenType,
     resource,
     requestedTokenType,
     audience: audienceParams,
@@ -197,6 +198,15 @@ export async function handleDeviceApprovalTokenExchange(
       "invalid_client",
       "Invalid client credentials",
       "Invalid client credentials",
+    );
+  }
+
+  const normalizedSubjectTokenType = subjectTokenType.trim();
+  if (normalizedSubjectTokenType !== SUBJECT_ACCESS_TOKEN_TYPE) {
+    throw new TokenExchangeError(
+      "invalid_request",
+      `subject_token_type must be ${SUBJECT_ACCESS_TOKEN_TYPE}`,
+      "Invalid subject_token_type for device approval token exchange",
     );
   }
 

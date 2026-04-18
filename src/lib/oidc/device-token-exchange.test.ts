@@ -168,6 +168,26 @@ test("handleDeviceApprovalTokenExchange invalid_client when client secret invali
   );
 });
 
+test("handleDeviceApprovalTokenExchange invalid_request when subject_token_type is not access_token", async () => {
+  await rejectsWithCode(
+    () =>
+      handleDeviceApprovalTokenExchange(
+        {
+          clientId: M2M_ID,
+          clientSecret: "secret",
+          subjectToken: SUBJECT_JWT,
+          subjectTokenType: "urn:ietf:params:oauth:token-type:jwt",
+          resource: "urn:pmth:device_code:ABCD-EFGH",
+        },
+        {
+          validateClientSecret: async () => true,
+          db: dbMockSelectForbidden,
+        },
+      ),
+    "invalid_request",
+  );
+});
+
 test("handleDeviceApprovalTokenExchange invalid_scope without device:approve or users:token", async () => {
   await rejectsWithCode(
     () =>

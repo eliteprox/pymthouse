@@ -165,6 +165,12 @@ export default function TestingStep({
     const text = await res.text();
     try {
       const data = text ? JSON.parse(text) : {};
+      if (
+        typeof data.error_description === "string" &&
+        data.error_description.trim()
+      ) {
+        return data.error_description.trim();
+      }
       if (typeof data.error === "string" && data.error) return data.error;
     } catch {
       /* keep generic */
@@ -187,6 +193,10 @@ export default function TestingStep({
       const data = (await res.json()) as { clientSecret?: string };
       setSecret(data.clientSecret ?? null);
       onSecretGenerated();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not reach the server. Check your connection and try again.";
+      setSecretFetchError(message);
     } finally {
       setGenerating(false);
     }
@@ -207,6 +217,10 @@ export default function TestingStep({
       const data = (await res.json()) as { clientSecret?: string };
       setBackendSecret(data.clientSecret ?? null);
       onBackendSecretGenerated?.();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not reach the server. Check your connection and try again.";
+      setBackendSecretFetchError(message);
     } finally {
       setGeneratingBackend(false);
     }
