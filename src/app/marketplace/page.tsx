@@ -17,6 +17,7 @@ interface MarketplaceApp {
   supportUrl: string | null;
   clientId: string | null;
   createdAt: string;
+  featured?: boolean;
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
