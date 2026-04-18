@@ -243,7 +243,7 @@ const USE_CASES = [
   {
     tag: "Livepeer Providers",
     tagColor: "bg-teal-500/15 text-teal-300 border-teal-500/25",
-    headline: "Monetise your Livepeer node overnight",
+    headline: "Monetise your Livepeer platform overnight",
     body: "Wrap your go-livepeer signer behind pymthouse. Every payment request is proxied, authenticated, and recorded. Usage rolls up per app in real-time — no custom middleware required.",
     bullets: [
       "Remote signer proxy with JWT authentication",
