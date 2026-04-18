@@ -108,7 +108,7 @@ After migrations, initialize OIDC signing keys:
 npm run oidc:seed
 ```
 
-Then register application clients through the dashboard/API and rotate secrets per app from the credentials endpoint (`/api/v1/apps/{clientId}/credentials`). See [docs/naap-oidc-integration.md](docs/naap-oidc-integration.md) and [docs/builder-api.md](docs/builder-api.md).
+Then register application clients through the dashboard/API and rotate secrets per app from the credentials endpoint (`/api/v1/apps/{clientId}/credentials`). See [docs/builder-api.md](docs/builder-api.md) for OIDC, Builder, and Usage API integration.
 
 ## Common commands
 
