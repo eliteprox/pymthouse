@@ -357,34 +357,6 @@ export default function AppSettingsScreen({
         />
       </section>
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
-        <TestingStep
-          appId={appId}
-          clientId={appState.clientId}
-          grantTypes={formData.grantTypes}
-          redirectUris={formData.redirectUris}
-          onRedirectUrisChange={(uris) => updateFormData({ redirectUris: uris })}
-          allowedScopes={formData.allowedScopes}
-          domains={domains}
-          onDomainsChange={setDomains}
-          hasSecret={appState.hasSecret}
-          backendHelper={appState.backendHelper}
-          onSecretGenerated={() => {
-            setAppState((s) => ({ ...s, hasSecret: true }));
-            updateFormData({ tokenEndpointAuthMethod: "client_secret_post" });
-          }}
-          onBackendSecretGenerated={() => {
-            setAppState((s) => ({
-              ...s,
-              backendHelper: s.backendHelper
-                ? { ...s.backendHelper, hasSecret: true }
-                : s.backendHelper,
-            }));
-          }}
-          readOnly={!canEdit}
-        />
-      </section>
-
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 space-y-6">
         <div>
           <h2 className="text-lg font-semibold text-zinc-100">Advanced OIDC</h2>
@@ -502,6 +474,34 @@ export default function AppSettingsScreen({
             </span>
           </span>
         </label>
+      </section>
+
+      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
+        <TestingStep
+          appId={appId}
+          clientId={appState.clientId}
+          grantTypes={formData.grantTypes}
+          redirectUris={formData.redirectUris}
+          onRedirectUrisChange={(uris) => updateFormData({ redirectUris: uris })}
+          allowedScopes={formData.allowedScopes}
+          domains={domains}
+          onDomainsChange={setDomains}
+          hasSecret={appState.hasSecret}
+          backendHelper={appState.backendHelper}
+          onSecretGenerated={() => {
+            setAppState((s) => ({ ...s, hasSecret: true }));
+            updateFormData({ tokenEndpointAuthMethod: "client_secret_post" });
+          }}
+          onBackendSecretGenerated={() => {
+            setAppState((s) => ({
+              ...s,
+              backendHelper: s.backendHelper
+                ? { ...s.backendHelper, hasSecret: true }
+                : s.backendHelper,
+            }));
+          }}
+          readOnly={!canEdit}
+        />
       </section>
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-6 space-y-4">
