@@ -15,6 +15,18 @@ export function MarketingFooter({ className = "" }: { className?: string }) {
             >
               Home
             </Link>
+            <Link
+              href="/solutions"
+              className="block text-zinc-400 hover:text-zinc-200 transition-colors"
+            >
+              Solutions
+            </Link>
+            <Link
+              href="/marketplace"
+              className="block text-zinc-400 hover:text-zinc-200 transition-colors"
+            >
+              Marketplace
+            </Link>
           </div>
         </div>
         <div>

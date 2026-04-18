@@ -229,10 +229,10 @@ export default async function LandingPage() {
             Start Building
           </Link>
           <Link
-            href="/marketplace"
+            href="/solutions"
             className="w-full max-w-xs px-6 py-2.5 text-center text-sm font-medium text-zinc-100 border border-zinc-600 rounded-lg hover:border-zinc-500 hover:bg-zinc-900/50 transition-colors sm:flex sm:max-w-none sm:flex-1 sm:justify-start"
           >
-            Marketplace
+            Solutions
           </Link>
         </div>
       </div>
