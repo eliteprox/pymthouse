@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/next-auth-options";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { MarketingFooter } from "@/components/MarketingFooter";
 import { db } from "@/db/index";
 import { developerApps, oidcClients } from "@/db/schema";
 import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
@@ -126,7 +127,7 @@ export default async function LandingPage() {
 
   const featuredApps: HomeApp[] = mapped
     .filter((a) => a.featured)
-    .slice(0, 6)
+    .slice(0, 4)
     .map(toHomeApp);
 
   let showcaseApps: HomeApp[] = featuredApps;
@@ -148,7 +149,7 @@ export default async function LandingPage() {
       WHERE d.status = 'approved'
         AND d.published_at IS NOT NULL
       ORDER BY COALESCE(u.cnt, 0) DESC, d.published_at::timestamptz DESC NULLS LAST
-      LIMIT 6
+      LIMIT 4
     `);
 
     const byId = new Map(mapped.map((m) => [m.id, toHomeApp(m)]));
@@ -157,7 +158,7 @@ export default async function LandingPage() {
       .filter((a): a is HomeApp => a !== undefined);
 
     if (showcaseApps.length === 0) {
-      showcaseApps = mapped.slice(0, 6).map(toHomeApp);
+      showcaseApps = mapped.slice(0, 4).map(toHomeApp);
     }
 
     showcaseTitle = "Popular apps";
@@ -165,7 +166,7 @@ export default async function LandingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
       <nav className="border-b border-zinc-800/50">
         <div className="max-w-5xl mx-auto flex items-center justify-between px-6 py-4">
           <h1 className="text-xl font-bold tracking-tight">
@@ -235,7 +236,7 @@ export default async function LandingPage() {
                 View all
               </Link>
             </div>
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
               {showcaseApps.map((app) => (
                 <AppCard key={app.id} app={app} />
               ))}
@@ -244,7 +245,7 @@ export default async function LandingPage() {
         </div>
       )}
 
-      <div className="max-w-5xl mx-auto px-6 pb-24">
+      <div className="max-w-5xl mx-auto px-6 pb-12 flex-1">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
           <div className="border border-zinc-800 rounded-xl p-6 bg-zinc-900/30">
             <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center mb-4">
@@ -315,6 +316,10 @@ export default async function LandingPage() {
             </p>
           </div>
         </div>
+      </div>
+
+      <div className="max-w-5xl mx-auto w-full px-6 pb-10 mt-auto">
+        <MarketingFooter />
       </div>
     </div>
   );
