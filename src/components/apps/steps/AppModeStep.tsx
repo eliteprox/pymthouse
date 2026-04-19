@@ -3,6 +3,13 @@
 import type { AppFormData } from "../AppWizard";
 import { OIDC_SCOPES } from "@/lib/oidc/scopes";
 
+const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
+
+function isValidInitiateLoginUri(uri: string): boolean {
+  const t = uri.trim();
+  return t.length > 0 && (t.startsWith("https://") || t.startsWith("http://localhost"));
+}
+
 interface Props {
   data: AppFormData;
   onChange: (updates: Partial<AppFormData>) => void;
@@ -11,28 +18,91 @@ interface Props {
 
 export default function AppModeStep({ data, onChange, readOnly = false }: Props) {
   const scopes = data.allowedScopes.split(/\s+/).filter(Boolean);
-  const interactiveScopes = OIDC_SCOPES.filter((scope) =>
-    ["openid", "sign:job", "users:token", "admin"].includes(scope.value),
-  );
+  const hasDeviceCode = data.grantTypes.includes(DEVICE_CODE_GRANT);
 
-  const toggleGrant = (grant: string) => {
+  // openid (required) + sign:job always visible; users:token only when helper is on
+  const baseScopes = OIDC_SCOPES.filter((s) => ["openid", "sign:job"].includes(s.value));
+  const helperScopes = OIDC_SCOPES.filter((s) => s.value === "users:token");
+
+  const toggleScope = (scope: string) => {
+    if (readOnly || scope === "openid") return;
+    const next = scopes.includes(scope)
+      ? scopes.filter((v) => v !== scope)
+      : [...scopes, scope];
+    onChange({ allowedScopes: next.join(" ") });
+  };
+
+  const toggleRefreshToken = () => {
     if (readOnly) return;
-    const has = data.grantTypes.includes(grant);
+    const has = data.grantTypes.includes("refresh_token");
     onChange({
       grantTypes: has
-        ? data.grantTypes.filter((value) => value !== grant)
-        : [...data.grantTypes, grant],
+        ? data.grantTypes.filter((v) => v !== "refresh_token")
+        : [...data.grantTypes, "refresh_token"],
     });
   };
 
-  const toggleScope = (scope: string) => {
+  const toggleDeviceCode = () => {
     if (readOnly) return;
-    if (scope === "openid") return;
-    const nextScopes = scopes.includes(scope)
-      ? scopes.filter((value) => value !== scope)
-      : [...scopes, scope];
-    onChange({ allowedScopes: nextScopes.join(" ") });
+    if (hasDeviceCode) {
+      onChange({
+        grantTypes: data.grantTypes.filter((v) => v !== DEVICE_CODE_GRANT),
+        initiateLoginUri: "",
+        deviceThirdPartyInitiateLogin: false,
+      });
+    } else {
+      onChange({ grantTypes: [...data.grantTypes, DEVICE_CODE_GRANT] });
+    }
   };
+
+  const toggleHelper = (checked: boolean) => {
+    if (readOnly) return;
+    if (checked) {
+      const nextScopes = scopes.includes("users:token") ? scopes : [...scopes, "users:token"];
+      onChange({ backendDeviceHelper: true, allowedScopes: nextScopes.join(" ") });
+    } else {
+      onChange({
+        backendDeviceHelper: false,
+        grantTypes: data.grantTypes.filter((v) => v !== DEVICE_CODE_GRANT),
+        initiateLoginUri: "",
+        deviceThirdPartyInitiateLogin: false,
+        allowedScopes: scopes.filter((s) => s !== "users:token").join(" "),
+      });
+    }
+  };
+
+  const scopeRow = (
+    scope: (typeof OIDC_SCOPES)[number],
+    accentClass = "emerald",
+  ) => (
+    <label
+      key={scope.value}
+      className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+        scopes.includes(scope.value)
+          ? `border-${accentClass}-500/30 bg-${accentClass}-500/5`
+          : "border-zinc-800 bg-zinc-800/20"
+      } ${scope.required || readOnly ? "opacity-70" : "cursor-pointer hover:border-zinc-600"}`}
+    >
+      <input
+        type="checkbox"
+        checked={scopes.includes(scope.value)}
+        onChange={() => toggleScope(scope.value)}
+        disabled={scope.required || readOnly}
+        className={`w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-${accentClass}-500 focus:ring-${accentClass}-500/40 shrink-0`}
+      />
+      <div>
+        <p className="text-sm font-medium text-zinc-200">
+          {scope.label}
+          {scope.required && (
+            <span className="ml-1.5 text-[10px] font-normal text-zinc-500 uppercase tracking-wide">
+              (required)
+            </span>
+          )}
+        </p>
+        <p className="text-xs text-zinc-500">{scope.description}</p>
+      </div>
+    </label>
+  );
 
   return (
     <div className="space-y-8">
@@ -44,6 +114,132 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
       </div>
 
       <div className="space-y-6 border-t border-zinc-800 pt-6">
+
+        {/* ── Confidential client (top-level parent) ── */}
+        <div className="rounded-xl border border-zinc-700/80 bg-zinc-800/20 p-4 space-y-3">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={Boolean(data.backendDeviceHelper)}
+              onChange={(e) => toggleHelper(e.target.checked)}
+              disabled={readOnly}
+              className="w-4 h-4 mt-0.5 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 shrink-0 disabled:opacity-50"
+            />
+            <div>
+              <p className="text-sm font-medium text-zinc-200">
+                Confidential client{" "}
+                <span className="text-[10px] font-normal text-zinc-500 uppercase tracking-wide">
+                  (client credentials)
+                </span>
+              </p>
+              <p className="text-xs text-zinc-500 mt-1">
+                Provisions a confidential{" "}
+                <code className="font-mono text-zinc-400">m2m_</code> client that
+                authenticates with client credentials for server-to-server Builder
+                APIs (
+                <code className="font-mono text-zinc-400">users:token</code>,{" "}
+                <code className="font-mono text-zinc-400">users:write</code>). Your
+                public client stays unauthenticated for SDK / CLI device login —
+                required for NaaP Option B approval.
+              </p>
+            </div>
+          </label>
+
+          {data.backendDeviceHelper && (
+            <>
+              {/* Companion scopes info chip */}
+              <div className="rounded-lg border border-zinc-700/70 bg-zinc-800/30 px-3 py-2 text-xs text-zinc-400">
+                Companion confidential client scopes are fixed to{" "}
+                <code className="font-mono text-zinc-300">
+                  users:token users:write device:approve
+                </code>
+                .
+              </div>
+
+              {/* ── Device Authorization Flow (child of helper) ── */}
+              <div className="border-t border-zinc-700/60 pt-3 space-y-3">
+                <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
+                  Device login
+                </p>
+                <label
+                  className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
+                    hasDeviceCode
+                      ? "border-emerald-500/30 bg-emerald-500/5"
+                      : "border-zinc-700 bg-zinc-800/20 hover:border-zinc-600"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={hasDeviceCode}
+                    onChange={toggleDeviceCode}
+                    disabled={readOnly}
+                    className="w-4 h-4 mt-0.5 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 shrink-0 disabled:opacity-50"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-zinc-200">
+                      Device Authorization Flow{" "}
+                      <span className="text-[10px] font-normal text-zinc-500 uppercase tracking-wide">
+                        (RFC 8628)
+                      </span>
+                    </p>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      Allow CLI tools, SDKs, and headless clients to authenticate
+                      via a user code on a secondary device.
+                    </p>
+
+                    {/* ── NaaP Option B (grandchild — only when device_code is on) ── */}
+                    {hasDeviceCode && (
+                      <div className="mt-3 border-t border-zinc-700/50 pt-3 space-y-3">
+                        <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
+                          NaaP Option B — Third-party initiate login
+                        </p>
+                        <div>
+                          <label className="block text-xs font-medium text-zinc-400 mb-1">
+                            Initiate login URI
+                          </label>
+                          <input
+                            type="url"
+                            value={data.initiateLoginUri}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              onChange({
+                                initiateLoginUri: v,
+                                deviceThirdPartyInitiateLogin: isValidInitiateLoginUri(v),
+                              });
+                            }}
+                            placeholder="https://example.com/api/auth/initiate-login"
+                            disabled={readOnly}
+                            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder:text-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
+                          <p className="text-xs text-zinc-500 mt-1">
+                            OIDC{" "}
+                            <code className="font-mono text-zinc-400">
+                              initiate_login_uri
+                            </code>{" "}
+                            — when set, unauthenticated device verification
+                            redirects here with{" "}
+                            <code className="font-mono text-zinc-400">iss</code>{" "}
+                            and{" "}
+                            <code className="font-mono text-zinc-400">
+                              target_link_uri
+                            </code>
+                            . Your app must return users to{" "}
+                            <code className="font-mono text-zinc-400">
+                              target_link_uri
+                            </code>{" "}
+                            after login.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </label>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* ── Grant Types (auth_code always required; refresh_token optional) ── */}
         <div className="space-y-3">
           <div>
             <label className="block text-sm font-medium text-zinc-300">Grant Types</label>
@@ -53,97 +249,52 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
           </div>
           <div className="space-y-2">
             <label className="flex items-center gap-3 p-3 rounded-lg border border-zinc-800 bg-zinc-800/20 opacity-70 cursor-not-allowed">
-              <input type="checkbox" checked readOnly disabled className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500" />
+              <input
+                type="checkbox"
+                checked
+                readOnly
+                disabled
+                className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500"
+              />
               <div>
                 <p className="text-sm font-medium text-zinc-200">
                   Authorization Code + PKCE
-                  <span className="ml-1.5 text-[10px] font-normal text-zinc-500 uppercase tracking-wide">(required)</span>
+                  <span className="ml-1.5 text-[10px] font-normal text-zinc-500 uppercase tracking-wide">
+                    (required)
+                  </span>
                 </p>
-                <p className="text-xs text-zinc-500">Browser redirect flow — the foundation of interactive sign-in. Always required.</p>
+                <p className="text-xs text-zinc-500">
+                  Browser redirect flow — the foundation of interactive sign-in.
+                  Always required.
+                </p>
               </div>
             </label>
-            <label className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
-              data.grantTypes.includes("refresh_token")
-                ? "border-emerald-500/30 bg-emerald-500/5"
-                : "border-zinc-800 bg-zinc-800/20 hover:border-zinc-600"
-            }`}>
+            <label
+              className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
+                data.grantTypes.includes("refresh_token")
+                  ? "border-emerald-500/30 bg-emerald-500/5"
+                  : "border-zinc-800 bg-zinc-800/20 hover:border-zinc-600"
+              }`}
+            >
               <input
                 type="checkbox"
                 checked={data.grantTypes.includes("refresh_token")}
-                onChange={() => toggleGrant("refresh_token")}
+                onChange={toggleRefreshToken}
                 disabled={readOnly}
                 className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 mt-0.5 shrink-0 disabled:opacity-50"
               />
               <div>
                 <p className="text-sm font-medium text-zinc-200">Refresh Token</p>
                 <p className="text-xs text-zinc-500 mt-0.5">
-                  Allow direct refresh at the token endpoint after the initial interactive sign-in.
-                </p>
-              </div>
-            </label>
-            <label className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
-              data.grantTypes.includes("urn:ietf:params:oauth:grant-type:device_code")
-                ? "border-emerald-500/30 bg-emerald-500/5"
-                : "border-zinc-800 bg-zinc-800/20 hover:border-zinc-600"
-            }`}>
-              <input
-                type="checkbox"
-                checked={data.grantTypes.includes("urn:ietf:params:oauth:grant-type:device_code")}
-                onChange={() => toggleGrant("urn:ietf:params:oauth:grant-type:device_code")}
-                disabled={readOnly}
-                className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 mt-0.5 shrink-0 disabled:opacity-50"
-              />
-              <div>
-                <p className="text-sm font-medium text-zinc-200">Device Authorization Flow
-                  <span className="ml-1.5 text-[10px] font-normal text-zinc-500 uppercase tracking-wide">(RFC 8628)</span>
-                </p>
-                <p className="text-xs text-zinc-500 mt-0.5">
-                  Allow CLI tools, SDKs, and headless clients to authenticate via a user code on a secondary device.
+                  Allow direct refresh at the token endpoint after the initial
+                  interactive sign-in.
                 </p>
               </div>
             </label>
           </div>
         </div>
 
-        <div className="rounded-xl border border-zinc-700/80 bg-zinc-800/20 p-4 space-y-2">
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={Boolean(data.backendDeviceHelper)}
-              onChange={(e) => {
-                const checked = e.target.checked;
-                const nextScopes =
-                  checked && !scopes.includes("users:token")
-                    ? [...scopes, "users:token"]
-                    : scopes;
-                onChange({
-                  backendDeviceHelper: checked,
-                  allowedScopes: nextScopes.join(" "),
-                });
-              }}
-              disabled={readOnly}
-              className="w-4 h-4 mt-0.5 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 shrink-0 disabled:opacity-50"
-            />
-            <div>
-              <p className="text-sm font-medium text-zinc-200">
-                Backend device helper (confidential client)
-              </p>
-              <p className="text-xs text-zinc-500 mt-1">
-                Provisions a separate <code className="font-mono text-zinc-400">m2m_</code> client for
-                server-to-server device approval and Builder APIs (<code className="font-mono text-zinc-400">users:token</code>,{" "}
-                <code className="font-mono text-zinc-400">users:write</code>). Your public client stays
-                unauthenticated for SDK / CLI device login—required for Option B (NaaP-side approval).
-              </p>
-            </div>
-          </label>
-          {data.backendDeviceHelper && (
-            <div className="rounded-lg border border-zinc-700/70 bg-zinc-800/30 px-3 py-2 text-xs text-zinc-400">
-              Companion confidential client scopes are fixed to{" "}
-              <code className="font-mono text-zinc-300">users:token users:write device:approve</code>.
-            </div>
-          )}
-        </div>
-
+        {/* ── Scopes ── */}
         <div className="space-y-3">
           <div>
             <label className="block text-sm font-medium text-zinc-300">Scopes</label>
@@ -152,35 +303,8 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
             </p>
           </div>
           <div className="space-y-2">
-            {interactiveScopes.map((scope) => (
-              <label
-                key={scope.value}
-                className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
-                  scopes.includes(scope.value)
-                    ? "border-emerald-500/30 bg-emerald-500/5"
-                    : "border-zinc-800 bg-zinc-800/20"
-                } ${scope.required || readOnly ? "opacity-70" : "cursor-pointer hover:border-zinc-600"}`}
-              >
-                <div>
-                  <input
-                    type="checkbox"
-                    checked={scopes.includes(scope.value)}
-                    onChange={() => toggleScope(scope.value)}
-                    disabled={scope.required || readOnly}
-                    className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 shrink-0"
-                  />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-zinc-200">
-                    {scope.label}
-                    {scope.required && (
-                      <span className="ml-1.5 text-[10px] font-normal text-zinc-500 uppercase tracking-wide">(required)</span>
-                    )}
-                  </p>
-                  <p className="text-xs text-zinc-500">{scope.description}</p>
-                </div>
-              </label>
-            ))}
+            {baseScopes.map((s) => scopeRow(s))}
+            {data.backendDeviceHelper && helperScopes.map((s) => scopeRow(s))}
           </div>
         </div>
       </div>

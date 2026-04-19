@@ -30,16 +30,11 @@ interface Props {
   onRevertedToDraft?: () => void;
 }
 
-/** Matches server expectations for initiate_login_uri when third-party device login is used. */
-function isValidInitiateLoginUri(uri: string): boolean {
-  const t = uri.trim();
-  return (
-    t.length > 0 &&
-    (t.startsWith("https://") || t.startsWith("http://localhost"))
-  );
-}
-
-function mergeFormData(initial: Partial<AppFormData>): AppFormData {
+function mergeFormData(
+  initial: Partial<AppFormData>,
+  initialInitiateLoginUri: string | null,
+  initialDeviceThirdPartyInitiateLogin: boolean,
+): AppFormData {
   return {
     ...defaultAppFormData,
     ...initial,
@@ -50,6 +45,9 @@ function mergeFormData(initial: Partial<AppFormData>): AppFormData {
         : [...defaultAppFormData.grantTypes],
     allowedScopes: initial.allowedScopes ?? defaultAppFormData.allowedScopes,
     backendDeviceHelper: initial.backendDeviceHelper ?? false,
+    initiateLoginUri: initial.initiateLoginUri ?? initialInitiateLoginUri ?? "",
+    deviceThirdPartyInitiateLogin:
+      initial.deviceThirdPartyInitiateLogin ?? initialDeviceThirdPartyInitiateLogin,
   };
 }
 
@@ -68,7 +66,7 @@ export default function AppSettingsScreen({
 }: Props) {
   const router = useRouter();
   const [formData, setFormData] = useState<AppFormData>(() =>
-    mergeFormData(initialData),
+    mergeFormData(initialData, initialInitiateLoginUri ?? null, initialDeviceThirdPartyInitiateLogin),
   );
   const [appState, setAppState] = useState<AppState>(initialState);
   const [domains, setDomains] = useState<{ id: string; domain: string }[]>(
@@ -77,11 +75,6 @@ export default function AppSettingsScreen({
   const [postLogoutRedirectUris, setPostLogoutRedirectUris] = useState<string[]>(
     initialPostLogoutRedirectUris,
   );
-  const [initiateLoginUri, setInitiateLoginUri] = useState(
-    initialInitiateLoginUri ?? "",
-  );
-  const [deviceThirdPartyInitiateLogin, setDeviceThirdPartyInitiateLogin] =
-    useState(initialDeviceThirdPartyInitiateLogin);
   const [newPostLogoutUri, setNewPostLogoutUri] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -129,8 +122,8 @@ export default function AppSettingsScreen({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           postLogoutRedirectUris,
-          initiateLoginUri: initiateLoginUri.trim() || null,
-          deviceThirdPartyInitiateLogin,
+          initiateLoginUri: formData.initiateLoginUri.trim() || null,
+          deviceThirdPartyInitiateLogin: formData.deviceThirdPartyInitiateLogin,
           tokenEndpointAuthMethod: formData.tokenEndpointAuthMethod,
         }),
       });
@@ -151,8 +144,6 @@ export default function AppSettingsScreen({
     appId,
     formData,
     postLogoutRedirectUris,
-    initiateLoginUri,
-    deviceThirdPartyInitiateLogin,
     canEdit,
   ]);
 
@@ -357,13 +348,12 @@ export default function AppSettingsScreen({
         />
       </section>
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 space-y-6">
+      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 space-y-4">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-100">Advanced OIDC</h2>
+          <h2 className="text-lg font-semibold text-zinc-100">Post-logout Redirects</h2>
           <p className="text-sm text-zinc-500 mt-1">
-            Post-logout redirects, optional initiate-login URI, and device-flow
-            third-party login. Saved with{" "}
-            <strong className="text-zinc-400">Save</strong> below.
+            URIs to redirect users to after sign-out. Saved with{" "}
+            <strong className="text-zinc-400">Save changes</strong> below.
           </p>
         </div>
 
@@ -415,65 +405,6 @@ export default function AppSettingsScreen({
             ))}
           </div>
         </div>
-
-        <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1.5">
-            Initiate login URI
-          </label>
-          <input
-            type="url"
-            value={initiateLoginUri}
-            onChange={(e) => {
-              const v = e.target.value;
-              setInitiateLoginUri(v);
-              if (!isValidInitiateLoginUri(v)) {
-                setDeviceThirdPartyInitiateLogin(false);
-              }
-            }}
-            placeholder="https://example.com/login"
-            disabled={!canEdit}
-            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
-          />
-          <p className="text-xs text-zinc-500 mt-2">
-            OIDC third-party login (iss, target_link_uri). When enabled below,
-            unauthenticated device verification can redirect here once before
-            PymtHouse login.
-          </p>
-        </div>
-
-        <label
-          className={`flex items-start gap-3 ${
-            canEdit &&
-            (isValidInitiateLoginUri(initiateLoginUri) ||
-              deviceThirdPartyInitiateLogin)
-              ? "cursor-pointer"
-              : "cursor-not-allowed opacity-80"
-          }`}
-        >
-          <input
-            type="checkbox"
-            checked={deviceThirdPartyInitiateLogin}
-            onChange={(e) => setDeviceThirdPartyInitiateLogin(e.target.checked)}
-            disabled={
-              !canEdit ||
-              (!isValidInitiateLoginUri(initiateLoginUri) &&
-                !deviceThirdPartyInitiateLogin)
-            }
-            className="mt-1 rounded border-zinc-600 disabled:opacity-50"
-          />
-          <span>
-            <span className="block text-sm font-medium text-zinc-300">
-              Redirect device verification to initiate login URI
-            </span>
-            <span className="block text-xs text-zinc-500 mt-1">
-              Requires a valid HTTPS initiate login URI above (localhost HTTP
-              allowed for development). Your app must implement{" "}
-              <code className="text-zinc-400">initiate_login_uri</code> and
-              return users to{" "}
-              <code className="text-zinc-400">target_link_uri</code>.
-            </span>
-          </span>
-        </label>
       </section>
 
       <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">

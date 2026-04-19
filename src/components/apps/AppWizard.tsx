@@ -24,6 +24,10 @@ export interface AppFormData {
   grantTypes: string[];
   /** Provisions the confidential M2M sibling (Builder API + device approval via token exchange); keeps the public client unauthenticated. */
   backendDeviceHelper: boolean;
+  /** OIDC initiate_login_uri for NaaP Option B third-party device login. */
+  initiateLoginUri: string;
+  /** Whether to redirect unauthenticated device verification to initiateLoginUri. */
+  deviceThirdPartyInitiateLogin: boolean;
 }
 
 export interface AppState {
@@ -44,8 +48,10 @@ export const defaultAppFormData: AppFormData = {
   tokenEndpointAuthMethod: "none",
   redirectUris: [],
   allowedScopes: DEFAULT_OIDC_SCOPES,
-  grantTypes: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"],
+  grantTypes: ["authorization_code", "refresh_token"],
   backendDeviceHelper: false,
+  initiateLoginUri: "",
+  deviceThirdPartyInitiateLogin: false,
 };
 
 interface Props {
