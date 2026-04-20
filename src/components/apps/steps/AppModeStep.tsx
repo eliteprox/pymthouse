@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import type { AppFormData } from "../AppWizard";
 import { OIDC_SCOPES } from "@/lib/oidc/scopes";
 import { validateInitiateLoginUri } from "@/lib/oidc/third-party-initiate-login";
@@ -26,6 +27,9 @@ interface Props {
 export default function AppModeStep({ data, onChange, readOnly = false }: Props) {
   const scopes = data.allowedScopes.split(/\s+/).filter(Boolean);
   const hasDeviceCode = data.grantTypes.includes(DEVICE_CODE_GRANT);
+  const requiresIssueUserTokens =
+    hasDeviceCode && data.deviceThirdPartyInitiateLogin && isValidInitiateLoginUri(data.initiateLoginUri);
+  const hasIssueUserTokens = scopes.includes("users:token");
 
   // openid (required) + sign:job always visible; users:token only when helper is on
   const baseScopes = OIDC_SCOPES.filter((s) => ["openid", "sign:job"].includes(s.value));
@@ -33,11 +37,17 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
 
   const toggleScope = (scope: string) => {
     if (readOnly || scope === "openid") return;
+    if (scope === "users:token" && requiresIssueUserTokens) return;
     const next = scopes.includes(scope)
       ? scopes.filter((v) => v !== scope)
       : [...scopes, scope];
     onChange({ allowedScopes: next.join(" ") });
   };
+
+  useEffect(() => {
+    if (!requiresIssueUserTokens || hasIssueUserTokens) return;
+    onChange({ allowedScopes: [...scopes, "users:token"].join(" ") });
+  }, [hasIssueUserTokens, onChange, requiresIssueUserTokens, scopes]);
 
   const toggleRefreshToken = () => {
     if (readOnly) return;
@@ -88,19 +98,23 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
         scopes.includes(scope.value)
           ? `border-${accentClass}-500/30 bg-${accentClass}-500/5`
           : "border-zinc-800 bg-zinc-800/20"
-      } ${scope.required || readOnly ? "opacity-70" : "cursor-pointer hover:border-zinc-600"}`}
+      } ${scope.required || readOnly || (scope.value === "users:token" && requiresIssueUserTokens) ? "opacity-70" : "cursor-pointer hover:border-zinc-600"}`}
     >
       <input
         type="checkbox"
         checked={scopes.includes(scope.value)}
         onChange={() => toggleScope(scope.value)}
-        disabled={scope.required || readOnly}
+        disabled={
+          scope.required ||
+          readOnly ||
+          (scope.value === "users:token" && requiresIssueUserTokens)
+        }
         className={`w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-${accentClass}-500 focus:ring-${accentClass}-500/40 shrink-0`}
       />
       <div>
         <p className="text-sm font-medium text-zinc-200">
           {scope.label}
-          {scope.required && (
+          {(scope.required || (scope.value === "users:token" && requiresIssueUserTokens)) && (
             <span className="ml-1.5 text-[10px] font-normal text-zinc-500 uppercase tracking-wide">
               (required)
             </span>

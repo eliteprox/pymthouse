@@ -47,9 +47,12 @@ function TurnkeyLoginButtonInner({ primaryColor = "#10b981" }: { primaryColor?: 
     refreshUser,
     user,
     wallets,
+    logout,
   } = useTurnkey();
+  const { status: nextAuthStatus } = useSession();
   const [bridging, setBridging] = useState(false);
   const [bridgeRequested, setBridgeRequested] = useState(false);
+  const [handleLoginPending, setHandleLoginPending] = useState(false);
   const [failed, setFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -136,14 +139,37 @@ function TurnkeyLoginButtonInner({ primaryColor = "#10b981" }: { primaryColor?: 
         onClick={() => {
           setFailed(false);
           setError(null);
-          setBridgeRequested(true);
-          void handleLogin();
+          void (async () => {
+            setHandleLoginPending(true);
+            try {
+              if (
+                nextAuthStatus === "unauthenticated" &&
+                authState === AuthState.Authenticated
+              ) {
+                await logout();
+              }
+              await handleLogin();
+              setBridgeRequested(true);
+            } catch {
+              setError("Authentication failed");
+              setFailed(true);
+              setBridgeRequested(false);
+            } finally {
+              setHandleLoginPending(false);
+            }
+          })();
         }}
-        disabled={bridging || clientState === ClientState.Loading}
+        disabled={
+          bridging ||
+          handleLoginPending ||
+          clientState === ClientState.Loading
+        }
         className="w-full px-4 py-3 text-white rounded-lg text-sm font-medium hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         style={{ backgroundColor: primaryColor }}
       >
-        {bridging ? "Connecting..." : "Sign In / Create Account"}
+        {bridging || handleLoginPending
+          ? "Connecting..."
+          : "Sign In / Create Account"}
       </button>
       {error && (
         <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 mt-3">
@@ -251,6 +277,14 @@ export function LoginForm() {
     return (
       <div className="flex items-center justify-center min-h-screen bg-zinc-950">
         <div className="animate-pulse text-zinc-500">Redirecting...</div>
+      </div>
+    );
+  }
+
+  if (status === "loading") {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-zinc-950">
+        <div className="animate-pulse text-zinc-500">Loading...</div>
       </div>
     );
   }

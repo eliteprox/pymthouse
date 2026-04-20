@@ -29,7 +29,7 @@ const requiredVars = {
     validate: (val) => val.length >= 32,
   },
   SIGNER_INTERNAL_URL: {
-    desc: "URL of deployed go-livepeer signer",
+    desc: "URL of the signer (Apache DMZ; local default http://localhost:8080)",
     example: "https://your-signer.up.railway.app",
     validate: (val) => val.startsWith("http://") || val.startsWith("https://"),
   },

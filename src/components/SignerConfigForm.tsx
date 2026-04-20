@@ -17,6 +17,10 @@ interface SignerConfigFormProps {
     remoteDiscovery: number;
     orchWebhookUrl: string | null;
     liveAICapReportInterval: string | null;
+    /** Public platform OIDC issuer + JWKS (not loopback — see issuer-urls). */
+    oidcIssuer: string;
+    oidcAudience: string;
+    oidcJwksUrl: string;
   };
 }
 
@@ -81,10 +85,51 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <h3 className="font-semibold text-zinc-200">Configuration</h3>
+    <>
+      <div className="mb-8 pb-8 border-b border-zinc-800">
+        <h3 className="font-semibold text-zinc-200 mb-1">
+          OIDC / JWKS (automatic)
+        </h3>
+        <p className="text-xs text-zinc-500 mb-4">
+          Public platform OIDC — not derived from{" "}
+          <code className="text-zinc-400">NEXTAUTH_URL</code> (so localhost dev
+          does not appear here). Issuer and audience match; JWKS is issuer +
+          <code className="text-zinc-400">/jwks</code>. Override with{" "}
+          <code className="text-zinc-400">PLATFORM_JWKS_URL</code> when
+          self-hosted.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2">
+            <label className="block text-xs text-zinc-500 mb-1.5">
+              OIDC_ISSUER
+            </label>
+            <div className="w-full px-3 py-2 bg-zinc-900/50 border border-zinc-800 rounded-lg text-xs text-zinc-300 font-mono break-all">
+              {config.oidcIssuer}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-zinc-500 mb-1.5">
+              OIDC_AUDIENCE
+            </label>
+            <div className="w-full px-3 py-2 bg-zinc-900/50 border border-zinc-800 rounded-lg text-xs text-zinc-300 font-mono break-all">
+              {config.oidcAudience}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-zinc-500 mb-1.5">
+              JWKS_URI
+            </label>
+            <div className="w-full px-3 py-2 bg-zinc-900/50 border border-zinc-800 rounded-lg text-xs text-zinc-300 font-mono break-all">
+              {config.oidcJwksUrl}
+            </div>
+          </div>
+        </div>
+      </div>
 
-      <fieldset className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-0 p-0 m-0 min-w-0">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <h3 className="font-semibold text-zinc-200">Saved settings</h3>
+
+        <fieldset className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-0 p-0 m-0 min-w-0">
         <div>
           <label className="block text-xs text-zinc-500 mb-1.5">
             Signer Name
@@ -125,13 +170,14 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
             onChange={(e) =>
               setFormData({
                 ...formData,
-                signerPort: parseInt(e.target.value, 10) || 8081,
+                signerPort: parseInt(e.target.value, 10) || 8080,
               })
             }
             className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50"
           />
           <p className="text-xs text-zinc-600 mt-0.5">
-            HTTP API port (default: 8081). Restart signer to apply.
+            Public signer port (Apache DMZ, default: 8080). Restart signer to
+            apply.
           </p>
         </div>
         <div>
@@ -294,5 +340,6 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
         {error && <span className="text-sm text-red-400">{error}</span>}
       </div>
     </form>
+    </>
   );
 }

@@ -99,6 +99,13 @@
       "when": 1776800000000,
       "tag": "0012_rename_privy_did_to_turnkey_user_id",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1776900000000,
+      "tag": "0013_developer_apps_jwks_uri_platform_public",
+      "breakpoints": true
     }
   ]
 }

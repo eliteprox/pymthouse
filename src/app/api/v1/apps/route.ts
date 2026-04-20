@@ -4,8 +4,16 @@ import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
 import { developerApps, oidcClients, providerAdmins } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
-import { createAppClient } from "@/lib/oidc/clients";
+import {
+  createAppClient,
+  ensureM2mBackendClient,
+  updateClientConfig,
+} from "@/lib/oidc/clients";
+import { resetProvider } from "@/lib/oidc/provider";
+import { DEFAULT_OIDC_SCOPES, OIDC_SCOPES } from "@/lib/oidc/scopes";
 import { ensureProviderAdminMembership } from "@/lib/provider-apps";
+
+const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -95,6 +103,55 @@ export async function POST(request: NextRequest) {
 
   const { id: oidcRowId, clientId } = await createAppClient(name.trim());
 
+  const clientUpdates: Parameters<typeof updateClientConfig>[1] = {};
+  const rawRedirectUris = body.redirectUris;
+  if (Array.isArray(rawRedirectUris) && rawRedirectUris.length > 0) {
+    const redirectUris = rawRedirectUris.filter(
+      (u: unknown): u is string => typeof u === "string" && u.trim().length > 0,
+    );
+    if (redirectUris.length > 0) {
+      clientUpdates.redirectUris = redirectUris.map((u) => u.trim());
+    }
+  }
+  if (
+    typeof body.tokenEndpointAuthMethod === "string" &&
+    ["none", "client_secret_post", "client_secret_basic"].includes(body.tokenEndpointAuthMethod)
+  ) {
+    clientUpdates.tokenEndpointAuthMethod = body.tokenEndpointAuthMethod;
+  }
+  if (typeof body.allowedScopes === "string" && body.allowedScopes.trim()) {
+    const validScopeValues = new Set(OIDC_SCOPES.map((s) => s.value));
+    const filtered = body.allowedScopes
+      .split(/[,\s]+/)
+      .filter((s: string) => s && validScopeValues.has(s))
+      .join(" ");
+    clientUpdates.allowedScopes = filtered || DEFAULT_OIDC_SCOPES;
+  }
+  if (Array.isArray(body.grantTypes) && body.grantTypes.length > 0) {
+    const grantTypes = body.grantTypes.filter(
+      (v: unknown): v is string => typeof v === "string" && v.trim().length > 0,
+    );
+    if (grantTypes.length > 0) {
+      clientUpdates.grantTypes = grantTypes;
+    }
+  }
+  if (
+    body.deviceThirdPartyInitiateLogin === true &&
+    typeof body.initiateLoginUri === "string" &&
+    body.initiateLoginUri.trim() &&
+    (clientUpdates.grantTypes ?? ["authorization_code", "refresh_token"]).includes(DEVICE_CODE_GRANT)
+  ) {
+    const allowedScopes = (clientUpdates.allowedScopes ?? DEFAULT_OIDC_SCOPES)
+      .split(/[,\s]+/)
+      .filter(Boolean);
+    if (!allowedScopes.includes("users:token")) {
+      clientUpdates.allowedScopes = [...allowedScopes, "users:token"].join(" ");
+    }
+  }
+  if (Object.keys(clientUpdates).length > 0) {
+    await updateClientConfig(clientId, clientUpdates);
+  }
+
   const appId = clientId;
   const now = new Date().toISOString();
 
@@ -110,6 +167,14 @@ export async function POST(request: NextRequest) {
     updatedAt: now,
   });
 
+  if (body.backendDeviceHelper === true) {
+    await ensureM2mBackendClient({
+      appInternalId: appId,
+      appDisplayName: name.trim(),
+    });
+  }
+
+  resetProvider();
   await ensureProviderAdminMembership(userId, appId);
 
   return NextResponse.json(

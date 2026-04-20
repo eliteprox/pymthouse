@@ -47,7 +47,7 @@ async function seedDefaultSigner(dbUrl: string) {
       name: "pymthouse signer",
       network: "arbitrum-one-mainnet",
       ethRpcUrl: "https://arb1.arbitrum.io/rpc",
-      signerPort: 8081,
+      signerPort: 8080,
       status: "stopped",
       defaultCutPercent: 15.0,
       billingMode: "delegated",

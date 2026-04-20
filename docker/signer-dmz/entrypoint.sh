@@ -106,7 +106,9 @@ mkdir -p "$APACHE_LOG_DIR"
 envsubst '${PORT} ${SIGNER_HTTP_ADDR} ${SIGNER_CLI_HTTP_ADDR} ${OIDC_ISSUER} ${OIDC_AUDIENCE} ${JWT_PEM_PATH}' < /etc/apache2/templates/ports.conf.in >/etc/apache2/ports.conf
 envsubst '${PORT} ${SIGNER_HTTP_ADDR} ${SIGNER_CLI_HTTP_ADDR} ${OIDC_ISSUER} ${OIDC_AUDIENCE} ${JWT_PEM_PATH}' < /etc/apache2/templates/signer-dmz.conf.in >/etc/apache2/sites-available/signer-dmz.conf
 
-a2dissite 000-default 2>/dev/null || true
-a2ensite signer-dmz
+# Do not use a2ensite/a2dissite as non-root: they touch /var/lib/apache2/site/enabled_by_admin/
+# (root-only). sites-enabled is chowned to APACHE_RUN_USER in the image — symlink directly.
+rm -f /etc/apache2/sites-enabled/000-default.conf 2>/dev/null || true
+ln -sf /etc/apache2/sites-available/signer-dmz.conf /etc/apache2/sites-enabled/signer-dmz.conf
 
 exec apache2ctl -D FOREGROUND

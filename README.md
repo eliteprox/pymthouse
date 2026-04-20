@@ -3,7 +3,7 @@
 This guide starts the full local stack:
 - Next.js app (UI + API) on `http://localhost:3001`
 - PostgreSQL database (set `DATABASE_URL`; Neon or local Postgres)
-- `go-livepeer` remote signer via Docker Compose
+- Full **signer-dmz** (Apache + JWT + go-livepeer) via the repo root `docker-compose.yml` (same image path as production)
 
 ## Prerequisites
 
@@ -45,19 +45,19 @@ Optional (only if needed):
 - Google/GitHub OAuth vars (for OAuth login)
 - Turnkey Wallet Kit public IDs (`NEXT_PUBLIC_ORGANIZATION_ID`, `NEXT_PUBLIC_AUTH_PROXY_CONFIG_ID`) for embedded wallet login
 
-## 3) Start the signer service
+`npm run oidc:seed` in step 3 is only required the first time (or if keys were removed);
+see also [## OIDC seed and client registration](#oidc-seed-and-client-registration) below.
+
+## 3) Start the app
+
+Migrations run on `predev` (`npm run db:prepare`). On a new database, create the
+OIDC signing key once (before step 4, which needs `GET /api/v1/oidc/jwks`):
 
 ```bash
-docker compose up -d go-livepeer
+npm run oidc:seed
 ```
 
-Check signer logs (optional):
-
-```bash
-docker compose logs -f go-livepeer
-```
-
-## 4) Start the app
+Then start the app:
 
 ```bash
 npm run dev
@@ -68,7 +68,27 @@ Open:
 - Login: `http://localhost:3001/login`
 - Health: `http://localhost:3001/api/v1/health`
 
-Database migrations run automatically before dev/build (`npm run db:prepare`).
+## 4) Start the signer (signer-dmz)
+
+The local stack uses the full **signer-dmz** image from `docker/signer-dmz/Dockerfile` (same as
+production: Apache, JWT verification, and go-livepeer in one process). The container
+must be able to download the OIDC public key at start time, so the app in step 3
+must be running *before* the first `docker compose up`. Default DMZ URL:
+`http://127.0.0.1:8080` — match `SIGNER_INTERNAL_URL` and `SIGNER_CLI_URL` in `.env`.
+
+If you do not use port `3001` for the app, set `OIDC_ISSUER`, `OIDC_AUDIENCE`, and
+`JWKS_URI` in `.env` to match your `NEXTAUTH_URL` and a JWKS URL reachable from the
+container (for example `http://host.docker.internal:<port>/api/v1/oidc/jwks`).
+
+```bash
+docker compose up -d --build
+```
+
+Check signer logs (optional):
+
+```bash
+docker compose logs -f signer-dmz
+```
 
 ## 5) Create an admin token (first login)
 
@@ -113,10 +133,10 @@ Then register application clients through the dashboard/API and rotate secrets p
 
 ```bash
 # Start signer
-docker compose up -d go-livepeer
+docker compose up -d --build
 
 # Stop signer
-docker compose stop go-livepeer
+docker compose stop signer-dmz
 
 # Stop and remove signer container
 docker compose down
@@ -151,7 +171,7 @@ See [docs/vercel-deployment.md](docs/vercel-deployment.md) for full step-by-step
 
 ## Troubleshooting
 
-- `Signer is not running`: ensure `go-livepeer` is up (`docker compose ps`) and healthy.
+- `Signer is not running` / DMZ 401/403: ensure `signer-dmz` is up (`docker compose ps`) and the app’s `NEXTAUTH_URL` and OIDC issuer in `.env` match; the container must be able to reach `GET .../oidc/jwks` (see `JWKS_URI` in `docker-compose.yml`).
 - App can’t open DB: verify `DATABASE_URL` and that `npm run db:prepare` succeeds.
 - OAuth buttons fail: set provider credentials in `.env` or use token login from `npm run bootstrap`.
 - Repeating `JWT_SESSION_ERROR` / `JWEDecryptionFailed`:
