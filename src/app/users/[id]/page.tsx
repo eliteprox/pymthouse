@@ -8,14 +8,9 @@ import DashboardLayout from "@/components/DashboardLayout";
 import StreamSessionTable from "@/components/StreamSessionTable";
 import TransactionLog from "@/components/TransactionLog";
 import UserActions from "@/components/UserActions";
-
-function formatWei(wei: string): string {
-  if (wei === "0") return "0 ETH";
-  const value = BigInt(wei);
-  const eth = Number(value) / 1e18;
-  if (eth < 0.001) return `${wei} wei`;
-  return `${eth.toFixed(6)} ETH`;
-}
+import { streamSessionToTableRow } from "@/lib/stream-session-ui";
+import { weiHumanWithUnit } from "@/lib/format-wei";
+import { confirmedUsageCountByStreamSessionId } from "@/lib/stream-session-stats";
 
 export default async function UserDetailPage({
   params,
@@ -37,6 +32,10 @@ export default async function UserDetailPage({
     .select()
     .from(streamSessions)
     .where(eq(streamSessions.endUserId, id));
+
+  const streamUsageCounts = await confirmedUsageCountByStreamSessionId(
+    userStreams.map((s) => s.id),
+  );
 
   const userTxns = await db
     .select()
@@ -82,7 +81,7 @@ export default async function UserDetailPage({
             Credit Balance
           </p>
           <p className="text-lg font-bold text-emerald-400">
-            {formatWei(user.creditBalanceWei)}
+            {weiHumanWithUnit(user.creditBalanceWei)}
           </p>
         </div>
         <div className="border border-zinc-800 rounded-xl p-4 bg-zinc-900/30">
@@ -90,7 +89,7 @@ export default async function UserDetailPage({
             Total Usage
           </p>
           <p className="text-lg font-bold text-amber-400">
-            {formatWei(totalUsage.toString())}
+            {weiHumanWithUnit(totalUsage.toString())}
           </p>
         </div>
         <div className="border border-zinc-800 rounded-xl p-4 bg-zinc-900/30">
@@ -113,7 +112,11 @@ export default async function UserDetailPage({
         <div className="px-5 py-4 border-b border-zinc-800">
           <h3 className="font-semibold text-zinc-200">Stream Sessions</h3>
         </div>
-        <StreamSessionTable sessions={userStreams} />
+        <StreamSessionTable
+          sessions={userStreams.map((s) =>
+            streamSessionToTableRow(s, streamUsageCounts),
+          )}
+        />
       </div>
 
       {/* Transactions */}

@@ -7,7 +7,7 @@ import {
   transactions,
   usageRecords,
 } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import {
   decodeOrchestratorInfo,
@@ -330,17 +330,6 @@ export async function proxyGenerateLivePayment(
 
     if (existingSession) {
       streamSessionId = existingSession.id;
-      const newTotalPixels = BigInt(existingSession.totalPixels) + pixels;
-      const newTotalFeeWei = BigInt(existingSession.totalFeeWei) + feeWei;
-
-      await db
-        .update(streamSessions)
-        .set({
-          totalPixels: Number(newTotalPixels),
-          totalFeeWei: newTotalFeeWei.toString(),
-          lastPaymentAt: nowIso,
-        })
-        .where(eq(streamSessions.id, existingSession.id));
     } else {
       const newSessionId = uuidv4();
       streamSessionId = newSessionId;
@@ -351,12 +340,12 @@ export async function proxyGenerateLivePayment(
         bearerTokenHash: auth.tokenHash,
         manifestId,
         orchestratorAddress,
-        totalPixels: Number(pixels),
-        totalFeeWei: feeWei.toString(),
+        signerPaymentCount: 0,
+        totalFeeWei: "0",
         pricePerUnit: pricePerUnit.toString(),
         pixelsPerUnit: pixelsPerUnit.toString(),
         status: "active",
-        lastPaymentAt: nowIso,
+        lastPaymentAt: null,
       });
     }
   }
@@ -373,11 +362,13 @@ export async function proxyGenerateLivePayment(
     const responseBody = await response.json();
 
     if (response.ok && feeWei > 0n) {
-      const requestId =
-        (requestBody.requestId as string | undefined)
-        || (requestBody.RequestID as string | undefined)
-        || manifestId
-        || uuidv4();
+      // Dedupe is per explicit RequestID only. Do NOT fall back to manifestId — the gateway
+      // keeps one manifest for the whole LV2V session, so that would collapse every payment
+      // into a single usage row and freeze signerPaymentCount at 1.
+      const rawReq =
+        (typeof requestBody.requestId === "string" && requestBody.requestId.trim()) ||
+        (typeof requestBody.RequestID === "string" && requestBody.RequestID.trim());
+      const requestId = rawReq || uuidv4();
 
       // Check for an existing usage record first to prevent duplicate inserts on retries
       let existingUsage = null;
@@ -396,31 +387,46 @@ export async function proxyGenerateLivePayment(
       }
 
       if (!existingUsage) {
-        await db.insert(transactions).values({
-          id: uuidv4(),
-          endUserId: auth.endUserId || null,
-          appId: providerAppId ?? auth.appId ?? null,
-          clientId: providerAppId,
-          streamSessionId,
-          type: "usage",
-          amountWei: feeWei.toString(),
-          platformCutPercent: signer.defaultCutPercent,
-          platformCutWei: platformCutWei.toString(),
-          status: "confirmed",
-        });
+        await db.transaction(async (tx) => {
+          if (streamSessionId) {
+            await tx
+              .update(streamSessions)
+              .set({
+                signerPaymentCount: sql`${streamSessions.signerPaymentCount} + 1`,
+                totalFeeWei: sql`(${streamSessions.totalFeeWei}::numeric + ${feeWei.toString()}::numeric)::bigint::text`,
+                lastPaymentAt: nowIso,
+                pricePerUnit: pricePerUnit.toString(),
+                pixelsPerUnit: pixelsPerUnit.toString(),
+              })
+              .where(eq(streamSessions.id, streamSessionId));
+          }
 
-        if (providerAppId) {
-          await db.insert(usageRecords).values({
+          await tx.insert(transactions).values({
             id: uuidv4(),
-            requestId,
-            userId: auth.userId || auth.endUserId || null,
+            endUserId: auth.endUserId || null,
+            appId: providerAppId ?? auth.appId ?? null,
             clientId: providerAppId,
-            modelId: typeof requestBody.modelId === "string" ? requestBody.modelId : null,
-            units: pixels.toString(),
-            fee: feeWei.toString(),
-            createdAt: new Date().toISOString(),
+            streamSessionId,
+            type: "usage",
+            amountWei: feeWei.toString(),
+            platformCutPercent: signer.defaultCutPercent,
+            platformCutWei: platformCutWei.toString(),
+            status: "confirmed",
           });
-        }
+
+          if (providerAppId) {
+            await tx.insert(usageRecords).values({
+              id: uuidv4(),
+              requestId,
+              userId: auth.userId || auth.endUserId || null,
+              clientId: providerAppId,
+              modelId: typeof requestBody.modelId === "string" ? requestBody.modelId : null,
+              units: pixels.toString(),
+              fee: feeWei.toString(),
+              createdAt: new Date().toISOString(),
+            });
+          }
+        });
       }
     }
 

@@ -10,7 +10,8 @@ interface MetricsPayload {
   metrics: {
     activeStreams: number;
     totalStreams: number;
-    totalPixelsSigned: string;
+    /** Confirmed usage rows (signer billing events). */
+    usagePaymentCount: number;
     totalFeeWei: string;
     totalTransactions: number;
     signerStatus: string;
@@ -39,12 +40,14 @@ export async function collectMetrics(): Promise<MetricsPayload | null> {
     db.select().from(transactions),
   ]);
 
-  let totalPixels = 0n;
   let totalFee = 0n;
   for (const session of allSessions) {
-    totalPixels += BigInt(session.totalPixels);
     totalFee += BigInt(session.totalFeeWei);
   }
+
+  const usagePaymentCount = txns.filter(
+    (t) => t.type === "usage" && t.status === "confirmed",
+  ).length;
 
   return {
     ethAddress: signer.ethAddress,
@@ -53,7 +56,7 @@ export async function collectMetrics(): Promise<MetricsPayload | null> {
     metrics: {
       activeStreams: activeStreamCount,
       totalStreams: allSessions.length,
-      totalPixelsSigned: totalPixels.toString(),
+      usagePaymentCount,
       totalFeeWei: totalFee.toString(),
       totalTransactions: txns.length,
       signerStatus: signer.status,
