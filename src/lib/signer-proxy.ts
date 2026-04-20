@@ -129,7 +129,7 @@ async function forwardToSigner(
     // session-scoped callers don't collapse onto a single shared "signer-proxy" token —
     // each session keeps its own cache entry and stays traceable in upstream logs.
     const sub =
-      auth.userId || auth.endUserId || auth.appId || auth.sessionId;
+      auth.endUserId || auth.userId || auth.appId || auth.sessionId;
     const token = await getHttpDmzBearerForSubject(sub);
     headers.Authorization = `Bearer ${token}`;
   }
@@ -143,6 +143,55 @@ async function forwardToSigner(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function pickConflictingStringAliases(
+  body: Record<string, unknown>,
+  lowerKey: string,
+  pascalKey: string,
+):
+  | { ok: true; value: string | undefined }
+  | { ok: false; message: string } {
+  const rawLo = body[lowerKey];
+  const rawHi = body[pascalKey];
+  const definedLo = rawLo !== undefined && rawLo !== null && `${rawLo}`.length > 0;
+  const definedHi = rawHi !== undefined && rawHi !== null && `${rawHi}`.length > 0;
+  const lo = definedLo ? String(rawLo) : undefined;
+  const hi = definedHi ? String(rawHi) : undefined;
+  if (lo !== undefined && hi !== undefined && lo !== hi) {
+    return {
+      ok: false,
+      message: `Conflicting ${lowerKey} and ${pascalKey} in request body`,
+    };
+  }
+  const value = lo ?? hi;
+  return { ok: true, value };
+}
+
+function pickConflictingNumberAliases(
+  body: Record<string, unknown>,
+  lowerKey: string,
+  pascalKey: string,
+):
+  | { ok: true; value: number | undefined }
+  | { ok: false; message: string } {
+  const parseNum = (v: unknown): number | undefined => {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() !== "") {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : undefined;
+    }
+    return undefined;
+  };
+  const lo = parseNum(body[lowerKey]);
+  const hi = parseNum(body[pascalKey]);
+  if (lo !== undefined && hi !== undefined && lo !== hi) {
+    return {
+      ok: false,
+      message: `Conflicting ${lowerKey} and ${pascalKey} in request body`,
+    };
+  }
+  return { ok: true, value: lo ?? hi };
 }
 
 /**
@@ -192,16 +241,41 @@ export async function proxyGenerateLivePayment(
     return { status: 503, body: { error: "Signer is not running" } };
   }
 
-  const manifestId = (requestBody.ManifestID ??
-    requestBody.manifestId) as string | undefined;
-  const inPixels = (requestBody.InPixels ?? requestBody.inPixels) as
-    | number
-    | undefined;
-  const jobType = (requestBody.Type ?? requestBody.type) as string | undefined;
-  // python-gateway `payments_base._build_payment_payload` uses lowercase keys;
-  // tests and some clients use Go-style PascalCase.
-  const orchestratorData = (requestBody.Orchestrator ??
-    requestBody.orchestrator) as string | undefined;
+  const manifestPick = pickConflictingStringAliases(
+    requestBody,
+    "manifestId",
+    "ManifestID",
+  );
+  if (!manifestPick.ok) {
+    return { status: 400, body: { error: manifestPick.message } };
+  }
+  const manifestId = manifestPick.value;
+
+  const inPixelsPick = pickConflictingNumberAliases(
+    requestBody,
+    "inPixels",
+    "InPixels",
+  );
+  if (!inPixelsPick.ok) {
+    return { status: 400, body: { error: inPixelsPick.message } };
+  }
+  const inPixels = inPixelsPick.value;
+
+  const jobTypePick = pickConflictingStringAliases(requestBody, "type", "Type");
+  if (!jobTypePick.ok) {
+    return { status: 400, body: { error: jobTypePick.message } };
+  }
+  const jobType = jobTypePick.value;
+
+  const orchPick = pickConflictingStringAliases(
+    requestBody,
+    "orchestrator",
+    "Orchestrator",
+  );
+  if (!orchPick.ok) {
+    return { status: 400, body: { error: orchPick.message } };
+  }
+  const orchestratorData = orchPick.value;
 
   let pricePerUnit = 0n;
   let pixelsPerUnit = 1n;
@@ -302,7 +376,7 @@ export async function proxyGenerateLivePayment(
       const requestId =
         (requestBody.requestId as string | undefined)
         || (requestBody.RequestID as string | undefined)
-        || (requestBody.ManifestID as string | undefined)
+        || manifestId
         || uuidv4();
 
       // Check for an existing usage record first to prevent duplicate inserts on retries

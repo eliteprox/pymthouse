@@ -19,7 +19,7 @@ const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
  * (e.g. oauth4webapi) percent-encode `_`, `-`, `.` as `%5F`, `%2D`, `%2E`;
  * we must URL-decode after base64. Idempotent for plain alnum strings.
  */
-function decodeBasicAuthComponent(value: string): string {
+export function decodeBasicAuthComponent(value: string): string {
   try {
     return decodeURIComponent(value.replace(/\+/g, " "));
   } catch {

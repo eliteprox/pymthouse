@@ -106,12 +106,16 @@ export function LoginForm() {
   const isAdmin = searchParams.get("admin") === "1";
   const isOidcFlow = callbackUrl.includes("/oidc/");
   const authError = searchParams.get("error");
-  const oauthCallbackMessage =
-    authError === "AccessDenied"
+  const accessDenied =
+    authError === "AccessDenied" ||
+    (typeof authError === "string" && authError.includes("AccessDenied"));
+  const oauthCallbackMessage = accessDenied
+    ? isAdmin
       ? "OAuth sign-in was denied. Admin accounts must use a bearer token from npm run bootstrap, not Google or GitHub."
-      : authError
-        ? "Sign-in failed. Please try again."
-        : null;
+      : "Sign-in was denied. You can try again or use a different sign-in method."
+    : authError
+      ? "Sign-in failed. Please try again."
+      : null;
 
   useEffect(() => {
     if (clientId && isOidcFlow) {

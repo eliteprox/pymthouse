@@ -74,6 +74,15 @@ export default function AppWizard({ initialData }: Props) {
   }, []);
 
   const toggleDeviceCode = () => {
+    if (!formData.backendDeviceHelper) {
+      if (hasDeviceCode) {
+        set(
+          "grantTypes",
+          formData.grantTypes.filter((v) => v !== DEVICE_CODE_GRANT),
+        );
+      }
+      return;
+    }
     set(
       "grantTypes",
       hasDeviceCode
@@ -98,8 +107,20 @@ export default function AppWizard({ initialData }: Props) {
       });
       if (!res.ok) {
         const text = await res.text();
-        const data = text ? JSON.parse(text) : {};
-        throw new Error(data.error || `Failed to create app (${res.status})`);
+        let msg = `Failed to create app (${res.status})`;
+        try {
+          const data = text ? JSON.parse(text) : {};
+          if (data && typeof data === "object") {
+            if (typeof (data as { message?: unknown }).message === "string") {
+              msg = (data as { message: string }).message;
+            } else if (typeof (data as { error?: unknown }).error === "string") {
+              msg = (data as { error: string }).error;
+            }
+          }
+        } catch {
+          if (text?.trim()) msg = text.trim().slice(0, 500);
+        }
+        throw new Error(msg);
       }
       const data = await res.json();
       router.push(`/apps/${data.id}`);
@@ -110,7 +131,11 @@ export default function AppWizard({ initialData }: Props) {
     }
   };
 
-  const canSubmit = !saving && formData.name.trim().length > 0 && formData.websiteUrl.trim().length > 0;
+  const canSubmit =
+    !saving &&
+    formData.name.trim().length > 0 &&
+    formData.websiteUrl.trim().length > 0 &&
+    callbackUrl.trim().length > 0;
 
   return (
     <div className="max-w-[540px]">
@@ -182,6 +207,7 @@ export default function AppWizard({ initialData }: Props) {
             type="url"
             value={callbackUrl}
             onChange={(e) => setCallbackUrl(e.target.value)}
+            required
             placeholder="https://"
             className={fieldClass}
           />
@@ -196,17 +222,20 @@ export default function AppWizard({ initialData }: Props) {
 
         {/* Enable Device Flow */}
         <div className="pt-1">
-          <label className="flex items-center gap-2.5 cursor-pointer">
+          <label
+            className={`flex items-center gap-2.5 ${formData.backendDeviceHelper ? "cursor-pointer" : "cursor-not-allowed opacity-50"}`}
+          >
             <input
               type="checkbox"
               checked={hasDeviceCode}
               onChange={toggleDeviceCode}
-              className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40"
+              disabled={!formData.backendDeviceHelper}
+              className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 disabled:cursor-not-allowed"
             />
             <span className="text-sm font-medium text-zinc-200">Enable Device Flow</span>
           </label>
           <p className="text-xs text-zinc-500 mt-1.5 ml-[26px]">
-            Allow this OAuth App to authorize users via the Device Flow.
+            Requires a confidential client (see Advanced). Allow this OAuth App to authorize users via the Device Flow.
             <br />
             Read the{" "}
             <a href="/docs/device-flow" className="text-emerald-500 hover:underline">
@@ -256,7 +285,18 @@ export default function AppWizard({ initialData }: Props) {
                   <input
                     type="checkbox"
                     checked={Boolean(formData.backendDeviceHelper)}
-                    onChange={(e) => set("backendDeviceHelper", e.target.checked)}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      if (!checked) {
+                        setFormData((prev) => ({
+                          ...prev,
+                          backendDeviceHelper: false,
+                          grantTypes: prev.grantTypes.filter((g) => g !== DEVICE_CODE_GRANT),
+                        }));
+                      } else {
+                        set("backendDeviceHelper", true);
+                      }
+                    }}
                     className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40"
                   />
                   <span className="text-sm font-medium text-zinc-200">

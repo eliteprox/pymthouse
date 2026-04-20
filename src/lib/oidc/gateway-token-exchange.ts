@@ -8,6 +8,7 @@ import { createSession, hasScope } from "@/lib/auth";
 import { validateClientSecret } from "./clients";
 import {
   resolveDeveloperAppAndPublicClientForOidcRow,
+  DeveloperAppSiblingAmbiguousError,
   type DrizzleDb,
 } from "@/lib/oidc/client-sibling";
 import { getIssuer, verifyAccessToken } from "./tokens";
@@ -169,10 +170,23 @@ export async function handleGatewayTokenExchange(
   assertGatewayAudiences(audienceParams);
   assertGatewayResource(resource);
 
-  const sibling = await deps.resolveDeveloperAppAndPublicClientForOidcRow(
-    dbConn,
-    callerRow.id,
-  );
+  let sibling: { developerAppId: string; publicClientId: string } | null;
+  try {
+    sibling = await deps.resolveDeveloperAppAndPublicClientForOidcRow(
+      dbConn,
+      callerRow.id,
+    );
+  } catch (err) {
+    if (err instanceof DeveloperAppSiblingAmbiguousError) {
+      console.error("[gateway-token-exchange]", err.message);
+      throw new TokenExchangeError(
+        "invalid_request",
+        "Ambiguous developer app mapping for this client",
+        err.message,
+      );
+    }
+    throw err;
+  }
   if (!sibling) {
     throw new TokenExchangeError(
       "invalid_client",

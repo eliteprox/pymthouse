@@ -70,7 +70,6 @@ export default function AppSettingsPanel({ data }: Props) {
           redirectUris,
           postLogoutRedirectUris,
           initiateLoginUri: initiateLoginUri.trim() || null,
-          deviceThirdPartyInitiateLogin: Boolean(initiateLoginUri.trim()),
           tokenEndpointAuthMethod,
         }),
       });

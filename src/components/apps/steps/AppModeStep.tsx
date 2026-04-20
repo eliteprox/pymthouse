@@ -2,12 +2,19 @@
 
 import type { AppFormData } from "../AppWizard";
 import { OIDC_SCOPES } from "@/lib/oidc/scopes";
+import { validateInitiateLoginUri } from "@/lib/oidc/third-party-initiate-login";
 
 const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 
 function isValidInitiateLoginUri(uri: string): boolean {
   const t = uri.trim();
-  return t.length > 0 && (t.startsWith("https://") || t.startsWith("http://localhost"));
+  if (!t.length) return false;
+  try {
+    validateInitiateLoginUri(t);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 interface Props {
@@ -43,7 +50,7 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
   };
 
   const toggleDeviceCode = () => {
-    if (readOnly) return;
+    if (readOnly || !data.backendDeviceHelper) return;
     if (hasDeviceCode) {
       onChange({
         grantTypes: data.grantTypes.filter((v) => v !== DEVICE_CODE_GRANT),

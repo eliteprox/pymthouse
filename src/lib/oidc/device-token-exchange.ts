@@ -17,7 +17,11 @@ import { getIssuer, verifyAccessToken } from "@/lib/oidc/tokens";
 import { TokenExchangeError } from "@/lib/oidc/token-exchange";
 import { findOrCreateAppEndUser } from "@/lib/billing";
 import { createCorrelationId, writeAuditLog } from "@/lib/audit";
-import { resolvePublicClientIdForOidcRow, type DrizzleDb } from "@/lib/oidc/client-sibling";
+import {
+  resolvePublicClientIdForOidcRow,
+  DeveloperAppSiblingAmbiguousError,
+  type DrizzleDb,
+} from "@/lib/oidc/client-sibling";
 
 export type { DrizzleDb };
 
@@ -232,7 +236,20 @@ export async function handleDeviceApprovalTokenExchange(
 
   assertDeviceApprovalAudiences(audienceParams ?? []);
 
-  const publicClientId = await resolvePublicClientIdForOidcRow(dbConn, m2mRow.id);
+  let publicClientId: string | null;
+  try {
+    publicClientId = await resolvePublicClientIdForOidcRow(dbConn, m2mRow.id);
+  } catch (err) {
+    if (err instanceof DeveloperAppSiblingAmbiguousError) {
+      console.error("[device-token-exchange]", err.message);
+      throw new TokenExchangeError(
+        "invalid_request",
+        "Ambiguous developer app mapping for this client",
+        err.message,
+      );
+    }
+    throw err;
+  }
   if (!publicClientId) {
     throw new TokenExchangeError(
       "invalid_client",
