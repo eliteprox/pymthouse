@@ -1,6 +1,6 @@
 # Builder API (confidential clients)
 
-Public docs: [docs.pymthouse.com](https://docs.pymthouse.com) (Mintlify source: [pymthouse-docs](https://github.com/eliteprox/pymthouse-docs) repository, `integration/user-management` and `integration/user-tokens`).
+Public docs: [docs.pymthouse.com](https://docs.pymthouse.com). Mintlify sources: [pymthouse-docs](https://github.com/eliteprox/pymthouse-docs) (`integration/user-management`, `integration/user-tokens`, Usage API); **Billing API** narrative lives in [pymtdocs](https://github.com/eliteprox/pymtdocs) under `docs/integration/` (`billing.mdx`, `plans.mdx`).
 
 This document defines the official PymtHouse Builder API for confidential OAuth clients. It covers machine authentication, end-user provisioning, and issuance of user-scoped JWTs to your backend.
 
@@ -338,6 +338,49 @@ curl -sS -u "${CLIENT_ID}:${CLIENT_SECRET}" \
 
 ---
 
+## Billing API
+
+Current-cycle **billing snapshot** and **plan CRUD** for a developer app. Monetary fields are **wei as decimal strings** (same parsing rules as the Usage API). Full field-by-field reference: Mintlify pages in `pymtdocs/docs/integration/` (see document header).
+
+### Billing summary
+
+**Endpoint:** `GET /api/v1/apps/{clientId}/billing`
+
+Returns the active plan (if any), the owner’s subscription period (or calendar-month fallback), aggregated usage for that period (`requestCount`, `totalFeeWei`, `totalUnits`), a **per-day timeline** (every UTC calendar day in the period, including zero-usage days), computed **overage** (`overageUnits`, `overageWei`) for `subscription` / `usage` plans with `includedUnits` and `overageRateWei`, and `platformCutPercent` from signer config.
+
+### Authentication (billing summary)
+
+| Mode | Description |
+| --- | --- |
+| **Confidential client** | `Authorization: Basic base64(m2m_id:m2m_secret)` — same tenant rules as Usage API |
+| **Provider session** | App owner, platform admin, or `providerAdmins` team member |
+
+Failures use **`404 Not Found`** when auth or tenant match fails (same anti-enumeration pattern as Usage API).
+
+### Example (billing summary)
+
+```bash
+curl -sS -u "${CLIENT_ID}:${CLIENT_SECRET}" \
+  "${BASE_URL}/api/v1/apps/${CLIENT_ID}/billing"
+```
+
+### Plans (provider session)
+
+**Base path:** `/api/v1/apps/{clientId}/plans`
+
+All plan routes use **`getAuthorizedProviderApp`** — a **logged-in provider dashboard** session for the app owner, platform admin, or `providerAdmins` team member. **M2M Basic auth is not supported** on these handlers (unlike the billing summary and Usage API). Mutations additionally require **`canEditProviderApp`**.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/v1/apps/{clientId}/plans` | List plans and capability bundles |
+| `POST` | `/api/v1/apps/{clientId}/plans` | Create plan (`name` required; `subscription` type requires `includedUnits` + `overageRateWei`) |
+| `PUT` | `/api/v1/apps/{clientId}/plans` | Update plan (body must include `id`; optional `capabilities` replaces entire bundle set) |
+| `DELETE` | `/api/v1/apps/{clientId}/plans?planId=...` | Delete plan and its bundles |
+
+**Implementation:** [`src/app/api/v1/apps/[id]/billing/route.ts`](../src/app/api/v1/apps/[id]/billing/route.ts), [`src/app/api/v1/apps/[id]/plans/route.ts`](../src/app/api/v1/apps/[id]/plans/route.ts).
+
+---
+
 ## End-to-end integration flows
 
 ### Recommended backend flow
@@ -374,7 +417,7 @@ curl -sS -u "${CLIENT_ID}:${CLIENT_SECRET}" \
 
 - **Tenant boundary** is enforced by matching `client_id` between the route path and the authenticated confidential client (and related checks in code).
 - **User token scopes** are bounded by the parent app’s allowed scopes; **`admin`** escalation is blocked on user-token issuance.
-- **Usage API:** tenant isolation and `404` behavior reduce enumeration of valid apps.
+- **Usage API and billing summary:** tenant isolation and `404` behavior reduce enumeration of valid apps.
 - **Confidential secrets** must remain server-side only.
 
 ---
@@ -387,6 +430,7 @@ curl -sS -u "${CLIENT_ID}:${CLIENT_SECRET}" \
 - Map one external user identifier to one Builder API user record.
 - Migrate away from legacy `/api/v1/naap/*` routes to OIDC + Builder APIs.
 - For usage attribution, populate `usage_records.user_id` when a request maps to a provisioned user; store fees as decimal wei strings.
+- For billing dashboards, call `GET /api/v1/apps/{clientId}/billing` for cycle totals, timeline, and overage; manage plans via `/plans` from a trusted operator session.
 - Ensure `(client_id, request_id)` uniqueness for usage rows where applicable.
 
 ---
@@ -408,6 +452,8 @@ curl -sS -u "${CLIENT_ID}:${CLIENT_SECRET}" \
 
 - [`src/lib/auth.ts`](../src/lib/auth.ts) (`authenticateAppClient`, JWT parsing)
 - [`src/app/api/v1/apps/[id]/usage/route.ts`](../src/app/api/v1/apps/[id]/usage/route.ts)
+- [`src/app/api/v1/apps/[id]/billing/route.ts`](../src/app/api/v1/apps/[id]/billing/route.ts)
+- [`src/app/api/v1/apps/[id]/plans/route.ts`](../src/app/api/v1/apps/[id]/plans/route.ts)
 - [`src/lib/provider-apps.ts`](../src/lib/provider-apps.ts) (`getAuthorizedProviderApp`, `getProviderApp`)
 - [`src/db/schema.ts`](../src/db/schema.ts) (`usageRecords`, `appUsers`)
 
@@ -421,7 +467,8 @@ curl -sS -u "${CLIENT_ID}:${CLIENT_SECRET}" \
 4. **Basic auth** remains supported for confidential server-to-server clients.
 5. **OIDC** uses one registration model for all clients to avoid special-case trust paths.
 6. **RFC 8693** preserves auditable token transitions for device binding and remote signer sessions.
-7. **Usage totals** use wei strings to avoid JSON precision loss; **404** on usage routes limits information leakage.
+7. **Usage totals** use wei strings to avoid JSON precision loss; **404** on usage and billing summary routes limits information leakage.
+8. **Billing summary** collapses plan, subscription window, usage, daily timeline, and overage into one response; raw per-request data remains on the Usage API.
 
 ---
 
