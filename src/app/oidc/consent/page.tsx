@@ -7,7 +7,7 @@ import { developerApps, oidcClients } from "@/db/schema";
 import { getClient } from "@/lib/oidc/clients";
 import { getScopeDefinition } from "@/lib/oidc/scopes";
 import { getProvider } from "@/lib/oidc/provider";
-import { OIDC_MOUNT_PATH, getPublicOrigin } from "@/lib/oidc/tokens";
+import { OIDC_MOUNT_PATH, getPublicOrigin } from "@/lib/oidc/issuer-urls";
 import { resolveAppBrandingByClientId, getDefaultBranding, shouldUseWhiteLabelBranding } from "@/lib/oidc/branding";
 import { resolveHostContext } from "@/lib/oidc/host-resolution";
 import { eq } from "drizzle-orm";

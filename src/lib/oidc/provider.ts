@@ -8,7 +8,7 @@ import { Provider, interactionPolicy } from "oidc-provider";
 import type { Configuration, ClientMetadata, KoaContextWithOIDC } from "oidc-provider";
 import { PostgresOidcAdapter } from "./adapter";
 import { findAccount } from "./account";
-import { getIssuer } from "./tokens";
+import { getIssuer } from "./issuer-urls";
 import { hashClientSecret } from "./clients";
 import { getTrustedLoginHosts, normalizeDomain } from "./custom-domains";
 import { ensureSigningKey } from "./jwks";

@@ -8,7 +8,7 @@ import {
   type DrizzleDb,
 } from "./device-token-exchange";
 import { TokenExchangeError } from "./token-exchange";
-import { getIssuer } from "./tokens";
+import { getIssuer } from "./issuer-urls";
 
 function dbMock(rows: unknown[][]): DrizzleDb {
   let i = 0;

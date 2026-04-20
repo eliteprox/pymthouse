@@ -1,5 +1,5 @@
 import { PROVIDER_ENDPOINT_PATHS } from "@/lib/oidc/routes";
-import { OIDC_MOUNT_PATH, getPublicOrigin } from "@/lib/oidc/tokens";
+import { OIDC_MOUNT_PATH, getPublicOrigin } from "@/lib/oidc/issuer-urls";
 
 export function deriveExternalOriginFromHeaders(headers: Headers): string {
   const publicFallback = getPublicOrigin();

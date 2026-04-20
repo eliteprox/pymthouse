@@ -1,4 +1,4 @@
-import { getIssuer as getCanonicalIssuer, getPublicOrigin } from "./tokens";
+import { getCanonicalIssuer, getPublicOrigin } from "./issuer-urls";
 import { db } from "@/db/index";
 import { developerApps } from "@/db/schema";
 import { eq } from "drizzle-orm";

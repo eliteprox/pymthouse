@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { normalizeUserCode } from "@/lib/oidc/device";
-import { getPublicOrigin } from "@/lib/oidc/tokens";
+import { getPublicOrigin } from "@/lib/oidc/issuer-urls";
 
 const INITIATE_SKIP_MAX_AGE_SEC = 120;
 

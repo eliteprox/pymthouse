@@ -10,7 +10,7 @@ import {
   thirdPartyInitiateSkipCookieName,
   userCodeFromDeviceTargetLinkUri,
 } from "./third-party-initiate-login";
-import { getIssuer, getPublicOrigin } from "./tokens";
+import { getIssuer, getPublicOrigin } from "./issuer-urls";
 
 test("normalizeIssuerUrl trims trailing slashes", () => {
   assert.equal(

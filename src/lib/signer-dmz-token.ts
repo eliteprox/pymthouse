@@ -1,6 +1,6 @@
 import { SignJWT } from "jose";
 import { ensureSigningKey } from "@/lib/oidc/jwks";
-import { getIssuer } from "@/lib/oidc/tokens";
+import { getIssuer } from "@/lib/oidc/issuer-urls";
 
 const DMZ_TOKEN_TTL_SECONDS = 4 * 60;
 

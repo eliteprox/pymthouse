@@ -1,4 +1,4 @@
-import { getPublicOrigin, getIssuer } from "./tokens";
+import { getPublicOrigin, getIssuer } from "./issuer-urls";
 import { getTrustedLoginHosts, normalizeDomain } from "./custom-domains";
 
 export interface SecurityContext {

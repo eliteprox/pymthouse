@@ -4,7 +4,7 @@ import { eq, and, gt, or } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import type { NextRequest } from "next/server";
-import { verifyAccessToken } from "@/lib/oidc/tokens";
+import { verifyAccessToken } from "@/lib/oidc/access-token-verify";
 import { validateClientSecret } from "@/lib/oidc/clients";
 import { hashToken } from "@/lib/token-hash";
 

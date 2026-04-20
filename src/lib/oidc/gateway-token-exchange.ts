@@ -11,7 +11,8 @@ import {
   DeveloperAppSiblingAmbiguousError,
   type DrizzleDb,
 } from "@/lib/oidc/client-sibling";
-import { getIssuer, verifyAccessToken } from "./tokens";
+import { verifyAccessToken } from "./access-token-verify";
+import { getIssuer } from "./issuer-urls";
 import { TokenExchangeError } from "./token-exchange";
 
 export type GatewayTokenExchangeDeps = {

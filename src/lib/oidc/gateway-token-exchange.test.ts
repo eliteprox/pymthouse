@@ -296,7 +296,7 @@ test("handleGatewayTokenExchange invalid_request when requested_token_type wrong
 });
 
 test("handleGatewayTokenExchange accepts resource when equal to issuer", async () => {
-  const issuer = (await import("./tokens")).getIssuer();
+  const issuer = (await import("./issuer-urls")).getIssuer();
   const out = await handleGatewayTokenExchange(
     {
       clientId: M2M_ID,

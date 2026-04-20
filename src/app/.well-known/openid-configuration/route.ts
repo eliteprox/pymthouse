@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getIssuer, getPublicOrigin } from "@/lib/oidc/tokens";
+import { getIssuer, getPublicOrigin } from "@/lib/oidc/issuer-urls";
 import { PROVIDER_ENDPOINT_PATHS } from "@/lib/oidc/routes";
 
 export async function GET(): Promise<NextResponse> {

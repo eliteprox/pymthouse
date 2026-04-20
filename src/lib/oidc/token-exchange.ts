@@ -4,7 +4,7 @@ import { developerApps, oidcClients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { validateClientSecret } from "./clients";
 import { ensureSigningKey } from "./jwks";
-import { getIssuer } from "./tokens";
+import { getIssuer } from "./issuer-urls";
 import { fetchPlatformJWKS } from "./jwks-fetch";
 import { findOrCreateAppEndUser } from "@/lib/billing";
 import { billingPatternFromAllowedScopesString } from "@/lib/allowed-scopes";

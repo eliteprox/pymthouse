@@ -6,7 +6,7 @@ import {
   thirdPartyInitiateSkipCookieName,
   userCodeFromDeviceTargetLinkUri,
 } from "@/lib/oidc/third-party-initiate-login";
-import { getIssuer } from "@/lib/oidc/tokens";
+import { getIssuer } from "@/lib/oidc/issuer-urls";
 
 /**
  * Server redirect to the RP's registered `initiate_login_uri` with OIDC third-party login parameters.
