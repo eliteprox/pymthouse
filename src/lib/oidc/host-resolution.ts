@@ -1,7 +1,7 @@
 import { headers } from "next/headers";
 import { getAppByCustomDomain, getTrustedLoginHosts, normalizeDomain } from "./custom-domains";
 import { resolveAppBrandingByAppId, getDefaultBranding, AppBranding } from "./branding";
-import { getPublicOrigin } from "./tokens";
+import { getPublicOrigin } from "./issuer-urls";
 
 export interface HostContext {
   requestHost: string;

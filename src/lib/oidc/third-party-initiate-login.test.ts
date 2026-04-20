@@ -7,8 +7,10 @@ import {
   validateInitiateLoginUri,
   validateDeviceFlowTargetLinkUri,
   buildInitiateLoginRedirectUrl,
+  thirdPartyInitiateSkipCookieName,
+  userCodeFromDeviceTargetLinkUri,
 } from "./third-party-initiate-login";
-import { getIssuer, getPublicOrigin } from "./tokens";
+import { getIssuer, getPublicOrigin } from "./issuer-urls";
 
 test("normalizeIssuerUrl trims trailing slashes", () => {
   assert.equal(
@@ -39,6 +41,23 @@ test("validateDeviceFlowTargetLinkUri enforces /oidc/device on public origin", (
   const ok = `${origin}/oidc/device?user_code=ABCD-EFGH&client_id=app_x&iss=${encodeURIComponent(getIssuer())}`;
   assert.doesNotThrow(() => validateDeviceFlowTargetLinkUri(ok));
   assert.throws(() => validateDeviceFlowTargetLinkUri(`${origin}/login`));
+});
+
+test("thirdPartyInitiateSkipCookieName differs by user_code for same client", () => {
+  const a = thirdPartyInitiateSkipCookieName("app_x", "ABCD-EFGH");
+  const b = thirdPartyInitiateSkipCookieName("app_x", "WXYZ-1234");
+  assert.notEqual(a, b);
+  assert.equal(
+    thirdPartyInitiateSkipCookieName("app_x", "abcd-efgh"),
+    thirdPartyInitiateSkipCookieName("app_x", "ABCD-EFGH"),
+  );
+});
+
+test("userCodeFromDeviceTargetLinkUri reads user_code query", () => {
+  const origin = getPublicOrigin();
+  const u = `${origin}/oidc/device?user_code=AA-BB&client_id=app_1`;
+  assert.equal(userCodeFromDeviceTargetLinkUri(u), "AA-BB");
+  assert.equal(userCodeFromDeviceTargetLinkUri("not-a-url"), undefined);
 });
 
 test("buildInitiateLoginRedirectUrl validates both URIs", () => {

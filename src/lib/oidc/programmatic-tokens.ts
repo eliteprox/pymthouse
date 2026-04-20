@@ -2,7 +2,7 @@ import { randomBytes } from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import { SignJWT } from "jose";
 import { ensureSigningKey } from "@/lib/oidc/jwks";
-import { getIssuer } from "@/lib/oidc/tokens";
+import { getIssuer } from "@/lib/oidc/issuer-urls";
 import {
   consumeSessionByIdAndToken,
   createSession,

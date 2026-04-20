@@ -12,7 +12,7 @@ import {
   issuerMatchesExpected,
   thirdPartyInitiateSkipCookieName,
 } from "@/lib/oidc/third-party-initiate-login";
-import { getIssuer } from "@/lib/oidc/tokens";
+import { getIssuer } from "@/lib/oidc/issuer-urls";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -70,7 +70,7 @@ export default async function DeviceVerificationPage({
 
   if (!session?.user) {
     const skipCookieName = authoritativeClientId
-      ? thirdPartyInitiateSkipCookieName(authoritativeClientId)
+      ? thirdPartyInitiateSkipCookieName(authoritativeClientId, userCode)
       : null;
     const skipThirdParty =
       skipCookieName !== null

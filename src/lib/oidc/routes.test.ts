@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { getIssuer } from "@/lib/oidc/tokens";
+import { getIssuer } from "@/lib/oidc/issuer-urls";
 import { normalizeProviderPath, PROVIDER_ENDPOINT_PATHS } from "@/lib/oidc/routes";
 
 test("OIDC issuer is mounted under /api/v1/oidc", () => {

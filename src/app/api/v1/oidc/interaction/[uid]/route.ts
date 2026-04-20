@@ -11,7 +11,11 @@ import { authOptions } from "@/lib/next-auth-options";
 import { getProvider } from "@/lib/oidc/provider";
 import { IncomingMessage, ServerResponse } from "http";
 import { Socket } from "net";
-import { OIDC_MOUNT_PATH, getIssuer, getPublicOrigin } from "@/lib/oidc/tokens";
+import {
+  OIDC_MOUNT_PATH,
+  getIssuer,
+  getPublicOrigin,
+} from "@/lib/oidc/issuer-urls";
 
 const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
 

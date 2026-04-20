@@ -7,7 +7,7 @@ import {
   transactions,
   usageRecords,
 } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import {
   decodeOrchestratorInfo,
@@ -128,7 +128,8 @@ async function forwardToSigner(
     // Fall back to sessionId (always populated on AuthResult) so unauthenticated-but-
     // session-scoped callers don't collapse onto a single shared "signer-proxy" token —
     // each session keeps its own cache entry and stays traceable in upstream logs.
-    const sub = auth.userId || auth.appId || auth.sessionId;
+    const sub =
+      auth.endUserId || auth.userId || auth.appId || auth.sessionId;
     const token = await getHttpDmzBearerForSubject(sub);
     headers.Authorization = `Bearer ${token}`;
   }
@@ -142,6 +143,55 @@ async function forwardToSigner(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function pickConflictingStringAliases(
+  body: Record<string, unknown>,
+  lowerKey: string,
+  pascalKey: string,
+):
+  | { ok: true; value: string | undefined }
+  | { ok: false; message: string } {
+  const rawLo = body[lowerKey];
+  const rawHi = body[pascalKey];
+  const definedLo = rawLo !== undefined && rawLo !== null && `${rawLo}`.length > 0;
+  const definedHi = rawHi !== undefined && rawHi !== null && `${rawHi}`.length > 0;
+  const lo = definedLo ? String(rawLo) : undefined;
+  const hi = definedHi ? String(rawHi) : undefined;
+  if (lo !== undefined && hi !== undefined && lo !== hi) {
+    return {
+      ok: false,
+      message: `Conflicting ${lowerKey} and ${pascalKey} in request body`,
+    };
+  }
+  const value = lo ?? hi;
+  return { ok: true, value };
+}
+
+function pickConflictingNumberAliases(
+  body: Record<string, unknown>,
+  lowerKey: string,
+  pascalKey: string,
+):
+  | { ok: true; value: number | undefined }
+  | { ok: false; message: string } {
+  const parseNum = (v: unknown): number | undefined => {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() !== "") {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : undefined;
+    }
+    return undefined;
+  };
+  const lo = parseNum(body[lowerKey]);
+  const hi = parseNum(body[pascalKey]);
+  if (lo !== undefined && hi !== undefined && lo !== hi) {
+    return {
+      ok: false,
+      message: `Conflicting ${lowerKey} and ${pascalKey} in request body`,
+    };
+  }
+  return { ok: true, value: lo ?? hi };
 }
 
 /**
@@ -191,10 +241,41 @@ export async function proxyGenerateLivePayment(
     return { status: 503, body: { error: "Signer is not running" } };
   }
 
-  const manifestId = requestBody.ManifestID as string | undefined;
-  const inPixels = requestBody.InPixels as number | undefined;
-  const jobType = requestBody.Type as string | undefined;
-  const orchestratorData = requestBody.Orchestrator as string | undefined;
+  const manifestPick = pickConflictingStringAliases(
+    requestBody,
+    "manifestId",
+    "ManifestID",
+  );
+  if (!manifestPick.ok) {
+    return { status: 400, body: { error: manifestPick.message } };
+  }
+  const manifestId = manifestPick.value;
+
+  const inPixelsPick = pickConflictingNumberAliases(
+    requestBody,
+    "inPixels",
+    "InPixels",
+  );
+  if (!inPixelsPick.ok) {
+    return { status: 400, body: { error: inPixelsPick.message } };
+  }
+  const inPixels = inPixelsPick.value;
+
+  const jobTypePick = pickConflictingStringAliases(requestBody, "type", "Type");
+  if (!jobTypePick.ok) {
+    return { status: 400, body: { error: jobTypePick.message } };
+  }
+  const jobType = jobTypePick.value;
+
+  const orchPick = pickConflictingStringAliases(
+    requestBody,
+    "orchestrator",
+    "Orchestrator",
+  );
+  if (!orchPick.ok) {
+    return { status: 400, body: { error: orchPick.message } };
+  }
+  const orchestratorData = orchPick.value;
 
   let pricePerUnit = 0n;
   let pixelsPerUnit = 1n;
@@ -249,17 +330,6 @@ export async function proxyGenerateLivePayment(
 
     if (existingSession) {
       streamSessionId = existingSession.id;
-      const newTotalPixels = BigInt(existingSession.totalPixels) + pixels;
-      const newTotalFeeWei = BigInt(existingSession.totalFeeWei) + feeWei;
-
-      await db
-        .update(streamSessions)
-        .set({
-          totalPixels: Number(newTotalPixels),
-          totalFeeWei: newTotalFeeWei.toString(),
-          lastPaymentAt: nowIso,
-        })
-        .where(eq(streamSessions.id, existingSession.id));
     } else {
       const newSessionId = uuidv4();
       streamSessionId = newSessionId;
@@ -270,12 +340,12 @@ export async function proxyGenerateLivePayment(
         bearerTokenHash: auth.tokenHash,
         manifestId,
         orchestratorAddress,
-        totalPixels: Number(pixels),
-        totalFeeWei: feeWei.toString(),
+        signerPaymentCount: 0,
+        totalFeeWei: "0",
         pricePerUnit: pricePerUnit.toString(),
         pixelsPerUnit: pixelsPerUnit.toString(),
         status: "active",
-        lastPaymentAt: nowIso,
+        lastPaymentAt: null,
       });
     }
   }
@@ -292,11 +362,13 @@ export async function proxyGenerateLivePayment(
     const responseBody = await response.json();
 
     if (response.ok && feeWei > 0n) {
-      const requestId =
-        (requestBody.requestId as string | undefined)
-        || (requestBody.RequestID as string | undefined)
-        || (requestBody.ManifestID as string | undefined)
-        || uuidv4();
+      // Dedupe is per explicit RequestID only. Do NOT fall back to manifestId — the gateway
+      // keeps one manifest for the whole LV2V session, so that would collapse every payment
+      // into a single usage row and freeze signerPaymentCount at 1.
+      const rawReq =
+        (typeof requestBody.requestId === "string" && requestBody.requestId.trim()) ||
+        (typeof requestBody.RequestID === "string" && requestBody.RequestID.trim());
+      const requestId = rawReq || uuidv4();
 
       // Check for an existing usage record first to prevent duplicate inserts on retries
       let existingUsage = null;
@@ -315,31 +387,46 @@ export async function proxyGenerateLivePayment(
       }
 
       if (!existingUsage) {
-        await db.insert(transactions).values({
-          id: uuidv4(),
-          endUserId: auth.endUserId || null,
-          appId: providerAppId ?? auth.appId ?? null,
-          clientId: providerAppId,
-          streamSessionId,
-          type: "usage",
-          amountWei: feeWei.toString(),
-          platformCutPercent: signer.defaultCutPercent,
-          platformCutWei: platformCutWei.toString(),
-          status: "confirmed",
-        });
+        await db.transaction(async (tx) => {
+          if (streamSessionId) {
+            await tx
+              .update(streamSessions)
+              .set({
+                signerPaymentCount: sql`${streamSessions.signerPaymentCount} + 1`,
+                totalFeeWei: sql`(${streamSessions.totalFeeWei}::numeric + ${feeWei.toString()}::numeric)::bigint::text`,
+                lastPaymentAt: nowIso,
+                pricePerUnit: pricePerUnit.toString(),
+                pixelsPerUnit: pixelsPerUnit.toString(),
+              })
+              .where(eq(streamSessions.id, streamSessionId));
+          }
 
-        if (providerAppId) {
-          await db.insert(usageRecords).values({
+          await tx.insert(transactions).values({
             id: uuidv4(),
-            requestId,
-            userId: auth.userId || auth.endUserId || null,
+            endUserId: auth.endUserId || null,
+            appId: providerAppId ?? auth.appId ?? null,
             clientId: providerAppId,
-            modelId: typeof requestBody.modelId === "string" ? requestBody.modelId : null,
-            units: pixels.toString(),
-            fee: feeWei.toString(),
-            createdAt: new Date().toISOString(),
+            streamSessionId,
+            type: "usage",
+            amountWei: feeWei.toString(),
+            platformCutPercent: signer.defaultCutPercent,
+            platformCutWei: platformCutWei.toString(),
+            status: "confirmed",
           });
-        }
+
+          if (providerAppId) {
+            await tx.insert(usageRecords).values({
+              id: uuidv4(),
+              requestId,
+              userId: auth.userId || auth.endUserId || null,
+              clientId: providerAppId,
+              modelId: typeof requestBody.modelId === "string" ? requestBody.modelId : null,
+              units: pixels.toString(),
+              fee: feeWei.toString(),
+              createdAt: new Date().toISOString(),
+            });
+          }
+        });
       }
     }
 

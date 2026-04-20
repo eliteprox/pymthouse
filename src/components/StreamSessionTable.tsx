@@ -1,12 +1,18 @@
 "use client";
 
 import { useMemo } from "react";
+import { formatIntegerString, weiHumanWithUnit } from "@/lib/format-wei";
 
 interface StreamSessionRow {
   id: string;
   manifestId: string;
   orchestratorAddress: string | null;
-  totalPixels: number;
+  /** Orchestrator priceInfo used for fee math (wei per pixelsPerUnit). */
+  pricePerUnit: string | null;
+  /** Orchestrator priceInfo denominator pixels. */
+  pixelsPerUnit: string | null;
+  /** Successful signer billing events (same dedupe as usage rows). */
+  signerPaymentCount: number;
   totalFeeWei: string;
   status: string;
   startedAt: string;
@@ -16,22 +22,6 @@ interface StreamSessionRow {
 
 interface StreamSessionTableProps {
   sessions: StreamSessionRow[];
-}
-
-function formatWei(wei: string): string {
-  if (wei === "0") return "0";
-  const value = BigInt(wei);
-  const eth = Number(value) / 1e18;
-  if (eth < 0.0001) return `${wei} wei`;
-  return `${eth.toFixed(6)} ETH`;
-}
-
-function formatPixels(pixels: number): string {
-  if (pixels >= 1e12) return `${(pixels / 1e12).toFixed(2)}T`;
-  if (pixels >= 1e9) return `${(pixels / 1e9).toFixed(2)}B`;
-  if (pixels >= 1e6) return `${(pixels / 1e6).toFixed(2)}M`;
-  if (pixels >= 1e3) return `${(pixels / 1e3).toFixed(1)}K`;
-  return pixels.toString();
 }
 
 function truncateAddress(addr: string | null): string {
@@ -93,7 +83,9 @@ export default function StreamSessionTable({
           <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
             <th className="text-left py-3 px-4 font-medium">Manifest ID</th>
             <th className="text-left py-3 px-4 font-medium">Orchestrator</th>
-            <th className="text-right py-3 px-4 font-medium">Pixels</th>
+            <th className="text-right py-3 px-4 font-medium">Price / unit</th>
+            <th className="text-right py-3 px-4 font-medium">Px / unit</th>
+            <th className="text-right py-3 px-4 font-medium">Payments</th>
             <th className="text-right py-3 px-4 font-medium">Fee</th>
             <th className="text-center py-3 px-4 font-medium">Status</th>
             <th className="text-right py-3 px-4 font-medium">Started</th>
@@ -114,11 +106,19 @@ export default function StreamSessionTable({
               <td className="py-3 px-4 font-mono text-zinc-400 text-xs">
                 {truncateAddress(s.orchestratorAddress)}
               </td>
-              <td className="py-3 px-4 text-right text-zinc-300">
-                {formatPixels(s.totalPixels)}
+              <td className="py-3 px-4 text-right text-zinc-400 font-mono text-xs">
+                {s.pricePerUnit != null && s.pricePerUnit !== ""
+                  ? weiHumanWithUnit(s.pricePerUnit)
+                  : "—"}
               </td>
-              <td className="py-3 px-4 text-right text-zinc-300 font-mono">
-                {formatWei(s.totalFeeWei)}
+              <td className="py-3 px-4 text-right text-zinc-400 font-mono text-xs">
+                {formatIntegerString(s.pixelsPerUnit) ?? "—"}
+              </td>
+              <td className="py-3 px-4 text-right text-zinc-300 tabular-nums">
+                {s.signerPaymentCount.toLocaleString()}
+              </td>
+              <td className="py-3 px-4 text-right text-zinc-300 font-mono text-xs">
+                {weiHumanWithUnit(s.totalFeeWei)}
               </td>
               <td className="py-3 px-4 text-center">
                 <span

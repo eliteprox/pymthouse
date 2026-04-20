@@ -6,19 +6,25 @@
  * same app's public client_id (see programmatic-tokens.ts).
  */
 
-import { eq, or } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db/index";
 import { appUsers, developerApps, oidcClients } from "@/db/schema";
 import { hasScope } from "@/lib/auth";
 import { validateClientSecret } from "@/lib/oidc/clients";
 import { normalizeUserCode } from "@/lib/oidc/device";
 import { approveDeviceCodeForAccount } from "@/lib/oidc/device-approval";
-import { getIssuer, verifyAccessToken } from "@/lib/oidc/tokens";
+import { verifyAccessToken } from "@/lib/oidc/access-token-verify";
+import { getIssuer } from "@/lib/oidc/issuer-urls";
 import { TokenExchangeError } from "@/lib/oidc/token-exchange";
 import { findOrCreateAppEndUser } from "@/lib/billing";
 import { createCorrelationId, writeAuditLog } from "@/lib/audit";
+import {
+  resolvePublicClientIdForOidcRow,
+  DeveloperAppSiblingAmbiguousError,
+  type DrizzleDb,
+} from "@/lib/oidc/client-sibling";
 
-export type DrizzleDb = typeof db;
+export type { DrizzleDb };
 
 /** Injected in unit tests; production uses module defaults. */
 export type DeviceApprovalTokenExchangeDeps = {
@@ -103,33 +109,6 @@ function assertDeviceApprovalAudiences(audiences: string[]): void {
       );
     }
   }
-}
-
-/**
- * After validateClientSecret: resolve public `app_…` client_id for M2M or public row.
- */
-async function resolvePublicClientIdForOidcRow(
-  dbConn: DrizzleDb,
-  clientRowId: string,
-): Promise<string | null> {
-  const appRows = await dbConn
-    .select({ oidcClientId: developerApps.oidcClientId })
-    .from(developerApps)
-    .where(
-      or(
-        eq(developerApps.oidcClientId, clientRowId),
-        eq(developerApps.m2mOidcClientId, clientRowId),
-      ),
-    )
-    .limit(1);
-  const app = appRows[0];
-  if (!app?.oidcClientId) return null;
-  const publicRows = await dbConn
-    .select({ clientId: oidcClients.clientId })
-    .from(oidcClients)
-    .where(eq(oidcClients.id, app.oidcClientId))
-    .limit(1);
-  return publicRows[0]?.clientId ?? null;
 }
 
 function scopeStringFromAccessPayload(payload: Record<string, unknown>): string {
@@ -258,7 +237,23 @@ export async function handleDeviceApprovalTokenExchange(
 
   assertDeviceApprovalAudiences(audienceParams ?? []);
 
-  const publicClientId = await resolvePublicClientIdForOidcRow(dbConn, m2mRow.id);
+  let publicClientId: string | null;
+  try {
+    publicClientId = await resolvePublicClientIdForOidcRow(dbConn, m2mRow.id);
+  } catch (err) {
+    if (err instanceof DeveloperAppSiblingAmbiguousError) {
+      console.error("[device-token-exchange] ambiguous developer app mapping", {
+        message: err.message,
+        conflictingDeveloperAppIds: err.conflictingDeveloperAppIds,
+      });
+      throw new TokenExchangeError(
+        "invalid_request",
+        "Ambiguous developer app mapping for this client",
+        "Multiple developer apps found for this client",
+      );
+    }
+    throw err;
+  }
   if (!publicClientId) {
     throw new TokenExchangeError(
       "invalid_client",

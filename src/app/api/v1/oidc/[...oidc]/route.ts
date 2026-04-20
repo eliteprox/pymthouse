@@ -10,7 +10,11 @@ import { getProvider } from "@/lib/oidc/provider";
 import { IncomingMessage, ServerResponse } from "http";
 import { Socket } from "net";
 import { normalizeProviderPath } from "@/lib/oidc/routes";
-import { OIDC_MOUNT_PATH, getIssuer, getPublicOrigin } from "@/lib/oidc/tokens";
+import {
+  OIDC_MOUNT_PATH,
+  getIssuer,
+  getPublicOrigin,
+} from "@/lib/oidc/issuer-urls";
 import { getRegisteredRedirectOrigins } from "@/lib/oidc/clients";
 import { isVerifiedCustomDomain } from "@/lib/oidc/custom-domains";
 import { getSecureHeaders } from "@/lib/oidc/security";
@@ -25,6 +29,7 @@ import {
   isDeviceApprovalTokenExchangeRequest,
 } from "@/lib/oidc/device-token-exchange";
 import { rotateProgrammaticRefreshToken } from "@/lib/oidc/programmatic-tokens";
+import { decodeBasicAuthComponent } from "@/lib/auth";
 
 const RESOURCE_REQUIRED_GRANTS = new Set([
   "urn:ietf:params:oauth:grant-type:device_code",
@@ -34,6 +39,7 @@ const RESOURCE_REQUIRED_GRANTS = new Set([
 
 const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
 
+/** RFC 6749 §2.3.1 Appendix B decoding for `client_id` / `client_secret` in Basic auth — see `decodeBasicAuthComponent` in `@/lib/auth`. */
 function clientCredentialsFromTokenRequest(
   request: NextRequest,
   params: URLSearchParams,
@@ -45,8 +51,8 @@ function clientCredentialsFromTokenRequest(
       const idx = decoded.indexOf(":");
       if (idx > 0) {
         return {
-          clientId: decoded.slice(0, idx),
-          clientSecret: decoded.slice(idx + 1),
+          clientId: decodeBasicAuthComponent(decoded.slice(0, idx)),
+          clientSecret: decodeBasicAuthComponent(decoded.slice(idx + 1)),
         };
       }
     } catch {
@@ -151,6 +157,7 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
             grantType,
             clientId,
             subjectTokenType,
+            resource: resourceParam,
           })
         ) {
           const result = await handleGatewayTokenExchange({
@@ -158,6 +165,9 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
             clientSecret,
             subjectToken: exchangeParams.get("subject_token") || "",
             subjectTokenType,
+            resource: resourceParam,
+            requestedTokenType: exchangeParams.get("requested_token_type"),
+            audience: exchangeParams.getAll("audience"),
           });
           return NextResponse.json(result, {
             headers: { "Cache-Control": "no-store", Pragma: "no-cache" },

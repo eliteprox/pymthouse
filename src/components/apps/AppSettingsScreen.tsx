@@ -30,16 +30,11 @@ interface Props {
   onRevertedToDraft?: () => void;
 }
 
-/** Matches server expectations for initiate_login_uri when third-party device login is used. */
-function isValidInitiateLoginUri(uri: string): boolean {
-  const t = uri.trim();
-  return (
-    t.length > 0 &&
-    (t.startsWith("https://") || t.startsWith("http://localhost"))
-  );
-}
-
-function mergeFormData(initial: Partial<AppFormData>): AppFormData {
+function mergeFormData(
+  initial: Partial<AppFormData>,
+  initialInitiateLoginUri: string | null,
+  initialDeviceThirdPartyInitiateLogin: boolean,
+): AppFormData {
   return {
     ...defaultAppFormData,
     ...initial,
@@ -50,6 +45,9 @@ function mergeFormData(initial: Partial<AppFormData>): AppFormData {
         : [...defaultAppFormData.grantTypes],
     allowedScopes: initial.allowedScopes ?? defaultAppFormData.allowedScopes,
     backendDeviceHelper: initial.backendDeviceHelper ?? false,
+    initiateLoginUri: initial.initiateLoginUri ?? initialInitiateLoginUri ?? "",
+    deviceThirdPartyInitiateLogin:
+      initial.deviceThirdPartyInitiateLogin ?? initialDeviceThirdPartyInitiateLogin,
   };
 }
 
@@ -68,7 +66,7 @@ export default function AppSettingsScreen({
 }: Props) {
   const router = useRouter();
   const [formData, setFormData] = useState<AppFormData>(() =>
-    mergeFormData(initialData),
+    mergeFormData(initialData, initialInitiateLoginUri ?? null, initialDeviceThirdPartyInitiateLogin),
   );
   const [appState, setAppState] = useState<AppState>(initialState);
   const [domains, setDomains] = useState<{ id: string; domain: string }[]>(
@@ -77,11 +75,6 @@ export default function AppSettingsScreen({
   const [postLogoutRedirectUris, setPostLogoutRedirectUris] = useState<string[]>(
     initialPostLogoutRedirectUris,
   );
-  const [initiateLoginUri, setInitiateLoginUri] = useState(
-    initialInitiateLoginUri ?? "",
-  );
-  const [deviceThirdPartyInitiateLogin, setDeviceThirdPartyInitiateLogin] =
-    useState(initialDeviceThirdPartyInitiateLogin);
   const [newPostLogoutUri, setNewPostLogoutUri] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -129,8 +122,8 @@ export default function AppSettingsScreen({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           postLogoutRedirectUris,
-          initiateLoginUri: initiateLoginUri.trim() || null,
-          deviceThirdPartyInitiateLogin,
+          initiateLoginUri: formData.initiateLoginUri.trim() || null,
+          deviceThirdPartyInitiateLogin: formData.deviceThirdPartyInitiateLogin,
           tokenEndpointAuthMethod: formData.tokenEndpointAuthMethod,
         }),
       });
@@ -151,8 +144,6 @@ export default function AppSettingsScreen({
     appId,
     formData,
     postLogoutRedirectUris,
-    initiateLoginUri,
-    deviceThirdPartyInitiateLogin,
     canEdit,
   ]);
 
@@ -276,88 +267,141 @@ export default function AppSettingsScreen({
       : "";
 
   return (
-    <div className="max-w-3xl mx-auto space-y-8">
-      {!canEdit && (
-        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-200 text-sm">
-          You can view this app&apos;s configuration. Only platform or app
-          administrators can change settings.
-        </div>
-      )}
-      {canEdit &&
-        canSubmitForReview &&
-        (appState.status === "draft" || appState.status === "rejected") && (
-          <div className="p-4 rounded-xl border border-blue-500/25 bg-blue-500/5 space-y-3">
-            <div>
-              <h2 className="text-sm font-semibold text-zinc-100">
-                Submit for review
-              </h2>
-              <p className="text-sm text-zinc-400 mt-1">
-                While this app is in draft, only you and platform staff can use
-                it. Submit it when you are ready so an administrator can approve
-                it for production.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => void submitForReview()}
-              disabled={submittingForReview}
-              className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {submittingForReview ? "Submitting…" : "Submit for review"}
-            </button>
+    <div className="max-w-[600px] divide-y divide-zinc-800">
+      {/* Status banners */}
+      <div className="space-y-3 pb-6">
+        {!canEdit && (
+          <div className="p-3 rounded-md bg-amber-500/10 border border-amber-500/25 text-amber-200 text-sm">
+            You can view this app&apos;s configuration. Only platform or app
+            administrators can change settings.
           </div>
         )}
-      {canEdit &&
-        canSubmitForReview &&
-        appState.status === "submitted" && (
-          <div className="p-4 rounded-xl border border-amber-500/25 bg-amber-500/5 space-y-3">
-            <div>
-              <h2 className="text-sm font-semibold text-zinc-100">
-                Revert to draft
-              </h2>
-              <p className="text-sm text-zinc-400 mt-1">
-                This app is waiting for administrator review. You can withdraw it
-                from the queue to make changes, then submit again.
-              </p>
+        {canEdit &&
+          canSubmitForReview &&
+          (appState.status === "draft" || appState.status === "rejected") && (
+            <div className="p-4 rounded-md border border-blue-500/25 bg-blue-500/5 space-y-3">
+              <div>
+                <h2 className="text-sm font-semibold text-zinc-100">Submit for review</h2>
+                <p className="text-sm text-zinc-400 mt-1">
+                  While this app is in draft, only you and platform staff can use
+                  it. Submit it when you are ready so an administrator can approve
+                  it for production.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void submitForReview()}
+                disabled={submittingForReview}
+                className="px-4 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {submittingForReview ? "Submitting…" : "Submit for review"}
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => void revertToDraft()}
-              disabled={reverting}
-              className="px-4 py-2 text-sm font-medium rounded-lg border border-amber-500/40 text-amber-200 hover:bg-amber-500/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {reverting ? "Reverting…" : "Revert to draft"}
-            </button>
+          )}
+        {canEdit &&
+          canSubmitForReview &&
+          appState.status === "submitted" && (
+            <div className="p-4 rounded-md border border-amber-500/25 bg-amber-500/5 space-y-3">
+              <div>
+                <h2 className="text-sm font-semibold text-zinc-100">Revert to draft</h2>
+                <p className="text-sm text-zinc-400 mt-1">
+                  This app is waiting for administrator review. You can withdraw it
+                  from the queue to make changes, then submit again.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void revertToDraft()}
+                disabled={reverting}
+                className="px-4 py-2 text-sm font-medium rounded-md border border-amber-500/40 text-amber-200 hover:bg-amber-500/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {reverting ? "Reverting…" : "Revert to draft"}
+              </button>
+            </div>
+          )}
+        {error && (
+          <div className="p-3 rounded-md bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
+            {error}
           </div>
         )}
-      {error && (
-        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
-          {error}
-        </div>
-      )}
-      {message && (
-        <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-sm">
-          {message}
-        </div>
-      )}
+        {message && (
+          <div className="p-3 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-sm">
+            {message}
+          </div>
+        )}
+      </div>
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
-        <AppInfoStep
-          data={formData}
-          onChange={updateFormData}
-          readOnly={!canEdit}
-        />
+      {/* App Info */}
+      <section className="py-6">
+        <AppInfoStep data={formData} onChange={updateFormData} readOnly={!canEdit} />
       </section>
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
-        <AppModeStep
-          data={formData}
-          onChange={updateFormData}
-          readOnly={!canEdit}
-        />
+      {/* Auth & Scopes */}
+      <section className="py-6">
+        <AppModeStep data={formData} onChange={updateFormData} readOnly={!canEdit} />
       </section>
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6">
+      {/* Post-logout Redirects */}
+      <section className="py-6 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-zinc-100">Post-logout Redirects</h2>
+          <p className="text-sm text-zinc-500 mt-1">
+            URIs to redirect users to after sign-out. Saved with{" "}
+            <strong className="text-zinc-400">Save changes</strong> below.
+          </p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+            Post-logout redirect URIs
+          </label>
+          <div className="flex gap-2 mb-2">
+            <input
+              type="text"
+              value={newPostLogoutUri}
+              onChange={(e) => setNewPostLogoutUri(e.target.value)}
+              onKeyDown={(e) =>
+                e.key === "Enter" && (e.preventDefault(), addPostLogoutUri())
+              }
+              placeholder="https://example.com/logout-complete"
+              disabled={!canEdit}
+              className="flex-1 px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-md text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
+            />
+            <button
+              type="button"
+              onClick={addPostLogoutUri}
+              disabled={!canEdit}
+              className="px-4 py-1.5 rounded-md bg-zinc-700 text-zinc-200 text-sm hover:bg-zinc-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Add
+            </button>
+          </div>
+          <div className="space-y-1.5">
+            {postLogoutRedirectUris.map((uri) => (
+              <div
+                key={uri}
+                className="flex items-center justify-between rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2"
+              >
+                <code className="text-xs text-zinc-300">{uri}</code>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPostLogoutRedirectUris((items) =>
+                      items.filter((item) => item !== uri),
+                    )
+                  }
+                  disabled={!canEdit}
+                  className="text-xs text-zinc-500 hover:text-red-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Credentials & URIs */}
+      <section className="py-6">
         <TestingStep
           appId={appId}
           clientId={appState.clientId}
@@ -385,126 +429,8 @@ export default function AppSettingsScreen({
         />
       </section>
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 space-y-6">
-        <div>
-          <h2 className="text-lg font-semibold text-zinc-100">Advanced OIDC</h2>
-          <p className="text-sm text-zinc-500 mt-1">
-            Post-logout redirects, optional initiate-login URI, and device-flow
-            third-party login. Saved with{" "}
-            <strong className="text-zinc-400">Save</strong> below.
-          </p>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1.5">
-            Post-logout redirect URIs
-          </label>
-          <div className="flex gap-2 mb-2">
-            <input
-              type="text"
-              value={newPostLogoutUri}
-              onChange={(e) => setNewPostLogoutUri(e.target.value)}
-              onKeyDown={(e) =>
-                e.key === "Enter" && (e.preventDefault(), addPostLogoutUri())
-              }
-              placeholder="https://example.com/logout-complete"
-              disabled={!canEdit}
-              className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-            <button
-              type="button"
-              onClick={addPostLogoutUri}
-              disabled={!canEdit}
-              className="px-4 py-2 rounded-lg bg-zinc-700 text-zinc-200 text-sm hover:bg-zinc-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              Add
-            </button>
-          </div>
-          <div className="space-y-2">
-            {postLogoutRedirectUris.map((uri) => (
-              <div
-                key={uri}
-                className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-800/40 px-3 py-2"
-              >
-                <code className="text-xs text-zinc-300">{uri}</code>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPostLogoutRedirectUris((items) =>
-                      items.filter((item) => item !== uri),
-                    )
-                  }
-                  disabled={!canEdit}
-                  className="text-xs text-zinc-500 hover:text-red-400 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1.5">
-            Initiate login URI
-          </label>
-          <input
-            type="url"
-            value={initiateLoginUri}
-            onChange={(e) => {
-              const v = e.target.value;
-              setInitiateLoginUri(v);
-              if (!isValidInitiateLoginUri(v)) {
-                setDeviceThirdPartyInitiateLogin(false);
-              }
-            }}
-            placeholder="https://example.com/login"
-            disabled={!canEdit}
-            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
-          />
-          <p className="text-xs text-zinc-500 mt-2">
-            OIDC third-party login (iss, target_link_uri). When enabled below,
-            unauthenticated device verification can redirect here once before
-            PymtHouse login.
-          </p>
-        </div>
-
-        <label
-          className={`flex items-start gap-3 ${
-            canEdit &&
-            (isValidInitiateLoginUri(initiateLoginUri) ||
-              deviceThirdPartyInitiateLogin)
-              ? "cursor-pointer"
-              : "cursor-not-allowed opacity-80"
-          }`}
-        >
-          <input
-            type="checkbox"
-            checked={deviceThirdPartyInitiateLogin}
-            onChange={(e) => setDeviceThirdPartyInitiateLogin(e.target.checked)}
-            disabled={
-              !canEdit ||
-              (!isValidInitiateLoginUri(initiateLoginUri) &&
-                !deviceThirdPartyInitiateLogin)
-            }
-            className="mt-1 rounded border-zinc-600 disabled:opacity-50"
-          />
-          <span>
-            <span className="block text-sm font-medium text-zinc-300">
-              Redirect device verification to initiate login URI
-            </span>
-            <span className="block text-xs text-zinc-500 mt-1">
-              Requires a valid HTTPS initiate login URI above (localhost HTTP
-              allowed for development). Your app must implement{" "}
-              <code className="text-zinc-400">initiate_login_uri</code> and
-              return users to{" "}
-              <code className="text-zinc-400">target_link_uri</code>.
-            </span>
-          </span>
-        </label>
-      </section>
-
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-6 space-y-4">
+      {/* Reference endpoints */}
+      <section className="py-6 space-y-4">
         <h2 className="text-lg font-semibold text-zinc-100">Reference endpoints</h2>
         <EndpointField label="Client ID" value={appState.clientId || ""} />
         <EndpointField label="OIDC discovery" value={discoveryUrl} />
@@ -512,8 +438,9 @@ export default function AppSettingsScreen({
         <EndpointField label="Token" value={tokenUrl} />
       </section>
 
+      {/* Danger zone */}
       {canSubmitForReview && appState.status === "draft" && (
-        <section className="rounded-xl border border-red-500/25 bg-red-500/5 p-6 space-y-3">
+        <section className="py-6 space-y-3">
           <h2 className="text-sm font-semibold text-zinc-100">Delete draft app</h2>
           <p className="text-sm text-zinc-400">
             Permanently remove this app, its OIDC client, and related data. This
@@ -523,24 +450,25 @@ export default function AppSettingsScreen({
             type="button"
             onClick={() => void deleteDraftApp()}
             disabled={deleting}
-            className="px-4 py-2 text-sm font-medium rounded-lg border border-red-500/40 text-red-300 hover:bg-red-500/15 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-fit"
+            className="px-4 py-2 text-sm font-medium rounded-md border border-red-500/40 text-red-300 hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {deleting ? "Deleting…" : "Delete app"}
           </button>
         </section>
       )}
 
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-2 border-t border-zinc-800">
-        <p className="text-xs text-zinc-500 max-w-xl">
-          Redirect URIs and domains update when you add or remove them. Use{" "}
-          <strong className="text-zinc-400">Save</strong> for app metadata, auth
-          mode, scopes, and advanced OIDC fields.
+      {/* Save */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-6">
+        <p className="text-xs text-zinc-500 max-w-sm">
+          Redirect URIs and domains update immediately. Use{" "}
+          <strong className="text-zinc-400">Save changes</strong> for metadata,
+          auth mode, scopes, and OIDC fields.
         </p>
         <button
           type="button"
           onClick={() => void saveChanges()}
           disabled={!canEdit || saving || !formData.name.trim()}
-          className="px-6 py-2.5 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
+          className="px-5 py-2 text-sm font-medium rounded-md bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
         >
           {saving ? "Saving…" : "Save changes"}
         </button>
@@ -552,10 +480,8 @@ export default function AppSettingsScreen({
 function EndpointField({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-zinc-500 mb-1.5">
-        {label}
-      </label>
-      <code className="block rounded-lg border border-zinc-800 bg-zinc-800/40 px-3 py-2 text-xs text-zinc-300 break-all">
+      <label className="block text-xs font-medium text-zinc-500 mb-1.5">{label}</label>
+      <code className="block rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs text-zinc-300 break-all">
         {value || "—"}
       </code>
     </div>

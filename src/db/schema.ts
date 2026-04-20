@@ -102,7 +102,8 @@ export const streamSessions = pgTable("stream_sessions", {
   bearerTokenHash: text("bearer_token_hash"),
   manifestId: text("manifest_id").notNull(),
   orchestratorAddress: text("orchestrator_address"),
-  totalPixels: integer("total_pixels").notNull().default(0),
+  /** Successful generate-live-payment calls recorded for this session (deduped per usage row). */
+  signerPaymentCount: integer("signer_payment_count").notNull().default(0),
   totalFeeWei: text("total_fee_wei").notNull().default("0"),
   pricePerUnit: text("price_per_unit"),
   pixelsPerUnit: text("pixels_per_unit"),

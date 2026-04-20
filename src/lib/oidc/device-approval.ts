@@ -4,7 +4,7 @@
 
 import { SqliteAdapter } from "@/lib/oidc/adapter";
 import { getProvider } from "@/lib/oidc/provider";
-import { getIssuer } from "@/lib/oidc/tokens";
+import { getIssuer } from "@/lib/oidc/issuer-urls";
 
 export type DeviceApprovalFailure = {
   ok: false;
