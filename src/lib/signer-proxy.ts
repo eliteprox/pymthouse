@@ -192,10 +192,16 @@ export async function proxyGenerateLivePayment(
     return { status: 503, body: { error: "Signer is not running" } };
   }
 
-  const manifestId = requestBody.ManifestID as string | undefined;
-  const inPixels = requestBody.InPixels as number | undefined;
-  const jobType = requestBody.Type as string | undefined;
-  const orchestratorData = requestBody.Orchestrator as string | undefined;
+  const manifestId = (requestBody.ManifestID ??
+    requestBody.manifestId) as string | undefined;
+  const inPixels = (requestBody.InPixels ?? requestBody.inPixels) as
+    | number
+    | undefined;
+  const jobType = (requestBody.Type ?? requestBody.type) as string | undefined;
+  // python-gateway `payments_base._build_payment_payload` uses lowercase keys;
+  // tests and some clients use Go-style PascalCase.
+  const orchestratorData = (requestBody.Orchestrator ??
+    requestBody.orchestrator) as string | undefined;
 
   let pricePerUnit = 0n;
   let pixelsPerUnit = 1n;
