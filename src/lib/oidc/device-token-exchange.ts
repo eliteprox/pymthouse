@@ -242,11 +242,14 @@ export async function handleDeviceApprovalTokenExchange(
     publicClientId = await resolvePublicClientIdForOidcRow(dbConn, m2mRow.id);
   } catch (err) {
     if (err instanceof DeveloperAppSiblingAmbiguousError) {
-      console.error("[device-token-exchange]", err.message);
+      console.error("[device-token-exchange] ambiguous developer app mapping", {
+        message: err.message,
+        conflictingDeveloperAppIds: err.conflictingDeveloperAppIds,
+      });
       throw new TokenExchangeError(
         "invalid_request",
         "Ambiguous developer app mapping for this client",
-        err.message,
+        "Multiple developer apps found for this client",
       );
     }
     throw err;
