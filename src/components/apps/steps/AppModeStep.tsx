@@ -139,8 +139,7 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
                 APIs (
                 <code className="font-mono text-zinc-400">users:token</code>,{" "}
                 <code className="font-mono text-zinc-400">users:write</code>). Your
-                public client stays unauthenticated for SDK / CLI device login —
-                required for NaaP Option B approval.
+                public client stays unauthenticated for SDK / CLI device login.
               </p>
             </div>
           </label>
@@ -187,11 +186,11 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
                       via a user code on a secondary device.
                     </p>
 
-                    {/* ── NaaP Option B (grandchild — only when device_code is on) ── */}
+                    {/* ── Third-party initiate login (grandchild — only when device_code is on) ── */}
                     {hasDeviceCode && (
                       <div className="mt-3 border-t border-zinc-700/50 pt-3 space-y-3">
                         <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
-                          NaaP Option B — Third-party initiate login
+                          Third-party initiate login
                         </p>
                         <div>
                           <label className="block text-xs font-medium text-zinc-400 mb-1">

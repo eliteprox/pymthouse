@@ -128,7 +128,8 @@ async function forwardToSigner(
     // Fall back to sessionId (always populated on AuthResult) so unauthenticated-but-
     // session-scoped callers don't collapse onto a single shared "signer-proxy" token —
     // each session keeps its own cache entry and stays traceable in upstream logs.
-    const sub = auth.userId || auth.appId || auth.sessionId;
+    const sub =
+      auth.userId || auth.endUserId || auth.appId || auth.sessionId;
     const token = await getHttpDmzBearerForSubject(sub);
     headers.Authorization = `Bearer ${token}`;
   }

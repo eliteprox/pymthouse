@@ -1,17 +1,10 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import AppInfoStep from "./steps/AppInfoStep";
-import AppModeStep from "./steps/AppModeStep";
-import TestingStep from "./steps/TestingStep";
 import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
 
-const ALL_STEPS = [
-  { label: "App Info", key: "info" as const, alwaysVisible: true },
-  { label: "Auth & Scopes", key: "mode" as const, alwaysVisible: true },
-  { label: "Credentials & Testing", key: "testing" as const, alwaysVisible: true },
-];
+const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 
 export interface AppFormData {
   name: string;
@@ -24,7 +17,7 @@ export interface AppFormData {
   grantTypes: string[];
   /** Provisions the confidential M2M sibling (Builder API + device approval via token exchange); keeps the public client unauthenticated. */
   backendDeviceHelper: boolean;
-  /** OIDC initiate_login_uri for NaaP Option B third-party device login. */
+  /** OIDC initiate_login_uri for third-party device login. */
   initiateLoginUri: string;
   /** Whether to redirect unauthenticated device verification to initiateLoginUri. */
   deviceThirdPartyInitiateLogin: boolean;
@@ -60,254 +53,248 @@ interface Props {
   initialDomains?: { id: string; domain: string }[];
 }
 
-export default function AppWizard({ initialData, initialState, initialDomains }: Props) {
+const fieldClass =
+  "w-full px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-md text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/50 disabled:opacity-50";
+
+export default function AppWizard({ initialData }: Props) {
   const router = useRouter();
-  const [step, setStep] = useState(0);
   const [formData, setFormData] = useState<AppFormData>({
     ...defaultAppFormData,
     ...initialData,
   });
-  const [appState, setAppState] = useState<AppState>(
-    initialState || {
-      id: null,
-      clientId: null,
-      status: "new",
-      hasSecret: false,
-      backendHelper: null,
-    },
-  );
-  const [domains, setDomains] = useState<{ id: string; domain: string }[]>(
-    initialDomains || []
-  );
+  const [callbackUrl, setCallbackUrl] = useState(initialData?.redirectUris?.[0] ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const isM2MMode =
-    formData.tokenEndpointAuthMethod !== "none" &&
-    formData.grantTypes.includes("client_credentials");
+  const hasDeviceCode = formData.grantTypes.includes(DEVICE_CODE_GRANT);
 
-  const visibleSteps = useMemo(() => ALL_STEPS, []);
+  const set = useCallback(<K extends keyof AppFormData>(key: K, value: AppFormData[K]) => {
+    setFormData((prev) => ({ ...prev, [key]: value }));
+  }, []);
 
-  const updateFormData = useCallback(
-    (updates: Partial<AppFormData>) => {
-      setFormData((prev) => ({ ...prev, ...updates }));
-    },
-    []
-  );
+  const toggleDeviceCode = () => {
+    set(
+      "grantTypes",
+      hasDeviceCode
+        ? formData.grantTypes.filter((v) => v !== DEVICE_CODE_GRANT)
+        : [...formData.grantTypes, DEVICE_CODE_GRANT],
+    );
+  };
 
-  const saveApp = useCallback(async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setSaving(true);
     setError(null);
     try {
-      const payload = { ...formData };
-
-      if (!appState.id) {
-        const res = await fetch("/api/v1/apps", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) {
-          const text = await res.text();
-          const data = text ? JSON.parse(text) : {};
-          throw new Error(data.error || `Failed to create app (${res.status})`);
-        }
-        const data = await res.json();
-        setAppState({
-          id: data.id,
-          clientId: data.clientId,
-          status: data.status ?? "draft",
-          hasSecret: false,
-          backendHelper: null,
-        });
-      } else {
-        const res = await fetch(`/api/v1/apps/${appState.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) {
-          const text = await res.text();
-          const data = text ? JSON.parse(text) : {};
-          throw new Error(data.error || `Failed to update app (${res.status})`);
-        }
-        const data = (await res.json()) as {
-          m2mOidcClient?: { clientId: string; hasSecret: boolean } | null;
-        };
-        if (data.m2mOidcClient) {
-          setAppState((s) => ({
-            ...s,
-            backendHelper: data.m2mOidcClient ?? null,
-          }));
-        }
+      const payload: AppFormData = {
+        ...formData,
+        redirectUris: callbackUrl.trim() ? [callbackUrl.trim()] : [],
+      };
+      const res = await fetch("/api/v1/apps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        const data = text ? JSON.parse(text) : {};
+        throw new Error(data.error || `Failed to create app (${res.status})`);
       }
+      const data = await res.json();
+      router.push(`/apps/${data.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
-      throw err;
     } finally {
       setSaving(false);
     }
-  }, [appState.id, formData]);
+  };
 
-  const handleNext = useCallback(async () => {
-    try {
-      await saveApp();
-      setStep((currentStep) => Math.min(currentStep + 1, visibleSteps.length - 1));
-    } catch {
-      // error already set
-    }
-  }, [saveApp, visibleSteps.length]);
-
-  const handleBack = useCallback(() => {
-    setStep((s) => Math.max(s - 1, 0));
-  }, []);
-
-  const handleFinish = useCallback(async () => {
-    if (!appState.id) return;
-    setError(null);
-    try {
-      await saveApp();
-      const submitRes = await fetch(`/api/v1/apps/${appState.id}/submit`, {
-        method: "POST",
-      });
-      if (!submitRes.ok) {
-        const text = await submitRes.text();
-        let msg = `Could not submit for review (${submitRes.status})`;
-        try {
-          const data = text ? JSON.parse(text) : {};
-          if (data.message) msg = data.message;
-          else if (data.error) msg = data.error;
-        } catch {
-          /* keep generic */
-        }
-        throw new Error(msg);
-      }
-      router.push(`/apps/${appState.id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    }
-  }, [appState.id, router, saveApp]);
+  const canSubmit = !saving && formData.name.trim().length > 0 && formData.websiteUrl.trim().length > 0;
 
   return (
-    <div className="max-w-3xl mx-auto">
-      {/* Progress Stepper */}
-      <div className="flex items-center justify-between mb-8">
-        {visibleSteps.map((s, i) => (
-          <div key={s.key} className="flex items-center flex-1">
-            <button
-              onClick={() => appState.id && setStep(i)}
-              disabled={!appState.id && i > 0}
-              className="flex flex-col items-center gap-1.5 group"
-            >
-              <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
-                  i === step
-                    ? "bg-emerald-500 text-white"
-                    : i < step
-                    ? "bg-emerald-500/20 text-emerald-400"
-                    : "bg-zinc-800 text-zinc-500"
-                }`}
-              >
-                {i < step ? (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                ) : (
-                  i + 1
-                )}
-              </div>
-              <span
-                className={`text-xs font-medium ${
-                  i === step ? "text-emerald-400" : "text-zinc-500"
-                }`}
-              >
-                {s.label}
-              </span>
-            </button>
-            {i < visibleSteps.length - 1 && (
-              <div
-                className={`flex-1 h-px mx-2 ${
-                  i < step ? "bg-emerald-500/30" : "bg-zinc-800"
-                }`}
-              />
-            )}
+    <div className="max-w-[540px]">
+      <h1 className="text-lg font-semibold text-zinc-100 pb-4 mb-6 border-b border-zinc-800">
+        Register a new OAuth app
+      </h1>
+
+      <form onSubmit={(e) => void handleSubmit(e)} className="space-y-5">
+        {error && (
+          <div className="p-3 rounded-md bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
+            {error}
           </div>
-        ))}
-      </div>
-
-      {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-sm">
-          {error}
-        </div>
-      )}
-
-      {/* Step Content */}
-      <div className="border border-zinc-800 bg-zinc-900/40 rounded-xl p-6">
-        {visibleSteps[step]?.key === "info" && (
-          <AppInfoStep data={formData} onChange={updateFormData} />
         )}
-        {visibleSteps[step]?.key === "mode" && (
-          <AppModeStep data={formData} onChange={updateFormData} />
-        )}
-        {visibleSteps[step]?.key === "testing" && (
-          <TestingStep
-            appId={appState.id}
-            clientId={appState.clientId}
-            grantTypes={formData.grantTypes}
-            redirectUris={formData.redirectUris}
-            onRedirectUrisChange={(uris) => updateFormData({ redirectUris: uris })}
-            allowedScopes={formData.allowedScopes}
-            domains={domains}
-            onDomainsChange={setDomains}
-            hasSecret={appState.hasSecret}
-            backendHelper={appState.backendHelper}
-            onSecretGenerated={() => {
-              setAppState((s) => ({ ...s, hasSecret: true }));
-              updateFormData({ tokenEndpointAuthMethod: "client_secret_post" });
-            }}
-            onBackendSecretGenerated={() => {
-              setAppState((s) => ({
-                ...s,
-                backendHelper: s.backendHelper
-                  ? { ...s.backendHelper, hasSecret: true }
-                  : s.backendHelper,
-              }));
-            }}
+
+        {/* Application name */}
+        <div>
+          <label className="block text-sm font-medium text-zinc-200 mb-1.5">
+            Application name <span className="text-red-400">*</span>
+          </label>
+          <input
+            type="text"
+            value={formData.name}
+            onChange={(e) => set("name", e.target.value)}
+            required
+            className={fieldClass}
           />
-        )}
-      </div>
+          <p className="text-xs text-zinc-500 mt-1.5">Something users will recognize and trust.</p>
+        </div>
 
-      {/* Navigation */}
-      <div className="flex justify-between mt-6">
-        <button
-          onClick={handleBack}
-          disabled={step === 0}
-          className="px-4 py-2 text-sm font-medium rounded-lg border border-zinc-700 text-zinc-300 hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-        >
-          Back
-        </button>
-        <div className="flex gap-2">
-          {step < visibleSteps.length - 1 && (
-            <button
-              onClick={handleNext}
-              disabled={saving || (!formData.name && step === 0)}
-              className="px-6 py-2 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        {/* Homepage URL */}
+        <div>
+          <label className="block text-sm font-medium text-zinc-200 mb-1.5">
+            Homepage URL <span className="text-red-400">*</span>
+          </label>
+          <input
+            type="url"
+            value={formData.websiteUrl}
+            onChange={(e) => set("websiteUrl", e.target.value)}
+            required
+            placeholder="https://"
+            className={fieldClass}
+          />
+          <p className="text-xs text-zinc-500 mt-1.5">The full URL to your application homepage.</p>
+        </div>
+
+        {/* Description */}
+        <div>
+          <label className="block text-sm font-medium text-zinc-200 mb-1.5">
+            Application description
+          </label>
+          <textarea
+            value={formData.description}
+            onChange={(e) => set("description", e.target.value)}
+            rows={3}
+            placeholder="Application description is optional"
+            className={`${fieldClass} resize-none`}
+          />
+          <p className="text-xs text-zinc-500 mt-1.5">
+            This is displayed to all users of your application.
+          </p>
+        </div>
+
+        {/* Authorization callback URL */}
+        <div>
+          <label className="block text-sm font-medium text-zinc-200 mb-1.5">
+            Authorization callback URL <span className="text-red-400">*</span>
+          </label>
+          <input
+            type="url"
+            value={callbackUrl}
+            onChange={(e) => setCallbackUrl(e.target.value)}
+            placeholder="https://"
+            className={fieldClass}
+          />
+          <p className="text-xs text-zinc-500 mt-1.5">
+            Your application&apos;s callback URL. Read our{" "}
+            <a href="/docs/oauth" className="text-emerald-500 hover:underline">
+              OAuth documentation
+            </a>{" "}
+            for more information.
+          </p>
+        </div>
+
+        {/* Enable Device Flow */}
+        <div className="pt-1">
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={hasDeviceCode}
+              onChange={toggleDeviceCode}
+              className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40"
+            />
+            <span className="text-sm font-medium text-zinc-200">Enable Device Flow</span>
+          </label>
+          <p className="text-xs text-zinc-500 mt-1.5 ml-[26px]">
+            Allow this OAuth App to authorize users via the Device Flow.
+            <br />
+            Read the{" "}
+            <a href="/docs/device-flow" className="text-emerald-500 hover:underline">
+              Device Flow documentation
+            </a>{" "}
+            for more information.
+          </p>
+        </div>
+
+        {/* Advanced settings */}
+        <div className="border-t border-zinc-800 pt-4">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+          >
+            <svg
+              className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? "rotate-90" : ""}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
             >
-              {saving ? "Saving..." : appState.id ? "Save & Continue" : "Create App"}
-            </button>
-          )}
-          {step === visibleSteps.length - 1 && appState.id && (
-            <button
-              type="button"
-              onClick={handleFinish}
-              disabled={saving}
-              className="px-6 py-2 text-sm font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {saving ? "Saving..." : "Save & view app"}
-            </button>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+            Advanced settings
+          </button>
+
+          {showAdvanced && (
+            <div className="mt-4 space-y-5 pl-[22px]">
+              {/* Developer / org name */}
+              <div>
+                <label className="block text-sm font-medium text-zinc-200 mb-1.5">
+                  Developer / organization name
+                </label>
+                <input
+                  type="text"
+                  value={formData.developerName}
+                  onChange={(e) => set("developerName", e.target.value)}
+                  placeholder="Acme Inc."
+                  className={fieldClass}
+                />
+              </div>
+
+              {/* Confidential client (M2M) */}
+              <div>
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(formData.backendDeviceHelper)}
+                    onChange={(e) => set("backendDeviceHelper", e.target.checked)}
+                    className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40"
+                  />
+                  <span className="text-sm font-medium text-zinc-200">
+                    Confidential client{" "}
+                    <span className="text-[10px] font-normal text-zinc-500 uppercase tracking-wide">
+                      (client credentials)
+                    </span>
+                  </span>
+                </label>
+                <p className="text-xs text-zinc-500 mt-1.5 ml-[26px]">
+                  Provisions a companion{" "}
+                  <code className="font-mono text-zinc-400">m2m_</code> client for
+                  server-to-server Builder APIs. Your public client remains
+                  unauthenticated for SDK / CLI device login.
+                </p>
+              </div>
+            </div>
           )}
         </div>
-      </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-4 pt-2">
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="px-4 py-2 text-sm font-medium rounded-md bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {saving ? "Registering…" : "Register application"}
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push("/apps")}
+            className="text-sm text-emerald-500 hover:underline"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

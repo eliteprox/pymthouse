@@ -151,6 +151,7 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
             grantType,
             clientId,
             subjectTokenType,
+            resource: resourceParam,
           })
         ) {
           const result = await handleGatewayTokenExchange({
@@ -158,6 +159,9 @@ async function handleOIDC(request: NextRequest): Promise<NextResponse> {
             clientSecret,
             subjectToken: exchangeParams.get("subject_token") || "",
             subjectTokenType,
+            resource: resourceParam,
+            requestedTokenType: exchangeParams.get("requested_token_type"),
+            audience: exchangeParams.getAll("audience"),
           });
           return NextResponse.json(result, {
             headers: { "Cache-Control": "no-store", Pragma: "no-cache" },
