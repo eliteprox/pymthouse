@@ -18,6 +18,7 @@ import {
 import type { AuthResult } from "./auth";
 import { issueSignerDmzToken } from "./signer-dmz-token";
 import { getSenderInfo } from "./signer-cli";
+import { DOCKER_COMPOSE_LOCAL_SIGNER_SERVICE } from "./signer-local-compose";
 
 export interface ProxyResult {
   status: number;
@@ -65,7 +66,7 @@ export async function getSignerRoutingContext(authAppId?: string | null) {
  * Build the internal URL for the signer container.
  *
  * Always returned without a trailing slash so callers can safely concatenate
- * a leading-slash path (`${base}${path}`). A stored `http://host:8081/` would
+ * a leading-slash path (`${base}${path}`). A stored `http://host:8080/` would
  * otherwise produce `//sign-orchestrator-info`, which Go's ServeMux 301s to
  * the canonical path — undici follows the 301 as GET, and go-livepeer's
  * signer replies with `Method Not Allowed` on GET, surfacing as a 502 with
@@ -75,7 +76,7 @@ function getSignerUrl(signer?: typeof signerConfig.$inferSelect | null): string 
   const base =
     signer?.signerUrl
     || process.env.SIGNER_INTERNAL_URL
-    || `http://localhost:${signer?.signerPort ?? 8081}`;
+    || `http://localhost:${signer?.signerPort ?? 8080}`;
   return base.replace(/\/+$/, "");
 }
 
@@ -537,7 +538,7 @@ export async function syncSignerStatus(): Promise<{
     const execAsync = promisify(exec);
 
     const { stdout } = await execAsync(
-      "docker compose ps --format json go-livepeer",
+      `docker compose ps --format json ${DOCKER_COMPOSE_LOCAL_SIGNER_SERVICE}`,
       { cwd: process.cwd(), timeout: 5000 }
     );
 
@@ -551,7 +552,7 @@ export async function syncSignerStatus(): Promise<{
         // Grab last few log lines for the error
         try {
           const { stdout: logs } = await execAsync(
-            "docker compose logs --no-color --tail=3 go-livepeer 2>&1",
+            `docker compose logs --no-color --tail=3 ${DOCKER_COMPOSE_LOCAL_SIGNER_SERVICE} 2>&1`,
             { cwd: process.cwd(), timeout: 5000 }
           );
           const errorLine = logs
@@ -559,7 +560,10 @@ export async function syncSignerStatus(): Promise<{
             .filter((l) => l.includes("Error") || l.includes("error"))
             .pop();
           if (errorLine) {
-            lastError = errorLine.replace(/^go-livepeer-\d+\s+\|\s*/, "");
+            lastError = errorLine.replace(
+              /^[a-z0-9._-]+-\d+\s+\|\s*/i,
+              "",
+            );
           }
         } catch {}
       }

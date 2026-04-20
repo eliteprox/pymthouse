@@ -6,6 +6,7 @@ import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { authenticateRequest, hasScope } from "@/lib/auth";
 import { spawn } from "child_process";
+import { DOCKER_COMPOSE_LOCAL_SIGNER_SERVICE } from "@/lib/signer-local-compose";
 
 const DEFAULT_TAIL = 50;
 const MAX_TAIL = 1000;
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
     // Strip the container name prefix from each line for cleaner output
     const lines = raw
       .split("\n")
-      .map((line) => line.replace(/^go-livepeer-\d+\s+\|\s*/, ""))
+      .map((line) => line.replace(/^[a-z0-9._-]+-\d+\s+\|\s*/i, ""))
       .filter((line) => line.trim())
       .slice(-responseTail);
 
@@ -66,7 +67,7 @@ function getSignerLogs(): Promise<{ stdout: string; stderr: string }> {
         "--no-color",
         "--tail",
         String(MAX_TAIL),
-        "go-livepeer",
+        DOCKER_COMPOSE_LOCAL_SIGNER_SERVICE,
       ],
       {
         cwd: process.cwd(),

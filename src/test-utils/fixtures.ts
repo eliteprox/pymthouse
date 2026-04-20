@@ -181,7 +181,7 @@ export async function ensureRunningSigner(): Promise<() => Promise<void>> {
       status: "running",
       network: "arbitrum-one-mainnet",
       ethRpcUrl: "https://arb1.arbitrum.io/rpc",
-      signerPort: 8081,
+        signerPort: 8080,
       defaultCutPercent: 15,
       billingMode: "delegated",
     });

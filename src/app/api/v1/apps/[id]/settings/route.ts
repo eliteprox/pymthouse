@@ -13,6 +13,8 @@ import {
 } from "@/lib/provider-apps";
 import { validateInitiateLoginUri } from "@/lib/oidc/third-party-initiate-login";
 
+const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
+
 function extractOrigins(uris: string[]): string[] {
   const origins = new Set<string>();
   for (const uri of uris) {
@@ -117,6 +119,17 @@ export async function PUT(
         },
         { status: 400 },
       );
+    }
+  }
+
+  if (nextDeviceThirdParty && nextInitiateLoginUri?.trim()) {
+    const grantTypes = client.grantTypes.split(",").filter(Boolean);
+    const hasDeviceCode = grantTypes.includes(DEVICE_CODE_GRANT);
+    if (hasDeviceCode) {
+      const allowedScopes = client.allowedScopes.split(/[,\s]+/).filter(Boolean);
+      if (!allowedScopes.includes("users:token")) {
+        clientUpdates.allowedScopes = [...allowedScopes, "users:token"].join(" ");
+      }
     }
   }
 

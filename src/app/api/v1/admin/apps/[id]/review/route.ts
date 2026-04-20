@@ -6,6 +6,7 @@ import { developerApps, oidcClients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { updateClientConfig } from "@/lib/oidc/clients";
 import { getProviderApp } from "@/lib/provider-apps";
+import { getPlatformJwksUrlForDatabase } from "@/lib/oidc/issuer-urls";
 
 export async function POST(
   request: NextRequest,
@@ -72,6 +73,9 @@ export async function POST(
         pendingRevisionSubmittedAt: null,
         reviewerNotes: action === "reject" ? notes || null : null,
         updatedAt: now,
+        ...(action === "approve"
+          ? { jwksUri: getPlatformJwksUrlForDatabase() }
+          : {}),
       })
       .where(eq(developerApps.id, app.id));
 
@@ -100,6 +104,9 @@ export async function POST(
       reviewedAt: now,
       publishedAt: action === "approve" ? now : null,
       updatedAt: now,
+      ...(action === "approve"
+        ? { jwksUri: getPlatformJwksUrlForDatabase() }
+        : {}),
     })
     .where(eq(developerApps.id, app.id));
 

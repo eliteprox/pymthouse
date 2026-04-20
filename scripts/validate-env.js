@@ -29,7 +29,7 @@ const requiredVars = {
     validate: (val) => val.length >= 32,
   },
   SIGNER_INTERNAL_URL: {
-    desc: "URL of deployed go-livepeer signer",
+    desc: "URL of the signer (Apache DMZ; local default http://localhost:8080)",
     example: "https://your-signer.up.railway.app",
     validate: (val) => val.startsWith("http://") || val.startsWith("https://"),
   },
@@ -50,8 +50,8 @@ const optionalVars = {
   GOOGLE_CLIENT_SECRET: "",
   GITHUB_CLIENT_ID: "",
   GITHUB_CLIENT_SECRET: "",
-  NEXT_PUBLIC_PRIVY_APP_ID: "",
-  PRIVY_APP_SECRET: "",
+  NEXT_PUBLIC_ORGANIZATION_ID: "",
+  NEXT_PUBLIC_AUTH_PROXY_CONFIG_ID: "",
   SIGNER_CLI_URL: "",
 };
 
@@ -88,8 +88,6 @@ for (const [key, config] of Object.entries(requiredVars)) {
 // Check optional variables
 console.log("\n📋 Optional Variables:");
 let hasOAuth = false;
-let hasPrivy = false;
-
 for (const key of Object.keys(optionalVars)) {
   const value = process.env[key];
   
@@ -100,7 +98,6 @@ for (const key of Object.keys(optionalVars)) {
     console.log(`  ✅ ${key}: ${displayValue}`);
     
     if (key.includes("GOOGLE") || key.includes("GITHUB")) hasOAuth = true;
-    if (key.includes("PRIVY")) hasPrivy = true;
   } else {
     console.log(`  ⚪ ${key}: Not set`);
   }
@@ -140,18 +137,18 @@ if (!hasOAuth) {
   hasWarnings = true;
 }
 
-// Check Privy pairing
-const hasPrivyApp = !!process.env.NEXT_PUBLIC_PRIVY_APP_ID;
-const hasPrivySecret = !!process.env.PRIVY_APP_SECRET;
+// Check Turnkey Wallet Kit pairing (optional)
+const hasTurnkeyOrg = !!process.env.NEXT_PUBLIC_ORGANIZATION_ID?.trim();
+const hasTurnkeyProxy = !!process.env.NEXT_PUBLIC_AUTH_PROXY_CONFIG_ID?.trim();
 
-if (hasPrivyApp && !hasPrivySecret) {
-  console.log("  ⚠️  Privy: APP_ID set but APP_SECRET missing");
+if (hasTurnkeyOrg && !hasTurnkeyProxy) {
+  console.log("  ⚠️  Turnkey: NEXT_PUBLIC_ORGANIZATION_ID set but NEXT_PUBLIC_AUTH_PROXY_CONFIG_ID missing");
   hasWarnings = true;
-} else if (!hasPrivyApp && hasPrivySecret) {
-  console.log("  ⚠️  Privy: APP_SECRET set but APP_ID missing");
+} else if (!hasTurnkeyOrg && hasTurnkeyProxy) {
+  console.log("  ⚠️  Turnkey: NEXT_PUBLIC_AUTH_PROXY_CONFIG_ID set but NEXT_PUBLIC_ORGANIZATION_ID missing");
   hasWarnings = true;
-} else if (hasPrivyApp && hasPrivySecret) {
-  console.log("  ✅ Privy: Properly configured");
+} else if (hasTurnkeyOrg && hasTurnkeyProxy) {
+  console.log("  ✅ Turnkey Wallet Kit: Public IDs configured");
 }
 
 // Check production URL

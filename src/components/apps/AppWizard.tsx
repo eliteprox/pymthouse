@@ -74,21 +74,18 @@ export default function AppWizard({ initialData }: Props) {
   }, []);
 
   const toggleDeviceCode = () => {
-    if (!formData.backendDeviceHelper) {
-      if (hasDeviceCode) {
-        set(
-          "grantTypes",
-          formData.grantTypes.filter((v) => v !== DEVICE_CODE_GRANT),
-        );
-      }
+    if (hasDeviceCode) {
+      set("grantTypes", formData.grantTypes.filter((v) => v !== DEVICE_CODE_GRANT));
       return;
     }
-    set(
-      "grantTypes",
-      hasDeviceCode
-        ? formData.grantTypes.filter((v) => v !== DEVICE_CODE_GRANT)
-        : [...formData.grantTypes, DEVICE_CODE_GRANT],
-    );
+    setFormData((prev) => ({
+      ...prev,
+      backendDeviceHelper: true,
+      grantTypes: prev.grantTypes.includes(DEVICE_CODE_GRANT)
+        ? prev.grantTypes
+        : [...prev.grantTypes, DEVICE_CODE_GRANT],
+    }));
+    setShowAdvanced(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -134,8 +131,7 @@ export default function AppWizard({ initialData }: Props) {
   const canSubmit =
     !saving &&
     formData.name.trim().length > 0 &&
-    formData.websiteUrl.trim().length > 0 &&
-    callbackUrl.trim().length > 0;
+    formData.websiteUrl.trim().length > 0;
 
   return (
     <div className="max-w-[540px]">
@@ -201,18 +197,18 @@ export default function AppWizard({ initialData }: Props) {
         {/* Authorization callback URL */}
         <div>
           <label className="block text-sm font-medium text-zinc-200 mb-1.5">
-            Authorization callback URL <span className="text-red-400">*</span>
+            Authorization callback URL
           </label>
           <input
             type="url"
             value={callbackUrl}
             onChange={(e) => setCallbackUrl(e.target.value)}
-            required
             placeholder="https://"
             className={fieldClass}
           />
           <p className="text-xs text-zinc-500 mt-1.5">
-            Your application&apos;s callback URL. Read our{" "}
+            Required for the browser authorization code flow. Optional if you only use
+            device or server flows for now; you can add this later in app settings. Read our{" "}
             <a href="/docs/oauth" className="text-emerald-500 hover:underline">
               OAuth documentation
             </a>{" "}
@@ -222,20 +218,18 @@ export default function AppWizard({ initialData }: Props) {
 
         {/* Enable Device Flow */}
         <div className="pt-1">
-          <label
-            className={`flex items-center gap-2.5 ${formData.backendDeviceHelper ? "cursor-pointer" : "cursor-not-allowed opacity-50"}`}
-          >
+          <label className="flex items-center gap-2.5 cursor-pointer">
             <input
               type="checkbox"
               checked={hasDeviceCode}
               onChange={toggleDeviceCode}
-              disabled={!formData.backendDeviceHelper}
-              className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 disabled:cursor-not-allowed"
+              className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40"
             />
             <span className="text-sm font-medium text-zinc-200">Enable Device Flow</span>
           </label>
           <p className="text-xs text-zinc-500 mt-1.5 ml-[26px]">
-            Requires a confidential client (see Advanced). Allow this OAuth App to authorize users via the Device Flow.
+            Allow this OAuth App to authorize users via the Device Flow. Enabling this also
+            provisions a confidential client.
             <br />
             Read the{" "}
             <a href="/docs/device-flow" className="text-emerald-500 hover:underline">

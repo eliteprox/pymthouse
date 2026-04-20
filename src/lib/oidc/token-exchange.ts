@@ -4,7 +4,7 @@ import { developerApps, oidcClients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { validateClientSecret } from "./clients";
 import { ensureSigningKey } from "./jwks";
-import { getIssuer } from "./issuer-urls";
+import { getIssuer, getPlatformJwksUrlForDatabase } from "./issuer-urls";
 import { fetchPlatformJWKS } from "./jwks-fetch";
 import { findOrCreateAppEndUser } from "@/lib/billing";
 import { billingPatternFromAllowedScopesString } from "@/lib/allowed-scopes";
@@ -93,17 +93,16 @@ export async function handleTokenExchange(params: {
     );
   }
 
-  if (!app.jwksUri) {
-    throw new TokenExchangeError(
-      "invalid_request",
-      "App has no JWKS URI configured for token exchange",
-      "App is not configured for token exchange",
-    );
-  }
+  const jwksUriForExchange =
+    !app.jwksUri?.trim() ||
+    app.jwksUri.includes("localhost") ||
+    app.jwksUri.includes("127.0.0.1")
+      ? getPlatformJwksUrlForDatabase()
+      : app.jwksUri.trim();
 
   let platformJWKS: jose.JSONWebKeySet;
   try {
-    platformJWKS = await fetchPlatformJWKS(app.jwksUri);
+    platformJWKS = await fetchPlatformJWKS(jwksUriForExchange);
   } catch (err) {
     throw new TokenExchangeError(
       "invalid_request",

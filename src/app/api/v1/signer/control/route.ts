@@ -6,6 +6,11 @@ import { signerConfig, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { authenticateRequest, hasScope } from "@/lib/auth";
 import { syncSignerStatus } from "@/lib/signer-proxy";
+import { DOCKER_COMPOSE_LOCAL_SIGNER_SERVICE } from "@/lib/signer-local-compose";
+import {
+  getPlatformJwksUrlForDatabase,
+  getPlatformPublicOidcIssuer,
+} from "@/lib/oidc/issuer-urls";
 import { exec } from "child_process";
 import { promisify } from "util";
 
@@ -101,13 +106,14 @@ export async function POST(request: NextRequest) {
 }
 
 function getComposeCommand(action: string): string {
+  const svc = DOCKER_COMPOSE_LOCAL_SIGNER_SERVICE;
   switch (action) {
     case "start":
     case "restart":
       // --force-recreate ensures fresh container; --remove-orphans cleans stale containers
-      return "docker compose up -d --force-recreate --remove-orphans go-livepeer";
+      return `docker compose up -d --force-recreate --remove-orphans ${svc}`;
     case "stop":
-      return "docker compose stop go-livepeer";
+      return `docker compose stop ${svc}`;
     default:
       throw new Error(`Unknown action: ${action}`);
   }
@@ -127,19 +133,25 @@ function buildSignerComposeEnv(
     | undefined
 ): NodeJS.ProcessEnv {
   const rd = signer?.remoteDiscovery === 1;
-  const port = signer?.signerPort ?? 8081;
+  const dmzHostPort = signer?.signerPort ?? 8080;
+  // signer-dmz jwks_to_pem.py only accepts https:// JWKS URLs (not http://host.docker.internal).
+  // Use the public platform issuer + JWKS so PEM matches tokens minted for that issuer.
+  const issuer = getPlatformPublicOidcIssuer();
   return {
     ...process.env,
     SIGNER_NETWORK: "arbitrum-one-mainnet",
     ETH_RPC_URL: signer?.ethRpcUrl ?? "",
     SIGNER_ETH_ADDR: signer?.ethAcctAddr || "",
-    SIGNER_PORT: String(port),
+    SIGNER_DMZ_HOST_PORT: String(dmzHostPort),
     SIGNER_REMOTE_DISCOVERY: rd ? "1" : "0",
     ORCH_WEBHOOK_URL: rd && signer?.orchWebhookUrl ? signer.orchWebhookUrl : "",
     LIVE_AI_CAP_REPORT_INTERVAL:
       rd && signer?.liveAICapReportInterval
         ? signer.liveAICapReportInterval
         : "",
+    OIDC_ISSUER: issuer,
+    OIDC_AUDIENCE: issuer,
+    JWKS_URI: getPlatformJwksUrlForDatabase(),
   };
 }
 

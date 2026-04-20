@@ -15,6 +15,10 @@ import {
   ACTIVE_STREAM_PAYMENT_WINDOW_MINUTES,
   countActiveStreamsByRecentPayment,
 } from "@/lib/active-streams";
+import {
+  getPlatformJwksUrlForDatabase,
+  getPlatformPublicOidcIssuer,
+} from "@/lib/oidc/issuer-urls";
 
 function formatWei(wei: string | null): string {
   if (!wei || wei === "0") return "0 WEI";
@@ -67,6 +71,10 @@ export default async function SignerPage() {
     error: "bg-red-500/20 text-red-400 border-red-500/30",
   };
 
+  const oidcIssuer = getPlatformPublicOidcIssuer();
+  const oidcAudience = oidcIssuer;
+  const oidcJwksUrl = getPlatformJwksUrlForDatabase();
+
   return (
     <DashboardLayout>
       <div className="mb-8">
@@ -98,7 +106,9 @@ export default async function SignerPage() {
             go-livepeer Remote Signer
           </h3>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Live container configuration
+            OIDC/JWKS rows show the public platform endpoints (
+            <code className="text-zinc-400">PLATFORM_JWKS_URL</code> / issuer).
+            Other fields reflect saved signer settings.
           </p>
         </div>
         <div className="font-mono text-sm">
@@ -131,6 +141,9 @@ export default async function SignerPage() {
               />
             </>
           )}
+          <ConfigRow label="OIDC_ISSUER" value={oidcIssuer} mono />
+          <ConfigRow label="OIDC_AUDIENCE" value={oidcAudience} mono />
+          <ConfigRow label="JWKS_URI" value={oidcJwksUrl} mono />
           <ConfigRow label="Verbosity" value="99" />
         </div>
       </div>
@@ -181,6 +194,9 @@ export default async function SignerPage() {
             remoteDiscovery: signer.remoteDiscovery,
             orchWebhookUrl: signer.orchWebhookUrl,
             liveAICapReportInterval: signer.liveAICapReportInterval,
+            oidcIssuer,
+            oidcAudience,
+            oidcJwksUrl,
           }}
         />
       </div>

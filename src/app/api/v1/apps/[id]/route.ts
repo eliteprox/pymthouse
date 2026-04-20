@@ -15,6 +15,8 @@ import {
 import { deleteDeveloperAppAndRelatedData } from "@/lib/delete-developer-app";
 import { billingPatternFromAllowedScopesString } from "@/lib/allowed-scopes";
 
+const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -165,6 +167,26 @@ export async function PUT(
         clientUpdates.allowedScopes = filtered || DEFAULT_OIDC_SCOPES;
       }
       if (body.grantTypes) clientUpdates.grantTypes = body.grantTypes;
+
+      const nextGrantTypes = (
+        clientUpdates.grantTypes ?? client.grantTypes.split(",").filter(Boolean)
+      );
+      const nextInitiateLoginUri = client.initiateLoginUri?.trim();
+      const nextDeviceThirdPartyInitiateLogin = client.deviceThirdPartyInitiateLogin === 1;
+      if (
+        nextDeviceThirdPartyInitiateLogin &&
+        nextInitiateLoginUri &&
+        nextGrantTypes.includes(DEVICE_CODE_GRANT)
+      ) {
+        const allowedScopes = (
+          clientUpdates.allowedScopes ?? client.allowedScopes
+        )
+          .split(/[,\s]+/)
+          .filter(Boolean);
+        if (!allowedScopes.includes("users:token")) {
+          clientUpdates.allowedScopes = [...allowedScopes, "users:token"].join(" ");
+        }
+      }
 
       if (Object.keys(clientUpdates).length > 0) {
         await updateClientConfig(client.clientId, clientUpdates);

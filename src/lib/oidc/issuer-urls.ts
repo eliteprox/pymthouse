@@ -88,3 +88,54 @@ export function getIssuer(): string {
 export function getCanonicalIssuer(): string {
   return getIssuer();
 }
+
+/**
+ * Canonical JWKS URL this app serves at GET (issuer)/jwks — same origin as the
+ * OIDC issuer. Tokens and discovery reference this URL; audience matches issuer.
+ */
+export function getOidcJwksUrl(): string {
+  return `${getIssuer()}/jwks`;
+}
+
+/**
+ * JWKS URL stored in `developer_apps.jwks_uri` for RFC 8693 token exchange.
+ * Must be publicly reachable (not loopback). Defaults to production; set
+ * `PLATFORM_JWKS_URL` for self-hosted deployments.
+ */
+export function getPlatformJwksUrlForDatabase(): string {
+  const fromEnv = process.env.PLATFORM_JWKS_URL?.trim();
+  if (fromEnv) return fromEnv;
+  return `https://pymthouse.com${OIDC_MOUNT_PATH}/jwks`;
+}
+
+/**
+ * Public OIDC issuer for Remote Signer UI and docs — matches
+ * {@link getPlatformJwksUrlForDatabase} without the `/jwks` suffix. Not the same
+ * as {@link getIssuer} when NEXTAUTH_URL is localhost.
+ */
+export function getPlatformPublicOidcIssuer(): string {
+  const jwks = getPlatformJwksUrlForDatabase();
+  if (jwks.endsWith("/jwks")) {
+    return jwks.slice(0, -"/jwks".length);
+  }
+  try {
+    const u = new URL(jwks);
+    u.pathname = u.pathname.replace(/\/jwks\/?$/, "") || OIDC_MOUNT_PATH;
+    return trimTrailingSlash(u.toString());
+  } catch {
+    return `https://pymthouse.com${OIDC_MOUNT_PATH}`;
+  }
+}
+
+/**
+ * JWKS URL for signer-dmz (`JWKS_URI`). The container's `jwks_to_pem.py` only
+ * accepts **https** URLs, so we must not pass `http://host.docker.internal/...`.
+ * Defaults to {@link getPlatformJwksUrlForDatabase}. Override with
+ * `SIGNER_DMZ_JWKS_URL` (must be https).
+ */
+export function getJwksUrlForLocalSignerDmzContainer(): string {
+  if (process.env.SIGNER_DMZ_JWKS_URL?.trim()) {
+    return process.env.SIGNER_DMZ_JWKS_URL.trim();
+  }
+  return getPlatformJwksUrlForDatabase();
+}

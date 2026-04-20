@@ -7,14 +7,13 @@ import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { authenticateRequest, hasScope } from "@/lib/auth";
 import {
-  verifyPrivyToken,
   findOrCreateEndUser,
-  isPrivyEnabled,
-} from "@/lib/privy";
+  verifyTurnkeySessionJwt,
+} from "@/lib/turnkey";
 import { addCredits, deductCredits } from "@/lib/billing";
 
 /**
- * GET /api/v1/end-users -- List end users (admin auth) or get current end user (Privy auth)
+ * GET /api/v1/end-users -- List end users (admin auth) or get current end user (Turnkey session JWT)
  */
 export async function GET(request: NextRequest) {
   // Check for admin access first
@@ -24,13 +23,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ endUsers: allEndUsers });
   }
 
-  // Check for Privy auth token
-  const privyToken = request.headers.get("x-privy-token");
-  if (privyToken && isPrivyEnabled()) {
-    const privyDid = await verifyPrivyToken(privyToken);
-    if (!privyDid) {
+  const turnkeyJwt = getTurnkeySessionJwtFromRequest(request);
+  if (turnkeyJwt) {
+    const claims = await verifyTurnkeySessionJwt(turnkeyJwt);
+    if (!claims) {
       return NextResponse.json(
-        { error: "Invalid Privy token" },
+        { error: "Invalid Turnkey session" },
         { status: 401 }
       );
     }
@@ -38,7 +36,7 @@ export async function GET(request: NextRequest) {
     const endUserRows = await db
       .select()
       .from(endUsers)
-      .where(eq(endUsers.privyDid, privyDid))
+      .where(eq(endUsers.turnkeyUserId, claims.userId))
       .limit(1);
     const endUser = endUserRows[0];
 
@@ -56,7 +54,7 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * POST /api/v1/end-users -- Register a new end user (Privy auth) or create one (admin auth)
+ * POST /api/v1/end-users -- Register a new end user (Turnkey session JWT) or create one (admin auth)
  */
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -67,7 +65,7 @@ export async function POST(request: NextRequest) {
     const id = uuidv4();
     await db.insert(endUsers).values({
       id,
-      privyDid: body.privyDid || null,
+      turnkeyUserId: body.turnkeyUserId || null,
       walletAddress: body.walletAddress || null,
       creditBalanceWei: body.creditBalanceWei || "0",
     });
@@ -82,19 +80,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ endUser: created }, { status: 201 });
   }
 
-  // Privy-authenticated end user registering themselves
-  const privyToken = request.headers.get("x-privy-token");
-  if (privyToken && isPrivyEnabled()) {
-    const privyDid = await verifyPrivyToken(privyToken);
-    if (!privyDid) {
+  const turnkeyJwtPost = getTurnkeySessionJwtFromRequest(request);
+  if (turnkeyJwtPost) {
+    const claims = await verifyTurnkeySessionJwt(turnkeyJwtPost);
+    if (!claims) {
       return NextResponse.json(
-        { error: "Invalid Privy token" },
+        { error: "Invalid Turnkey session" },
         { status: 401 }
       );
     }
 
     const { id, isNew } = await findOrCreateEndUser(
-      privyDid,
+      claims.userId,
       body.walletAddress,
     );
 
@@ -193,6 +190,19 @@ async function getAdminUser(request: NextRequest) {
       .where(eq(users.id, auth.userId))
       .limit(1);
     return rows[0];
+  }
+
+  return null;
+}
+
+/** Turnkey session JWT from `x-turnkey-session` or `Authorization: Bearer`. */
+function getTurnkeySessionJwtFromRequest(request: NextRequest): string | null {
+  const header = request.headers.get("x-turnkey-session")?.trim();
+  if (header) return header;
+
+  const auth = request.headers.get("authorization")?.trim();
+  if (auth?.toLowerCase().startsWith("bearer ")) {
+    return auth.slice(7).trim() || null;
   }
 
   return null;
