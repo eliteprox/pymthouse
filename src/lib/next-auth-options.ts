@@ -7,7 +7,10 @@ import { users } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { validateBearerToken, hasScope } from "@/lib/auth";
-import { verifyPrivyToken, findOrCreateDeveloperUser, getPrivyClient } from "@/lib/privy";
+import {
+  findOrCreateDeveloperUser,
+  verifyTurnkeySessionJwt,
+} from "@/lib/turnkey";
 import { getNextAuthSecret } from "@/lib/next-auth-secret";
 
 const nextAuthSecret = getNextAuthSecret();
@@ -46,46 +49,31 @@ export const authOptions: NextAuthOptions = {
     }),
 
     CredentialsProvider({
-      id: "privy-wallet",
-      name: "Wallet",
+      id: "turnkey-wallet",
+      name: "Turnkey Wallet",
       credentials: {
-        privyToken: { label: "Privy Token", type: "text" },
+        turnkeySessionJwt: { label: "Turnkey Session JWT", type: "text" },
         walletAddress: { label: "Wallet Address", type: "text" },
+        email: { label: "Email", type: "text" },
+        name: { label: "Name", type: "text" },
       },
       async authorize(credentials) {
-        if (!credentials?.privyToken) return null;
+        if (!credentials?.turnkeySessionJwt) return null;
 
-        const privyDid = await verifyPrivyToken(credentials.privyToken);
-        if (!privyDid) return null;
+        const claims = await verifyTurnkeySessionJwt(
+          credentials.turnkeySessionJwt,
+        );
+        if (!claims) return null;
 
-        let email: string | undefined;
-        let name: string | undefined;
-        try {
-          const client = getPrivyClient();
-          if (client) {
-            const privyUser = await client.users()._get(privyDid);
-            const emailAccount = privyUser.linked_accounts.find(
-              (a) => a.type === "email",
-            ) as { address: string } | undefined;
-            email = emailAccount?.address || undefined;
-            if (!credentials.walletAddress) {
-              const walletAccount = privyUser.linked_accounts.find(
-                (a) => a.type === "wallet",
-              ) as { address: string } | undefined;
-              if (walletAccount?.address) {
-                credentials.walletAddress = walletAccount.address;
-              }
-            }
-          }
-        } catch {
-          /* non-critical */
-        }
+        const walletRaw = credentials.walletAddress?.trim();
+        const emailRaw = credentials.email?.trim();
+        const nameRaw = credentials.name?.trim();
 
         const { id } = await findOrCreateDeveloperUser(
-          privyDid,
-          credentials.walletAddress || undefined,
-          undefined,
-          email,
+          claims.userId,
+          walletRaw || undefined,
+          nameRaw || undefined,
+          emailRaw || undefined,
         );
 
         const userRows = await db
@@ -128,7 +116,7 @@ export const authOptions: NextAuthOptions = {
 
       if (account.provider === "token") return true;
 
-      if (account.provider === "privy-wallet") return true;
+      if (account.provider === "turnkey-wallet") return true;
 
       if (!user.email) return false;
 

@@ -14,7 +14,7 @@ This guide walks you through deploying Pymthouse to Vercel. Since Vercel doesn't
 2. PostgreSQL database (Neon recommended for free tier)
 3. Docker hosting service account (Railway, Render, or Fly.io)
 4. GitHub/Google OAuth app credentials (for admin login)
-5. Privy account (optional, for end-user wallets)
+5. Turnkey account (optional, for embedded wallets via Wallet Kit)
 
 ## Step 1: Deploy go-livepeer Signer (Docker Container)
 
@@ -194,8 +194,9 @@ In your Vercel project dashboard, go to "Settings" → "Environment Variables" a
 
 | Variable Name | Value | Purpose |
 |--------------|-------|---------|
-| `NEXT_PUBLIC_PRIVY_APP_ID` | From Privy dashboard | End-user wallet auth |
-| `PRIVY_APP_SECRET` | From Privy dashboard | End-user wallet auth |
+| `NEXT_PUBLIC_ORGANIZATION_ID` | From Turnkey dashboard (Wallet Kit) | Embedded wallet auth (public) |
+| `NEXT_PUBLIC_AUTH_PROXY_CONFIG_ID` | From Turnkey dashboard (Auth Proxy) | Embedded wallet auth (public) |
+| `TURNKEY_ALLOWED_ORGANIZATION_IDS` | Optional comma-separated org UUIDs | Restrict which orgs’ session JWTs are accepted |
 | `OIDC_DEBUG_LOGS` | `1` to enable | Debug OIDC flows |
 
 **Important**: Make sure to set these for all environments (Production, Preview, Development) or at minimum for Production.
@@ -314,7 +315,7 @@ npm run db:migrate
 - Configure preview deployments for pull requests
 - Set up monitoring (Vercel Analytics, Sentry)
 - Enable OIDC custom domains for whitelabel apps
-- Configure Privy for end-user wallet authentication
+- Configure Turnkey Wallet Kit for embedded wallet authentication
 
 ## Support
 

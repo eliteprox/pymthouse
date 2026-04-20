@@ -1,12 +1,12 @@
 "use client";
 
 import { SessionProvider } from "next-auth/react";
-import PrivyProviderWrapper from "./PrivyProvider";
+import TurnkeyProviderWrapper from "./TurnkeyProvider";
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
-      <PrivyProviderWrapper>{children}</PrivyProviderWrapper>
+      <TurnkeyProviderWrapper>{children}</TurnkeyProviderWrapper>
     </SessionProvider>
   );
 }

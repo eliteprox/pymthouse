@@ -92,6 +92,13 @@
       "when": 1776700000000,
       "tag": "0012_drop_signer_config_naap_api_key",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1776800000000,
+      "tag": "0012_rename_privy_did_to_turnkey_user_id",
+      "breakpoints": true
     }
   ]
 }

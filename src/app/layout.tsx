@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import "@turnkey/react-wallet-kit/styles.css";
 import "./globals.css";
 import Providers from "@/components/Providers";
 

@@ -1,11 +1,14 @@
 "use client";
 
 import { sanitizeUrl } from "@braintree/sanitize-url";
+import {
+  AuthState,
+  ClientState,
+  useTurnkey,
+} from "@turnkey/react-wallet-kit";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { usePrivy } from "@privy-io/react-auth";
-import Link from "next/link";
 import { MarketingFooter } from "@/components/MarketingFooter";
 
 interface AppBranding {
@@ -15,8 +18,36 @@ interface AppBranding {
   primaryColor: string;
 }
 
-function PrivyLoginButton({ primaryColor = "#10b981" }: { primaryColor?: string }) {
-  const { login, authenticated, getAccessToken } = usePrivy();
+function TurnkeyLoginButton({ primaryColor = "#10b981" }: { primaryColor?: string }) {
+  const turnkeyConfigured =
+    !!process.env.NEXT_PUBLIC_ORGANIZATION_ID?.trim() &&
+    !!process.env.NEXT_PUBLIC_AUTH_PROXY_CONFIG_ID?.trim();
+
+  if (!turnkeyConfigured) {
+    return (
+      <p className="text-xs text-zinc-500 leading-relaxed">
+        Turnkey Wallet Kit is not configured. Set{" "}
+        <code className="text-zinc-400">NEXT_PUBLIC_ORGANIZATION_ID</code> and{" "}
+        <code className="text-zinc-400">NEXT_PUBLIC_AUTH_PROXY_CONFIG_ID</code>{" "}
+        in your environment.
+      </p>
+    );
+  }
+
+  return <TurnkeyLoginButtonInner primaryColor={primaryColor} />;
+}
+
+function TurnkeyLoginButtonInner({ primaryColor = "#10b981" }: { primaryColor?: string }) {
+  const {
+    handleLogin,
+    authState,
+    clientState,
+    getSession,
+    refreshWallets,
+    refreshUser,
+    user,
+    wallets,
+  } = useTurnkey();
   const [bridging, setBridging] = useState(false);
   const [bridgeRequested, setBridgeRequested] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -24,10 +55,19 @@ function PrivyLoginButton({ primaryColor = "#10b981" }: { primaryColor?: string 
   const router = useRouter();
   const searchParams = useSearchParams();
   const rawCallbackUrl = searchParams.get("callbackUrl") || "/dashboard";
-  const callbackUrl = rawCallbackUrl.startsWith("/") && !rawCallbackUrl.startsWith("//") ? rawCallbackUrl : "/dashboard";
+  const callbackUrl =
+    rawCallbackUrl.startsWith("/") && !rawCallbackUrl.startsWith("//")
+      ? rawCallbackUrl
+      : "/dashboard";
 
   useEffect(() => {
-    if (!bridgeRequested || !authenticated || bridging || failed) {
+    if (
+      !bridgeRequested ||
+      authState !== AuthState.Authenticated ||
+      clientState !== ClientState.Ready ||
+      bridging ||
+      failed
+    ) {
       return;
     }
 
@@ -35,17 +75,26 @@ function PrivyLoginButton({ primaryColor = "#10b981" }: { primaryColor?: string 
       setBridging(true);
       setError(null);
       try {
-        const token = await getAccessToken();
-        if (!token) {
-          setError("Could not get access token");
+        await refreshUser();
+        await refreshWallets();
+        const session = await getSession();
+        if (!session?.token) {
+          setError("Could not get session token");
           setFailed(true);
           setBridgeRequested(false);
           setBridging(false);
           return;
         }
 
-        const result = await signIn("privy-wallet", {
-          privyToken: token,
+        const walletAddress = firstEvmAddressFromWallets(wallets);
+        const email = user?.userEmail?.trim() || undefined;
+        const name = user?.userName?.trim() || undefined;
+
+        const result = await signIn("turnkey-wallet", {
+          turnkeySessionJwt: session.token,
+          walletAddress: walletAddress || "",
+          email: email || "",
+          name: name || "",
           redirect: false,
         });
 
@@ -65,18 +114,32 @@ function PrivyLoginButton({ primaryColor = "#10b981" }: { primaryColor?: string 
         setBridging(false);
       }
     })();
-  }, [bridgeRequested, authenticated, bridging, failed, getAccessToken, router, callbackUrl]);
+  }, [
+    bridgeRequested,
+    authState,
+    clientState,
+    bridging,
+    failed,
+    getSession,
+    refreshUser,
+    refreshWallets,
+    router,
+    callbackUrl,
+    wallets,
+    user,
+  ]);
 
   return (
     <div>
       <button
+        type="button"
         onClick={() => {
           setFailed(false);
           setError(null);
           setBridgeRequested(true);
-          login();
+          void handleLogin();
         }}
-        disabled={bridging}
+        disabled={bridging || clientState === ClientState.Loading}
         className="w-full px-4 py-3 text-white rounded-lg text-sm font-medium hover:opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         style={{ backgroundColor: primaryColor }}
       >
@@ -91,6 +154,20 @@ function PrivyLoginButton({ primaryColor = "#10b981" }: { primaryColor?: string 
   );
 }
 
+function firstEvmAddressFromWallets(
+  wallets: { accounts: { address: string }[] }[],
+): string | undefined {
+  for (const w of wallets) {
+    for (const a of w.accounts) {
+      const addr = a.address;
+      if (typeof addr === "string" && addr.startsWith("0x")) {
+        return addr;
+      }
+    }
+  }
+  return undefined;
+}
+
 export function LoginForm() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -101,7 +178,10 @@ export function LoginForm() {
   const [adminSectionOpen, setAdminSectionOpen] = useState(false);
   const [branding, setBranding] = useState<AppBranding | null>(null);
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
-  const safeCallbackUrl = callbackUrl.startsWith("/") && !callbackUrl.startsWith("//") ? callbackUrl : "/dashboard";
+  const safeCallbackUrl =
+    callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")
+      ? callbackUrl
+      : "/dashboard";
   const clientId = searchParams.get("client_id");
   const isAdmin = searchParams.get("admin") === "1";
   const isOidcFlow = callbackUrl.includes("/oidc/");
@@ -120,8 +200,8 @@ export function LoginForm() {
   useEffect(() => {
     if (clientId && isOidcFlow) {
       fetch(`/api/v1/apps/branding?client_id=${encodeURIComponent(clientId)}`)
-        .then(res => res.ok ? res.json() : null)
-        .then(data => {
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
           if (data?.branding) {
             setBranding(data.branding);
           }
@@ -191,9 +271,7 @@ export function LoginForm() {
               <h1 className="text-3xl font-bold tracking-tight text-zinc-100">
                 {branding.displayName}
               </h1>
-              <p className="text-zinc-500 mt-2 text-sm">
-                Sign in to continue
-              </p>
+              <p className="text-zinc-500 mt-2 text-sm">Sign in to continue</p>
             </>
           ) : (
             <>
@@ -207,15 +285,14 @@ export function LoginForm() {
           )}
         </div>
 
-        {/* Privy login -- primary (email, wallet, social) */}
         <div className="border border-zinc-800 rounded-xl p-6 bg-zinc-900/30 mb-4">
           <h2 className="text-lg font-semibold text-zinc-200 mb-1">
             {isWhiteLabel ? "Sign In" : "Developer Sign In"}
           </h2>
           <p className="text-sm text-zinc-500 mb-5">
-            Sign in with your email, wallet, or social account.
+            Sign in with passkey, email OTP, wallet, or social (via Turnkey).
           </p>
-          <PrivyLoginButton primaryColor={primaryColor} />
+          <TurnkeyLoginButton primaryColor={primaryColor} />
           {!isAdmin && (
             <div className="mt-5 pt-5 border-t border-zinc-800 space-y-3">
               <p className="text-xs text-zinc-500 leading-relaxed">
@@ -224,14 +301,18 @@ export function LoginForm() {
               <div className="space-y-2">
                 <button
                   type="button"
-                  onClick={() => signIn("google", { callbackUrl: safeCallbackUrl })}
+                  onClick={() =>
+                    signIn("google", { callbackUrl: safeCallbackUrl })
+                  }
                   className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-zinc-700 rounded-lg hover:bg-zinc-800/50 transition-colors text-sm font-medium text-zinc-300"
                 >
                   Google
                 </button>
                 <button
                   type="button"
-                  onClick={() => signIn("github", { callbackUrl: safeCallbackUrl })}
+                  onClick={() =>
+                    signIn("github", { callbackUrl: safeCallbackUrl })
+                  }
                   className="w-full flex items-center justify-center gap-3 px-4 py-2.5 border border-zinc-700 rounded-lg hover:bg-zinc-800/50 transition-colors text-sm font-medium text-zinc-300"
                 >
                   GitHub
@@ -246,7 +327,6 @@ export function LoginForm() {
           )}
         </div>
 
-        {/* Admin sign-in (bootstrap token only) */}
         <div className="border border-zinc-800 rounded-xl bg-zinc-900/30 mb-4">
           <button
             type="button"
@@ -262,7 +342,12 @@ export function LoginForm() {
               stroke="currentColor"
               viewBox="0 0 24 24"
             >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 9l-7 7-7-7"
+              />
             </svg>
           </button>
 
@@ -318,7 +403,6 @@ function toSafeLogoUrl(url: string | null): string | null {
   if (!url) return null;
   const trimmed = url.trim();
   if (!trimmed) return null;
-  // Reject protocol-relative URLs (//evil.com) — sanitizeUrl does not block these.
   if (trimmed.startsWith("//")) return null;
   const safe = sanitizeUrl(trimmed);
   return safe === "about:blank" ? null : safe;

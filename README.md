@@ -43,7 +43,7 @@ openssl rand -base64 32
 
 Optional (only if needed):
 - Google/GitHub OAuth vars (for OAuth login)
-- Privy vars (for end-user wallet flows)
+- Turnkey Wallet Kit public IDs (`NEXT_PUBLIC_ORGANIZATION_ID`, `NEXT_PUBLIC_AUTH_PROXY_CONFIG_ID`) for embedded wallet login
 
 ## 3) Start the signer service
 

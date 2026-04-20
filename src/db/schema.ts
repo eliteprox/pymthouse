@@ -17,11 +17,11 @@ export const users = pgTable("users", {
   id: text("id").primaryKey(),
   email: text("email"),
   name: text("name"),
-  oauthProvider: text("oauth_provider").notNull(), // google | github | bootstrap | privy-wallet
+  oauthProvider: text("oauth_provider").notNull(), // google | github | bootstrap | turnkey-wallet
   oauthSubject: text("oauth_subject").notNull(),
   role: text("role").notNull().default("developer"), // admin | operator | developer
   walletAddress: text("wallet_address"),
-  privyDid: text("privy_did").unique(),
+  turnkeyUserId: text("turnkey_user_id").unique(),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),
@@ -70,7 +70,7 @@ export const signerConfig = pgTable("signer_config", {
     .$defaultFn(() => new Date().toISOString()),
 });
 
-// End users -- the actual multi-user entities (Privy wallets, credits, usage)
+// End users -- the actual multi-user entities (Turnkey embedded wallets, credits, usage)
 export const endUsers = pgTable(
   "end_users",
   {
@@ -79,7 +79,7 @@ export const endUsers = pgTable(
     externalUserId: text("external_user_id"), // platform's user sub claim for token exchange mapping
     name: text("name"),
     email: text("email"),
-    privyDid: text("privy_did").unique(),
+    turnkeyUserId: text("turnkey_user_id").unique(),
     walletAddress: text("wallet_address"),
     creditBalanceWei: text("credit_balance_wei").notNull().default("0"),
     isActive: integer("is_active").notNull().default(1),
