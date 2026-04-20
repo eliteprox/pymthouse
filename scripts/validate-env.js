@@ -52,7 +52,6 @@ const optionalVars = {
   GITHUB_CLIENT_SECRET: "",
   NEXT_PUBLIC_PRIVY_APP_ID: "",
   PRIVY_APP_SECRET: "",
-  NAAP_METRICS_URL: "",
   SIGNER_CLI_URL: "",
 };
 

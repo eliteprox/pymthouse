@@ -196,7 +196,6 @@ In your Vercel project dashboard, go to "Settings" → "Environment Variables" a
 |--------------|-------|---------|
 | `NEXT_PUBLIC_PRIVY_APP_ID` | From Privy dashboard | End-user wallet auth |
 | `PRIVY_APP_SECRET` | From Privy dashboard | End-user wallet auth |
-| `NAAP_METRICS_URL` | NaaP metrics endpoint | Optional telemetry |
 | `OIDC_DEBUG_LOGS` | `1` to enable | Debug OIDC flows |
 
 **Important**: Make sure to set these for all environments (Production, Preview, Development) or at minimum for Production.

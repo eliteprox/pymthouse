@@ -14,7 +14,6 @@ interface SignerConfigFormProps {
     signerPort: number;
     defaultCutPercent: number;
     billingMode: string;
-    naapApiKey: string | null;
     remoteDiscovery: number;
     orchWebhookUrl: string | null;
     liveAICapReportInterval: string | null;
@@ -36,7 +35,6 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
     signerPort: config.signerPort,
     defaultCutPercent: config.defaultCutPercent,
     billingMode: config.billingMode,
-    naapApiKey: config.naapApiKey || "",
     remoteDiscovery: config.remoteDiscovery === 1,
     orchWebhookUrl: config.orchWebhookUrl || "",
     liveAICapReportInterval: config.liveAICapReportInterval || "5m",
@@ -57,7 +55,6 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
           network: "arbitrum-one-mainnet",
           ethAcctAddr: formData.ethAcctAddr || null,
           signerPort: formData.signerPort,
-          naapApiKey: formData.naapApiKey || null,
           remoteDiscovery: formData.remoteDiscovery,
           orchWebhookUrl: formData.remoteDiscovery
             ? formData.orchWebhookUrl || null
@@ -280,20 +277,6 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
             </div>
           </>
         )}
-        <div className="sm:col-span-2">
-          <label className="block text-xs text-zinc-500 mb-1.5">
-            NaaP API Key (optional)
-          </label>
-          <input
-            type="text"
-            value={formData.naapApiKey}
-            onChange={(e) =>
-              setFormData({ ...formData, naapApiKey: e.target.value })
-            }
-            className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-200 focus:outline-none focus:border-emerald-500/50 font-mono text-xs"
-            placeholder="Leave empty to disable metrics reporting"
-          />
-        </div>
       </fieldset>
 
       <div className="flex items-center gap-3">

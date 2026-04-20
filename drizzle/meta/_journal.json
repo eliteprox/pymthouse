@@ -85,6 +85,13 @@
       "when": 1776659000000,
       "tag": "0011_stream_sessions_billed_pixel_quantums",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1776700000000,
+      "tag": "0012_drop_signer_config_naap_api_key",
+      "breakpoints": true
     }
   ]
 }

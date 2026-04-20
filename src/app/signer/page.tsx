@@ -178,7 +178,6 @@ export default async function SignerPage() {
             signerPort: signer.signerPort,
             defaultCutPercent: signer.defaultCutPercent,
             billingMode: signer.billingMode,
-            naapApiKey: signer.naapApiKey,
             remoteDiscovery: signer.remoteDiscovery,
             orchWebhookUrl: signer.orchWebhookUrl,
             liveAICapReportInterval: signer.liveAICapReportInterval,

@@ -44,7 +44,6 @@ openssl rand -base64 32
 Optional (only if needed):
 - Google/GitHub OAuth vars (for OAuth login)
 - Privy vars (for end-user wallet flows)
-- `NAAP_METRICS_URL` (metrics sink)
 
 ## 3) Start the signer service
 
