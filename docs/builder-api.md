@@ -1,6 +1,6 @@
 # Builder API (confidential clients)
 
-Public docs: [docs.pymthouse.com](https://docs.pymthouse.com) (Mintlify source in `mint-docs/integration/builder-api.mdx`).
+Public docs: [docs.pymthouse.com](https://docs.pymthouse.com) (Mintlify source: [pymthouse-docs](https://github.com/eliteprox/pymthouse-docs) repository, `integration/user-management` and `integration/user-tokens`).
 
 This document defines the official PymtHouse Builder API for confidential OAuth clients. It covers machine authentication, end-user provisioning, and issuance of user-scoped JWTs to your backend.
 

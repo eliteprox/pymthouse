@@ -18,6 +18,7 @@ PymtHouse is the **sole OIDC issuer** for integrator apps. External backends tal
 
 | Topic | Path |
 | --- | --- |
+| Public integrator docs (Mintlify) | [docs.pymthouse.com](https://docs.pymthouse.com) — [eliteprox/pymthouse-docs](https://github.com/eliteprox/pymthouse-docs) |
 | Builder product (OIDC issuer, Builder API, Usage API, device + token exchange) | `docs/builder-api.md` |
 
 ## Two clients per interactive app
@@ -82,4 +83,4 @@ Public client must have **device third-party initiate** enabled where required (
 - **Device poll “grant request is invalid” after browser success**: Grant `accountId` must be an id `findAccount` can load (`end_users` / `users`), not a raw `app_users.id` alone — see device token exchange mapping above.
 - **Tests**: `src/test-env.ts` sets dummy `DATABASE_URL` when unset so `npm test` can import DB modules; integration tests may still need a real DB.
 
-When changing OAuth behavior, update `docs/builder-api.md` in the same PR when integrator contracts change.
+When changing OAuth behavior, update `docs/builder-api.md` in the same PR when integrator contracts change, and align the Mintlify pages under `integration/` in [pymthouse-docs](https://github.com/eliteprox/pymthouse-docs) as needed.

@@ -9,7 +9,7 @@ import { developerApps, oidcClients } from "@/db/schema";
 import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 
 const DEFAULT_DOCS_URL =
-  "https://github.com/eliteprox/pymthouse/tree/main/docs";
+  "https://docs.pymthouse.com";
 
 // ─── App showcase helpers ────────────────────────────────────────────────────
 
