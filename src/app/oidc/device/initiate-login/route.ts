@@ -4,6 +4,7 @@ import {
   buildInitiateLoginRedirectUrl,
   initiateSkipCookieOptions,
   thirdPartyInitiateSkipCookieName,
+  userCodeFromDeviceTargetLinkUri,
 } from "@/lib/oidc/third-party-initiate-login";
 import { getIssuer } from "@/lib/oidc/tokens";
 
@@ -55,7 +56,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  const userCode = userCodeFromDeviceTargetLinkUri(targetLinkUri);
   const res = NextResponse.redirect(dest, 302);
-  res.cookies.set(thirdPartyInitiateSkipCookieName(clientId), "1", initiateSkipCookieOptions());
+  res.cookies.set(
+    thirdPartyInitiateSkipCookieName(clientId, userCode),
+    "1",
+    initiateSkipCookieOptions(),
+  );
   return res;
 }

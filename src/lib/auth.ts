@@ -13,6 +13,20 @@ export { hashToken };
 const TOKEN_PREFIX = "pmth_";
 const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
 
+/**
+ * RFC 6749 §2.3.1 Appendix B: Basic auth credentials are
+ * `application/x-www-form-urlencoded` before base64. RFC-compliant clients
+ * (e.g. oauth4webapi) percent-encode `_`, `-`, `.` as `%5F`, `%2D`, `%2E`;
+ * we must URL-decode after base64. Idempotent for plain alnum strings.
+ */
+function decodeBasicAuthComponent(value: string): string {
+  try {
+    return decodeURIComponent(value.replace(/\+/g, " "));
+  } catch {
+    return value;
+  }
+}
+
 export function generateBearerToken(): { token: string; hash: string } {
   const raw = randomBytes(32).toString("hex");
   const token = `${TOKEN_PREFIX}${raw}`;
@@ -293,8 +307,8 @@ export async function authenticateAppClient(request: NextRequest): Promise<{
     const decoded = Buffer.from(authHeader.slice(6), "base64").toString("utf-8");
     const colonIdx = decoded.indexOf(":");
     if (colonIdx > 0) {
-      clientId = decoded.slice(0, colonIdx);
-      clientSecret = decoded.slice(colonIdx + 1);
+      clientId = decodeBasicAuthComponent(decoded.slice(0, colonIdx));
+      clientSecret = decodeBasicAuthComponent(decoded.slice(colonIdx + 1));
     }
   }
 

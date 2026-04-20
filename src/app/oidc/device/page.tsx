@@ -70,7 +70,7 @@ export default async function DeviceVerificationPage({
 
   if (!session?.user) {
     const skipCookieName = authoritativeClientId
-      ? thirdPartyInitiateSkipCookieName(authoritativeClientId)
+      ? thirdPartyInitiateSkipCookieName(authoritativeClientId, userCode)
       : null;
     const skipThirdParty =
       skipCookieName !== null

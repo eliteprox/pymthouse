@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { normalizeUserCode } from "@/lib/oidc/device";
 import { getPublicOrigin } from "@/lib/oidc/tokens";
 
 const INITIATE_SKIP_MAX_AGE_SEC = 120;
@@ -128,9 +129,37 @@ export function buildInitiateLoginRedirectUrl(
   return dest.toString();
 }
 
-/** Per-client cookie so one RP opt-in does not suppress redirects for another app. */
-export function thirdPartyInitiateSkipCookieName(clientId: string): string {
-  const h = createHash("sha256").update(clientId).digest("hex").slice(0, 16);
+/**
+ * Extract `user_code` from a device `target_link_uri` (same shape as
+ * `buildDeviceFlowTargetLinkUri`).
+ */
+export function userCodeFromDeviceTargetLinkUri(
+  targetLinkUri: string,
+): string | undefined {
+  try {
+    const raw = new URL(targetLinkUri).searchParams.get("user_code")?.trim();
+    return raw || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * HttpOnly cookie name: one skip flag per **client + device user code** so a
+ * prior attempt (or logout / new CLI code) does not block third-party
+ * `initiate_login_uri` redirects for unrelated flows for the same app.
+ */
+export function thirdPartyInitiateSkipCookieName(
+  clientId: string,
+  userCode?: string | null,
+): string {
+  const normalized = userCode?.trim()
+    ? normalizeUserCode(userCode)
+    : "";
+  const h = createHash("sha256")
+    .update(`${clientId}\0${normalized}`)
+    .digest("hex")
+    .slice(0, 16);
   return `pmth_tp_skip_${h}`;
 }
 

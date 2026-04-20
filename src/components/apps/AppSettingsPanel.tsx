@@ -69,7 +69,8 @@ export default function AppSettingsPanel({ data }: Props) {
         body: JSON.stringify({
           redirectUris,
           postLogoutRedirectUris,
-          initiateLoginUri: initiateLoginUri || null,
+          initiateLoginUri: initiateLoginUri.trim() || null,
+          deviceThirdPartyInitiateLogin: Boolean(initiateLoginUri.trim()),
           tokenEndpointAuthMethod,
         }),
       });

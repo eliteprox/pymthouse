@@ -34,6 +34,21 @@ const RESOURCE_REQUIRED_GRANTS = new Set([
 
 const DEBUG_OIDC_LOGS = process.env.OIDC_DEBUG_LOGS === "1";
 
+/**
+ * RFC 6749 §2.3.1 Appendix B: `client_id` and `client_secret` in Basic auth are
+ * `application/x-www-form-urlencoded` before base64 encoding (so `_` → `%5F`,
+ * etc.). oauth4webapi follows this strictly; node-oidc-provider does too.
+ * We must URL-decode after base64 or lookups for ids/secrets containing
+ * any non-unreserved char (including common `_`) fail as `invalid_client`.
+ */
+function formUrlDecode(value: string): string {
+  try {
+    return decodeURIComponent(value.replace(/\+/g, " "));
+  } catch {
+    return value;
+  }
+}
+
 function clientCredentialsFromTokenRequest(
   request: NextRequest,
   params: URLSearchParams,
@@ -45,8 +60,8 @@ function clientCredentialsFromTokenRequest(
       const idx = decoded.indexOf(":");
       if (idx > 0) {
         return {
-          clientId: decoded.slice(0, idx),
-          clientSecret: decoded.slice(idx + 1),
+          clientId: formUrlDecode(decoded.slice(0, idx)),
+          clientSecret: formUrlDecode(decoded.slice(idx + 1)),
         };
       }
     } catch {
