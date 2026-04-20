@@ -115,7 +115,6 @@ export async function PATCH(request: NextRequest) {
   if (body.defaultCutPercent !== undefined)
     updates.defaultCutPercent = body.defaultCutPercent;
   if (body.billingMode !== undefined) updates.billingMode = body.billingMode;
-  if (body.naapApiKey !== undefined) updates.naapApiKey = body.naapApiKey;
 
   // Remote discovery: when enabled, orchWebhookUrl and liveAICapReportInterval are used
   if (body.remoteDiscovery !== undefined) {

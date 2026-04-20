@@ -60,7 +60,6 @@ export const signerConfig = pgTable("signer_config", {
   reserveWei: text("reserve_wei").default("0"),
   defaultCutPercent: real("default_cut_percent").notNull().default(15.0),
   billingMode: text("billing_mode").notNull().default("delegated"), // prepay | delegated
-  naapApiKey: text("naap_api_key"),
   remoteDiscovery: integer("remote_discovery").notNull().default(0), // 0=false, 1=true
   orchWebhookUrl: text("orch_webhook_url"), // required when remoteDiscovery
   liveAICapReportInterval: text("live_ai_cap_report_interval"), // e.g. 5m, 10s; required when remoteDiscovery
