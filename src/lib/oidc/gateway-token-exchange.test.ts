@@ -10,6 +10,10 @@ import {
 import { TokenExchangeError } from "./token-exchange";
 import type { DrizzleDb } from "./client-sibling";
 
+/**
+ * Sequential `.limit()` results for each `db.select` in `handleGatewayTokenExchange` /
+ * `resolveGatewaySessionPrincipal` (order must match runtime query order).
+ */
 function dbMock(rows: unknown[][]): DrizzleDb {
   let i = 0;
   const next = () => {
@@ -79,8 +83,14 @@ const noopDeps: Partial<GatewayTokenExchangeDeps> = {
   }),
 };
 
+/** Slot 0: `oidcClients` by `client_id`. Slot 1: `appUsers` by developer app + subject `sub`. */
 function rowsHappyPathSibling(): unknown[][] {
   return [[m2mRowOk], [{ externalUserId: "ext-1" }]];
+}
+
+/** Slot 0: M2M `oidcClients`. Slot 1: `appUsers` (empty). Slot 2: `endUsers` (empty) — legacy machine `sub` path. */
+function rowsLegacyMachineSubject(): unknown[][] {
+  return [[m2mRowOk], [], []];
 }
 
 test("isGatewayTokenExchangeRequest is false for device_code resource", () => {
@@ -107,6 +117,7 @@ test("isGatewayTokenExchangeRequest is true without device resource", () => {
   );
 });
 
+// dbMock: see `rowsHappyPathSibling` — [0] oidcClients, [1] appUsers.
 test("handleGatewayTokenExchange success when subject client_id is public sibling", async () => {
   const out = await handleGatewayTokenExchange(
     {
@@ -126,6 +137,7 @@ test("handleGatewayTokenExchange success when subject client_id is public siblin
   assert.equal(out.scope, "sign:job");
 });
 
+// dbMock: see `rowsLegacyMachineSubject`.
 test("handleGatewayTokenExchange success legacy subject issued to M2M", async () => {
   const out = await handleGatewayTokenExchange(
     {
@@ -136,7 +148,7 @@ test("handleGatewayTokenExchange success legacy subject issued to M2M", async ()
     },
     {
       ...noopDeps,
-      db: dbMock([[m2mRowOk], [], []]),
+      db: dbMock(rowsLegacyMachineSubject()),
       verifyAccessToken: async () =>
         baseJwtPayload({ client_id: M2M_ID, sub: "machine-sub" }),
       findOrCreateAppEndUser: async () => {
@@ -168,6 +180,7 @@ test("handleGatewayTokenExchange invalid_client when secret invalid", async () =
 });
 
 test("handleGatewayTokenExchange invalid_scope without users:token", async () => {
+  // dbMock: [0] oidcClients — fails scope check after first select.
   await rejectsWithCode(
     () =>
       handleGatewayTokenExchange(
@@ -194,6 +207,7 @@ test("handleGatewayTokenExchange invalid_scope without users:token", async () =>
 });
 
 test("handleGatewayTokenExchange invalid_grant when subject client mismatch", async () => {
+  // dbMock: [0] oidcClients — fails after verifyAccessToken + client_id check.
   await rejectsWithCode(
     () =>
       handleGatewayTokenExchange(
@@ -215,6 +229,7 @@ test("handleGatewayTokenExchange invalid_grant when subject client mismatch", as
 });
 
 test("handleGatewayTokenExchange invalid_grant without sign:job on subject", async () => {
+  // dbMock: [0] oidcClients — fails scope check on subject JWT.
   await rejectsWithCode(
     () =>
       handleGatewayTokenExchange(
@@ -236,6 +251,7 @@ test("handleGatewayTokenExchange invalid_grant without sign:job on subject", asy
 });
 
 test("handleGatewayTokenExchange invalid_target when audience wrong", async () => {
+  // dbMock: [0] oidcClients — fails audience assertion before further selects.
   await rejectsWithCode(
     () =>
       handleGatewayTokenExchange(
@@ -256,6 +272,7 @@ test("handleGatewayTokenExchange invalid_target when audience wrong", async () =
 });
 
 test("handleGatewayTokenExchange invalid_target when resource not issuer", async () => {
+  // dbMock: [0] oidcClients — fails resource assertion before further selects.
   await rejectsWithCode(
     () =>
       handleGatewayTokenExchange(
@@ -276,6 +293,7 @@ test("handleGatewayTokenExchange invalid_target when resource not issuer", async
 });
 
 test("handleGatewayTokenExchange invalid_request when requested_token_type wrong", async () => {
+  // dbMock: [0] oidcClients — fails requested_token_type check before further selects.
   await rejectsWithCode(
     () =>
       handleGatewayTokenExchange(
@@ -295,6 +313,7 @@ test("handleGatewayTokenExchange invalid_request when requested_token_type wrong
   );
 });
 
+// dbMock: `rowsHappyPathSibling` (issuer resource still uses two-query happy path).
 test("handleGatewayTokenExchange accepts resource when equal to issuer", async () => {
   const issuer = (await import("./issuer-urls")).getIssuer();
   const out = await handleGatewayTokenExchange(

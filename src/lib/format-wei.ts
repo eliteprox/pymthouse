@@ -46,7 +46,12 @@ export function formatWeiHuman(weiStr: string | null | undefined): string {
   const gRem = w % WEI_PER_GWEI;
   if (gRem === 0n) return gWhole.toString();
   const frac = subGweiFractionalDigits(gRem, 6);
-  return frac ? `${gWhole.toString()}.${frac}` : gWhole.toString();
+  if (frac) return `${gWhole.toString()}.${frac}`;
+  // Remainder wei is nonzero but rounds to 0 at 6 fractional gwei digits; 9 digits
+  // resolve sub-gwei wei exactly (1 gwei = 1e9 wei).
+  const fracFine = subGweiFractionalDigits(gRem, 9);
+  if (fracFine) return `${gWhole.toString()}.${fracFine}`;
+  return "<0.000001 gwei";
 }
 
 /** Wei column label helper: value + unit suffix for table headers. */

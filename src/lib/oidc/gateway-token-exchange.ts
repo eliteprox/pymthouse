@@ -179,11 +179,14 @@ export async function handleGatewayTokenExchange(
     );
   } catch (err) {
     if (err instanceof DeveloperAppSiblingAmbiguousError) {
-      console.error("[gateway-token-exchange]", err.message);
+      console.error("[gateway-token-exchange] ambiguous developer app mapping", {
+        message: err.message,
+        conflictingDeveloperAppIds: err.conflictingDeveloperAppIds,
+      });
       throw new TokenExchangeError(
         "invalid_request",
-        "Ambiguous developer app mapping for this client",
         err.message,
+        "Ambiguous developer app mapping for this client",
       );
     }
     throw err;
