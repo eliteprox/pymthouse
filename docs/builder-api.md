@@ -1,113 +1,27 @@
-# PymtHouse Builder API — developer guide
+# Builder API (confidential clients)
 
-This document is the single reference for integrating applications with PymtHouse using the **Builder API** (REST), the **Usage API**, and the **OIDC issuer**. Together they form the “Builder” product surface for provisioning users, issuing tokens, completing device login, and reading metered usage.
+Public docs: [docs.pymthouse.com](https://docs.pymthouse.com) (Mintlify source in `mint-docs/integration/builder-api.mdx`).
 
-**Conventions used throughout**
+This document defines the official PymtHouse Builder API for confidential OAuth clients. It covers machine authentication, end-user provisioning, and issuance of user-scoped JWTs to your backend.
 
-- **`client_id`** — Canonical OAuth application identifier in URL paths (`/api/v1/apps/{clientId}/...`). Internal database IDs are not part of the public contract.
-- **Standards** — OAuth 2.0 (RFC 6749), Bearer tokens (RFC 6750), JWT access tokens (RFC 9068), PKCE (RFC 7636), token exchange (RFC 8693), resource indicators (RFC 8707).
+The API follows OAuth 2.0 and OIDC conventions:
+- OAuth 2.0 (RFC 6749) for token acquisition
+- Bearer token usage (RFC 6750)
+- JWT access tokens (RFC 9068)
+- Token exchange for remote signer session flow (RFC 8693)
+- Resource indicators (RFC 8707)
 
----
+For issuer-level OIDC behavior and token endpoint details, see [NaaP OIDC integration](naap-oidc-integration.md).
 
-## Table of contents
+## Identity model
 
-1. [Architecture overview](#architecture-overview)
-2. [OIDC issuer](#oidc-issuer)
-3. [Authentication for Builder and Usage APIs](#authentication-for-builder-and-usage-apis)
-4. [User management](#user-management)
-5. [Issue user-scoped JWT](#issue-user-scoped-jwt)
-6. [Complete device authorization (RFC 8628 + RFC 8693)](#complete-device-authorization-rfc-8628--rfc-8693)
-7. [Remote signer session exchange (RFC 8693)](#remote-signer-session-exchange-rfc-8693)
-8. [Interactive login and machine access](#interactive-login-and-machine-access)
-9. [Usage API](#usage-api)
-10. [End-to-end integration flows](#end-to-end-integration-flows)
-11. [Security boundaries and privilege model](#security-boundaries-and-privilege-model)
-12. [Implementation checklist](#implementation-checklist)
-13. [Implementation reference](#implementation-reference)
-14. [Design notes](#design-notes)
-15. [Troubleshooting](#troubleshooting)
+- `client_id` is the canonical app identifier in Builder API URLs.
+- Builder API paths use `/api/v1/apps/{clientId}/...`.
+- Internal database IDs are implementation details and are not part of the public API contract.
 
----
+## Authentication
 
-## Architecture overview
-
-PymtHouse exposes:
-
-| Surface | Base path | Role |
-| --- | --- | --- |
-| **OIDC issuer** | `/api/v1/oidc` | Discovery, authorization, token, JWKS, device flow, session end |
-| **Builder API** | `/api/v1/apps/{clientId}/users` | Provision users and mint user-scoped JWTs (confidential clients) |
-| **Usage API** | `/api/v1/apps/{clientId}/usage` | Aggregated request counts and fees (read-only) |
-
-Use **discovery** in production so paths stay aligned with the deployment:
-
-`{issuer}/.well-known/openid-configuration`
-
-**Two clients per interactive app.** Apps that need a public client (browser, SDK, RFC 8628 device flow) *and* a confidential backend (Builder routes, RFC 8693 device approval) typically register **two** OIDC clients for one developer app: a primary public `app_…` client and an optional confidential **`m2m_…`** sibling (`developer_apps.m2m_oidc_client_id`). Generating a secret on the public client breaks device login; secrets belong only on the M2M client.
-
-Clients are created through app registration (dashboard/API). `npm run oidc:seed` initializes signing keys only.
-
-### API surfaces (at a glance)
-
-```mermaid
-flowchart TB
-  subgraph callers["Integrator side"]
-    direction TB
-    BE["Backend service<br/>(Bearer or Basic, confidential)"]
-    UA["Browser, CLI, or SDK<br/>(public client, PKCE / device codes)"]
-  end
-  subgraph ph["PymtHouse"]
-    direction TB
-    OIDC["OIDC issuer<br/>/api/v1/oidc"]
-    BLDR["Builder API<br/>/api/v1/apps/.../users"]
-    USE["Usage API<br/>/api/v1/apps/.../usage"]
-  end
-  UA --> OIDC
-  BE --> OIDC
-  BE --> BLDR
-  BE --> USE
-```
-
----
-
-## OIDC issuer
-
-### Issuer and discovery
-
-- **Issuer (local default):** `http://localhost:3001/api/v1/oidc`
-- **Discovery:** `{issuer}/.well-known/openid-configuration`
-- **JWKS:** `{issuer}/jwks`
-- **Authorization:** `{issuer}/auth`
-- **Token:** `{issuer}/token`
-- **UserInfo:** `{issuer}/me` (when enabled)
-- **RP-initiated logout:** discovery advertises `end_session_endpoint` (`{issuer}/session/end`); use registered **`post_logout_redirect_uris`**
-
-All clients are registered application clients (no special first-party exceptions).
-
-### Supported grants
-
-| Grant | Typical use |
-| --- | --- |
-| `authorization_code` | Interactive login |
-| `refresh_token` | Token rotation |
-| `client_credentials` | Machine-to-machine |
-| `urn:ietf:params:oauth:grant-type:token-exchange` | Device approval binding, remote signer session, app token exchange |
-| Device code (RFC 8628) | CLI / limited-input devices |
-
-### Client authentication
-
-- **Confidential clients** authenticate at the token endpoint with `client_id` + `client_secret`.
-- **Public clients** use `token_endpoint_auth_method: none` and PKCE where required.
-
-Requested scopes must be a subset of each client’s configured scope policy.
-
----
-
-## Authentication for Builder and Usage APIs
-
-Tenant boundary: the path **`clientId`** must match the authenticated app (public `app_…` id for Builder user routes — see implementation).
-
-### 1) Machine token (client credentials)
+### 1) Obtain machine token (client credentials grant)
 
 Call the OIDC token endpoint:
 

@@ -1,0 +1,23 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#14b8a6" stop-opacity="0.20"/>
+    </linearGradient>
+  </defs>
+  <!-- rounded square background -->
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <rect width="64" height="64" rx="14" fill="none" stroke="#34d399" stroke-opacity="0.45" stroke-width="1.5"/>
+  <!-- "ph" monogram: "p" in emerald-400, "h" in zinc-200 -->
+  <text
+    x="32"
+    y="44"
+    text-anchor="middle"
+    font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
+    font-size="30"
+    font-weight="800"
+    letter-spacing="-1"
+  >
+    <tspan fill="#34d399">p</tspan><tspan fill="#e4e4e7">h</tspan>
+  </text>
+</svg>

@@ -1,0 +1,225 @@
+---
+title: Usage API
+description: Query aggregated request counts and fee totals for your app, with optional per-user attribution, for billing dashboards and cost analytics.
+---
+
+The Usage API is a read-only endpoint that exposes aggregated usage data for a developer application. It is designed for **billing dashboards**, **cost analytics**, and **per-user attribution** workflows.
+
+All monetary values are expressed in **wei** as decimal strings to preserve precision across the full range of possible fee values.
+
+## Authentication
+
+Two auth modes are accepted. The tenant boundary is enforced identically in both: the `clientId` in the URL path must match the authenticated principal's app.
+
+### Confidential client (recommended for server-to-server)
+
+HTTP Basic auth with your M2M credentials:
+
+```http
+GET /api/v1/apps/{clientId}/usage HTTP/1.1
+Authorization: Basic base64(m2m_id:m2m_secret)
+```
+
+No additional scope is required beyond possessing valid M2M credentials — the endpoint only returns data for the authenticated client's own app.
+
+### Provider dashboard session
+
+A logged-in provider session whose user is the app's owner, a platform admin, or a `providerAdmins` team member may call the endpoint without Basic auth. This is what powers the in-app usage dashboard.
+
+<Note>
+  Requests that satisfy neither auth mode, or whose authenticated principal does not match the path `clientId`, receive **`404 Not Found`**. The endpoint deliberately does not distinguish "unauthenticated" from "not found" to avoid leaking app existence.
+</Note>
+
+## Endpoint
+
+```http
+GET /api/v1/apps/{clientId}/usage
+```
+
+### Path parameters
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `clientId` | string | OAuth `client_id` of the developer app (`app_…`). Must match the authenticated client. |
+
+### Query parameters
+
+All query parameters are optional.
+
+| Parameter | Type | Default | Description |
+| --- | --- | --- | --- |
+| `startDate` | ISO 8601 timestamp | — | Inclusive lower bound on record creation time. |
+| `endDate` | ISO 8601 timestamp | — | Inclusive upper bound on record creation time. |
+| `groupBy` | `none` \| `user` | `none` | When `user`, includes a `byUser` breakdown in the response. |
+| `userId` | string | — | Filter to a single user by their **internal** PymtHouse `endUserId`. |
+
+**Date format:** `Date.parse`-compatible strings are accepted (e.g. `2026-01-01T00:00:00.000Z` or `2026-01-01`). Invalid values return `400 Bad Request`.
+
+**`userId` vs `externalUserId`:** The `userId` parameter accepts the **internal** PymtHouse user id (`endUserId`), not your system's `externalUserId`. To resolve an `externalUserId` to an `endUserId`, call `GET /api/v1/apps/{clientId}/usage?groupBy=user` and inspect the `byUser[].externalUserId` field.
+
+## Response
+
+### 200 OK
+
+```json
+{
+  "clientId": "app_f4c21e7ac5f35d3e91bfad7f",
+  "period": {
+    "start": "2026-01-01T00:00:00.000Z",
+    "end": "2026-12-31T23:59:59.999Z"
+  },
+  "totals": {
+    "requestCount": 1423,
+    "totalFeeWei": "128750000000000000"
+  },
+  "byUser": [
+    {
+      "endUserId": "5d2b1234-uuid-...",
+      "externalUserId": "user-123",
+      "requestCount": 42,
+      "feeWei": "3750000000000000"
+    },
+    {
+      "endUserId": "unknown",
+      "externalUserId": null,
+      "requestCount": 7,
+      "feeWei": "625000000000000"
+    }
+  ]
+}
+```
+
+### Response fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `clientId` | string | Echo of the path `clientId`. |
+| `period.start` | string \| null | Echo of `startDate`, or `null` if omitted. |
+| `period.end` | string \| null | Echo of `endDate`, or `null` if omitted. |
+| `totals.requestCount` | integer | Total number of usage records matching the filter. |
+| `totals.totalFeeWei` | string | Sum of all fees in wei, as a base-10 decimal string. |
+| `byUser` | array | Present only when `groupBy=user`. One entry per distinct user. |
+| `byUser[].endUserId` | string | Internal PymtHouse user id, or `"unknown"` for unattributed records. |
+| `byUser[].externalUserId` | string \| null | Your system's user identifier, when resolvable. |
+| `byUser[].requestCount` | integer | Requests attributed to this user. |
+| `byUser[].feeWei` | string | Fees for this user in wei, as a base-10 decimal string. |
+
+<Warning>
+  `totalFeeWei` and `feeWei` are decimal strings, not numbers. They can exceed `Number.MAX_SAFE_INTEGER`. Always parse them with a BigInt-capable library (e.g. `BigInt(feeWei)` in JavaScript, `viem`'s `formatEther` for display).
+</Warning>
+
+### The `"unknown"` bucket
+
+Usage records without a resolvable `userId` are grouped under `endUserId: "unknown"` rather than silently dropped. This guarantees that `totals.totalFeeWei` always equals the sum of `byUser[].feeWei` (including the `"unknown"` bucket) when `groupBy=user` is requested.
+
+## Examples
+
+```bash
+export BASE_URL="http://localhost:3001"    # or your production URL
+export CLIENT_ID="app_yourClientId"
+export M2M_ID="m2m_yourClientId"
+export M2M_SECRET="pmth_cs_yourSecret"
+```
+
+### App-level totals (all time)
+
+```bash
+curl -sS \
+  -u "${M2M_ID}:${M2M_SECRET}" \
+  "${BASE_URL}/api/v1/apps/${CLIENT_ID}/usage" | jq .
+```
+
+### Per-user breakdown
+
+```bash
+curl -sS \
+  -u "${M2M_ID}:${M2M_SECRET}" \
+  "${BASE_URL}/api/v1/apps/${CLIENT_ID}/usage?groupBy=user" | jq .
+```
+
+### Month-to-date window
+
+```bash
+curl -sS \
+  -u "${M2M_ID}:${M2M_SECRET}" \
+  "${BASE_URL}/api/v1/apps/${CLIENT_ID}/usage\
+?startDate=2026-04-01T00:00:00.000Z\
+&endDate=2026-04-30T23:59:59.999Z" | jq .
+```
+
+### Date window with per-user breakdown
+
+```bash
+curl -sS \
+  -u "${M2M_ID}:${M2M_SECRET}" \
+  "${BASE_URL}/api/v1/apps/${CLIENT_ID}/usage\
+?groupBy=user\
+&startDate=2026-04-01T00:00:00.000Z\
+&endDate=2026-04-30T23:59:59.999Z" | jq .
+```
+
+### Filter to a single user
+
+```bash
+export END_USER_ID="5d2b1234-uuid-..."   # endUserId from a prior groupBy=user response
+
+curl -sS \
+  -u "${M2M_ID}:${M2M_SECRET}" \
+  "${BASE_URL}/api/v1/apps/${CLIENT_ID}/usage?userId=${END_USER_ID}" | jq .
+```
+
+### Format wei as ETH in a shell script
+
+```bash
+RESPONSE=$(curl -sS \
+  -u "${M2M_ID}:${M2M_SECRET}" \
+  "${BASE_URL}/api/v1/apps/${CLIENT_ID}/usage")
+
+TOTAL_WEI=$(echo "${RESPONSE}" | jq -r '.totals.totalFeeWei')
+# Use node for BigInt arithmetic in shell
+node -e "const w = BigInt('${TOTAL_WEI}'); const eth = Number(w) / 1e18; console.log(eth.toFixed(6) + ' ETH')"
+```
+
+## Error responses
+
+| Status | Condition |
+| --- | --- |
+| `400 Bad Request` | `startDate` or `endDate` is not parseable by `Date.parse`. |
+| `404 Not Found` | No authenticated principal, credentials valid but for a different app, or `clientId` does not resolve to a known app. |
+
+## Data model reference
+
+The endpoint aggregates `usage_records` table rows:
+
+| Column | Type | Meaning |
+| --- | --- | --- |
+| `request_id` | text | Upstream signer/request identifier; unique per client. |
+| `user_id` | text (nullable) | Internal `endUserId`; `null` for records not attributable to a user. |
+| `fee` | text | Fee in wei as a decimal string; summed into `totalFeeWei`. |
+| `created_at` | text | ISO 8601 timestamp; used for `startDate`/`endDate` filtering. |
+
+## Security boundaries
+
+- Tenant isolation is enforced by matching the authenticated client's app to the path `clientId`. A valid credential for a different app returns `404`.
+- Provider sessions must be the app owner, a platform admin, or a recorded `providerAdmins` team member.
+- No secrets, signer material, per-request payloads, or customer PII are returned. The endpoint exposes aggregate counters and user-id correlation only.
+- Confidential client secrets must stay server-side. Do not call this endpoint from the browser with Basic auth.
+
+## Key design decisions
+
+1. **`client_id` as the path tenant identifier.** Consistent with the Builder API, this avoids exposing internal database IDs and keeps the URL stable across credential rotations.
+2. **`404` for all auth and tenant-mismatch failures.** Collapsing `401`, `403`, and "wrong app" into `404` prevents enumeration of valid `client_id`s and keeps the security surface area small.
+3. **Fee totals as decimal strings.** Fees are wei-denominated and frequently exceed 2^53. Returning them as strings guarantees lossless JSON round-trips in every language that has a standard JSON parser.
+4. **Aggregation in application code, not SQL.** Sums and grouping are computed in the route handler using BigInt arithmetic, keeping the Drizzle query simple and the code portable. This is a reasonable trade-off until per-app row counts require SQL-level aggregation.
+5. **Per-user grouping is opt-in.** The default response is inexpensive and safe to poll; `groupBy=user` triggers an additional `app_users` query for `externalUserId` correlation and produces a larger payload. It is only executed when explicitly requested.
+6. **`userId` accepts the internal id, not `externalUserId`.** This keeps the filter a direct index lookup on `usage_records.user_id` without a join. Callers with only an `externalUserId` must resolve it first via a `groupBy=user` response.
+7. **Unattributed records surface under `"unknown"`.** Preferred over silently dropping them so that `totals.totalFeeWei` always equals the sum of `byUser[].feeWei`.
+
+## Implementation tasks
+
+- Parse `totalFeeWei` and `feeWei` with `BigInt` before any arithmetic. Do not cast to `Number` before comparing or summing values.
+- When displaying fees in your dashboard, convert from wei using a safe formatter (e.g. `viem`'s `formatEther`).
+- For reconciliation workflows, always supply explicit `startDate`/`endDate` bounds. Omitting bounds returns all-time usage, which grows unboundedly over the app's lifetime.
+- Populate `usage_records.user_id` at write time whenever a request is attributable to a provisioned `app_users` row. Records written without a `user_id` end up in the `"unknown"` bucket and cannot be retroactively attributed.
+- For high-volume apps, prefer `groupBy=user` with a bounded date window. The handler aggregates all matching rows in memory; unbounded all-time queries with `groupBy=user` will become slow as row counts grow.
+- Rotate M2M client secrets periodically via the credentials endpoint. Basic auth to the Usage API uses the same credentials as the Builder API.

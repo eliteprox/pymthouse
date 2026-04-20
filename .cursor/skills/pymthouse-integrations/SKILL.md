@@ -18,7 +18,9 @@ PymtHouse is the **sole OIDC issuer** for integrator apps. External backends tal
 
 | Topic | Path |
 | --- | --- |
-| Builder product (OIDC issuer, Builder API, Usage API, device + token exchange) | `docs/builder-api.md` |
+| Public integrator docs (Mintlify) | [docs.pymthouse.com](https://docs.pymthouse.com) — source in `mint-docs/` |
+| Builder API (Basic auth, users, user JWT, device token exchange) | `docs/builder-api.md` |
+| Issuer, grants, device + third-party initiate | `docs/naap-oidc-integration.md` |
 
 ## Two clients per interactive app
 
