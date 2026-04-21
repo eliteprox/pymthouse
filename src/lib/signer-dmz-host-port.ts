@@ -9,8 +9,11 @@ const DEFAULT_SIGNER_DMZ_HOST_PORT = 8080;
  * (signer-dmz). Matches docker compose env in signer control route.
  */
 export function resolveDmzHostPort(signerPort: number | undefined): number {
-  if (!signerPort || signerPort === LEGACY_BARE_SIGNER_PORT) {
+  if (signerPort === undefined || signerPort === LEGACY_BARE_SIGNER_PORT) {
     return DEFAULT_SIGNER_DMZ_HOST_PORT;
+  }
+  return signerPort;
+}
   }
   return signerPort;
 }
