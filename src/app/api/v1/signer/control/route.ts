@@ -12,13 +12,76 @@ import {
   getJwksUrlForLocalSignerDmzContainer,
   getPublicOrigin,
 } from "@/lib/oidc/issuer-urls";
-import { exec } from "child_process";
-import { promisify } from "util";
-
-const execAsync = promisify(exec);
+import { resolveDmzHostPort } from "@/lib/signer-dmz-host-port";
+import { spawn } from "child_process";
 
 /** `docker compose up --build` can take minutes on a cold build (go-livepeer + Apache image). */
 const COMPOSE_START_TIMEOUT_MS = 15 * 60 * 1000;
+
+/**
+ * Run a shell command with streamed stdout/stderr (no exec maxBuffer cap).
+ * Kills the child after `timeoutMs` (SIGTERM, then SIGKILL).
+ */
+function runShellWithStreamingOutput(options: {
+  command: string;
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  timeoutMs: number;
+}): Promise<{ stdout: string; stderr: string }> {
+  const { command, cwd, env, timeoutMs } = options;
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, {
+      cwd,
+      env,
+      shell: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      const forceKill = setTimeout(() => child.kill("SIGKILL"), 10_000);
+      forceKill.unref?.();
+    }, timeoutMs);
+
+    child.stdout?.on("data", (chunk) => {
+      stdout += Buffer.isBuffer(chunk) ? chunk.toString() : String(chunk);
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += Buffer.isBuffer(chunk) ? chunk.toString() : String(chunk);
+    });
+
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      if (timedOut) {
+        reject(new Error(`docker compose timed out after ${timeoutMs}ms`));
+        return;
+      }
+      if (signal) {
+        reject(new Error(`docker compose exited via signal ${signal}`));
+        return;
+      }
+      if (code !== 0) {
+        reject(
+          new Error(
+            (stderr || stdout || "").trim() ||
+              `docker compose failed (exit ${code ?? "unknown"})`,
+          ),
+        );
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+}
 
 /**
  * POST /api/v1/signer/control -- Control plane for the signer container
@@ -62,13 +125,15 @@ export async function POST(request: NextRequest) {
     const signer = signerRows[0];
     const composeCmd = getComposeCommand(action);
     const composeEnv = buildSignerComposeEnv(signer);
-    const { stdout, stderr } = await execAsync(composeCmd, {
+    const timeoutMs =
+      action === "start" || action === "restart"
+        ? COMPOSE_START_TIMEOUT_MS
+        : 30000;
+    const { stdout, stderr } = await runShellWithStreamingOutput({
+      command: composeCmd,
       cwd: process.cwd(),
-      timeout:
-        action === "start" || action === "restart"
-          ? COMPOSE_START_TIMEOUT_MS
-          : 30000,
       env: composeEnv,
+      timeoutMs,
     });
 
     // Update status based on action
@@ -127,22 +192,7 @@ function getComposeCommand(action: string): string {
   }
 }
 
-/**
- * Legacy bare-signer port (go-livepeer HTTP). With signer-dmz, Apache sits in
- * front and the host-published port is 8080 by default. Older signer_config
- * rows still carry 8081 from the schema default; coerce so compose publishes
- * the DMZ listener port callers expect via SIGNER_INTERNAL_URL.
- */
-const LEGACY_BARE_SIGNER_PORT = 8081;
-const DEFAULT_SIGNER_DMZ_HOST_PORT = 8080;
 const DEFAULT_SIGNER_CLI_HOST_PORT = 8082;
-
-function resolveDmzHostPort(signerPort: number | undefined): number {
-  if (!signerPort || signerPort === LEGACY_BARE_SIGNER_PORT) {
-    return DEFAULT_SIGNER_DMZ_HOST_PORT;
-  }
-  return signerPort;
-}
 
 function buildSignerComposeEnv(
   signer:

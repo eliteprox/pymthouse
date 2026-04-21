@@ -68,6 +68,7 @@ export async function POST(
         allowedScopes: app.pendingScopes,
         grantTypes: app.pendingGrantTypes.split(",").filter(Boolean),
       });
+      resetProvider();
       if (await syncBackendM2mAllowedScopesFromPublicApp(app.id)) {
         resetProvider();
       }

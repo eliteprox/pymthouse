@@ -194,6 +194,7 @@ export async function PUT(
 
       if (Object.keys(clientUpdates).length > 0) {
         await updateClientConfig(client.clientId, clientUpdates);
+        resetProvider();
       }
     }
   }

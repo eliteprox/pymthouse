@@ -6,9 +6,10 @@ ServerTokens Prod
 ServerSignature Off
 
 # Log to container stdout/stderr so `docker logs` surfaces auth failures
-# (mod_authnz_jwt logs rejection reasons at `info` — raise level for debugging,
-# then flip back to `warn` once the DMZ is trusted). Configure via env var
-# APACHE_LOG_LEVEL (default: info for the JWT module, warn for the rest).
+# (mod_authnz_jwt logs rejection reasons at `info` — raise APACHE_AUTH_JWT_LOG_LEVEL
+# for debugging JWT verification, then lower it once the DMZ is trusted). The
+# `warn` prefix applies to all other modules; only the auth_jwt channel follows
+# APACHE_AUTH_JWT_LOG_LEVEL (compose default is typically `info`).
 ErrorLog /dev/stderr
 LogLevel warn auth_jwt:${APACHE_AUTH_JWT_LOG_LEVEL}
 

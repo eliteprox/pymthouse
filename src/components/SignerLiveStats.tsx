@@ -139,7 +139,7 @@ export default function SignerLiveStats() {
 
       {loading ? (
         <p className="text-xs text-zinc-500 animate-pulse">
-          Connecting to CLI port 4935...
+          Connecting to signer CLI (SIGNER_CLI_URL)…
         </p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

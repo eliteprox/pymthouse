@@ -163,6 +163,8 @@ export async function probeSignerHttpReachability(
       } catch {
         /* continue */
       }
+      // Remote signer mode often has no /status (404 from go-livepeer); docs say
+      // to use /healthz only. If healthz passed, the DMZ + upstream HTTP are up.
       return { reachable: true, ethAddress: undefined };
     }
   } catch {

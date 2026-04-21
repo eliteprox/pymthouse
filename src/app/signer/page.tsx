@@ -19,6 +19,7 @@ import {
   getIssuer,
   getJwksUrlForLocalSignerDmzContainer,
 } from "@/lib/oidc/issuer-urls";
+import { resolveDmzHostPort } from "@/lib/signer-dmz-host-port";
 
 function formatWei(wei: string | null): string {
   if (!wei || wei === "0") return "0 WEI";
@@ -74,6 +75,7 @@ export default async function SignerPage() {
   const oidcIssuer = getIssuer();
   const oidcAudience = oidcIssuer;
   const oidcJwksUrl = getJwksUrlForLocalSignerDmzContainer();
+  const dmzHostPort = resolveDmzHostPort(signer.signerPort);
 
   return (
     <DashboardLayout>
@@ -115,7 +117,7 @@ export default async function SignerPage() {
           <ConfigRow label="Network" value={signer.network} />
           <ConfigRow
             label="DMZ host port"
-            value={`127.0.0.1:${signer.signerPort} → Apache :8080 in container`}
+            value={`127.0.0.1:${dmzHostPort} → Apache :8080 in container`}
           />
           <ConfigRow
             label="livepeer (in container)"

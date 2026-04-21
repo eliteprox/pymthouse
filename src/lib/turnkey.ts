@@ -60,14 +60,17 @@ export async function verifyTurnkeySessionJwt(
 
     const decoded = parseCompactJwsPayloadObject(trimmed);
     const exp = decoded.exp;
-    const userId = decoded.user_id as string | undefined;
-    const organizationId = decoded.organization_id as string | undefined;
-    const sessionType = decoded.session_type as string | undefined;
+    const userId = decoded.user_id;
+    const organizationId = decoded.organization_id;
+    const sessionType = decoded.session_type;
 
     if (
       typeof exp !== "number" ||
+      typeof userId !== "string" ||
       !userId ||
+      typeof organizationId !== "string" ||
       !organizationId ||
+      typeof sessionType !== "string" ||
       !sessionType
     ) {
       return null;
