@@ -100,9 +100,9 @@ const SIGNER_SYNC_DMZ_SUBJECT = "pymthouse-signer-sync";
 
 /**
  * Probe whether the signer HTTP front (Apache DMZ + go-livepeer) is reachable.
- * Uses /healthz when present, then GET /status with a server-minted DMZ JWT so
- * the check matches real proxy traffic (sign:job), then falls back to unauthenticated
- * /status for older configs.
+ * When /healthz responds, still requires GET /status to succeed (with DMZ JWT if
+ * enabled, else unauthenticated): /healthz only proves Apache static config, not
+ * that go-livepeer is answering behind the proxy.
  */
 export async function probeSignerHttpReachability(
   signerUrl: string,
@@ -163,9 +163,7 @@ export async function probeSignerHttpReachability(
       } catch {
         /* continue */
       }
-      // Remote signer mode often has no /status (404 from go-livepeer); docs say
-      // to use /healthz only. If healthz passed, the DMZ + upstream HTTP are up.
-      return { reachable: true, ethAddress: undefined };
+      return { reachable: false, ethAddress: undefined };
     }
   } catch {
     /* try /status without healthz */
