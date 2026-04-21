@@ -1,20 +1,23 @@
 /**
  * signer-cli.ts
  *
- * Client for go-livepeer's CLI API (port 4935 by default).
+ * Client for go-livepeer’s CLI API (livepeer listens on 4935 inside the signer
+ * container; with DMZ, PymtHouse calls Apache’s /__signer_cli proxy).
  * This is the same port that livepeer_cli connects to.
  * Must only be called server-side; the port is bound to 127.0.0.1 on the host.
  *
  * When the signer sits behind the Apache DMZ, set SIGNER_CLI_URL to the public
- * base that maps to the CLI port (e.g. https://signer.example.com/__signer_cli).
- * The server mints a short-lived JWT with admin scope for these requests.
+ * base of its **dedicated admin listener** (e.g. http://localhost:8082). The
+ * DMZ also exposes the CLI under /__signer_cli on the HTTP port as a fallback
+ * for single-port deployments. The server mints a short-lived JWT with admin
+ * scope for these requests.
  */
 
 import { issueSignerDmzToken } from "@/lib/signer-dmz-token";
 
 export function getSignerCliUrl(): string {
   if (process.env.SIGNER_CLI_URL) return process.env.SIGNER_CLI_URL;
-  return "http://localhost:4935";
+  return "http://127.0.0.1:8082";
 }
 
 let cliDmzTokenCache: { token: string; expMs: number } | null = null;

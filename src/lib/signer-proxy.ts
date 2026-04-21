@@ -19,6 +19,7 @@ import type { AuthResult } from "./auth";
 import { issueSignerDmzToken } from "./signer-dmz-token";
 import { getSenderInfo } from "./signer-cli";
 import { DOCKER_COMPOSE_LOCAL_SIGNER_SERVICE } from "./signer-local-compose";
+import { getIssuer } from "./oidc/issuer-urls";
 
 export interface ProxyResult {
   status: number;
@@ -63,7 +64,11 @@ export async function getSignerRoutingContext(authAppId?: string | null) {
 }
 
 /**
- * Build the internal URL for the signer container.
+ * Base URL for the signer **HTTP** API (what `forwardToSigner` calls).
+ *
+ * With **signer-dmz**, this must be the **Apache** front (e.g. `http://localhost:8080`),
+ * not go-livepeer’s in-container :8081. Use `SIGNER_INTERNAL_URL` or `signer_url`
+ * when the DB `signer_port` still says 8081 from an old bare-signer row.
  *
  * Always returned without a trailing slash so callers can safely concatenate
  * a leading-slash path (`${base}${path}`). A stored `http://host:8080/` would
@@ -72,12 +77,125 @@ export async function getSignerRoutingContext(authAppId?: string | null) {
  * signer replies with `Method Not Allowed` on GET, surfacing as a 502 with
  * a "Unexpected token 'M'" JSON parse error in the proxy layer.
  */
-function getSignerUrl(signer?: typeof signerConfig.$inferSelect | null): string {
+export function getSignerUrl(signer?: typeof signerConfig.$inferSelect | null): string {
+  // 127.0.0.1 (not "localhost"): the docker-compose publish is bound to 127.0.0.1
+  // only, and some hosts resolve "localhost" to an IPv6 or LAN IPv4 address via
+  // nsswitch/mDNS, producing ECONNREFUSED even when the container is healthy.
+  //
+  // Legacy rows had signer_port=8081 (bare go-livepeer HTTP). That's now the
+  // in-container port; publicly we hit Apache on 8080. Coerce so an un-upgraded
+  // row still lands on the DMZ listener.
+  const LEGACY_BARE_SIGNER_PORT = 8081;
+  const rawPort = signer?.signerPort ?? 8080;
+  const port = rawPort === LEGACY_BARE_SIGNER_PORT ? 8080 : rawPort;
   const base =
     signer?.signerUrl
     || process.env.SIGNER_INTERNAL_URL
-    || `http://localhost:${signer?.signerPort ?? 8080}`;
+    || `http://127.0.0.1:${port}`;
   return base.replace(/\/+$/, "");
+}
+
+/** Stable `sub` for DMZ tokens used only by server-side signer health / sync probes. */
+const SIGNER_SYNC_DMZ_SUBJECT = "pymthouse-signer-sync";
+
+/**
+ * Probe whether the signer HTTP front (Apache DMZ + go-livepeer) is reachable.
+ * When /healthz responds, still requires GET /status to succeed (with DMZ JWT if
+ * enabled, else unauthenticated): /healthz only proves Apache static config, not
+ * that go-livepeer is answering behind the proxy.
+ */
+export async function probeSignerHttpReachability(
+  signerUrl: string,
+): Promise<{ reachable: boolean; ethAddress?: string }> {
+  const timeoutMs = 5000;
+  let ethAddress: string | undefined;
+
+  const parseEthFromStatus = async (
+    response: Response,
+  ): Promise<string | undefined> => {
+    if (!response.ok) return undefined;
+    const data = (await readSignerUpstreamBody(response)) as Record<
+      string,
+      unknown
+    >;
+    return (
+      (typeof data.Address === "string" && data.Address) ||
+      (typeof data.address === "string" && data.address) ||
+      undefined
+    );
+  };
+
+  const fetchStatus = async (headers: Record<string, string>) => {
+    const response = await fetch(`${signerUrl}/status`, {
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const addr = await parseEthFromStatus(response);
+    return { ok: response.ok, addr };
+  };
+
+  try {
+    const health = await fetch(`${signerUrl}/healthz`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (health.ok) {
+      if (process.env.SIGNER_DMZ_FORWARD_JWT !== "false") {
+        try {
+          const token = await issueSignerDmzToken({
+            gate: "http",
+            subject: SIGNER_SYNC_DMZ_SUBJECT,
+          });
+          const { ok, addr } = await fetchStatus({
+            Authorization: `Bearer ${token}`,
+          });
+          if (ok) {
+            return { reachable: true, ethAddress: addr };
+          }
+        } catch {
+          /* continue */
+        }
+      }
+      try {
+        const { ok, addr } = await fetchStatus({});
+        if (ok) {
+          return { reachable: true, ethAddress: addr };
+        }
+      } catch {
+        /* continue */
+      }
+      return { reachable: false, ethAddress: undefined };
+    }
+  } catch {
+    /* try /status without healthz */
+  }
+
+  if (process.env.SIGNER_DMZ_FORWARD_JWT !== "false") {
+    try {
+      const token = await issueSignerDmzToken({
+        gate: "http",
+        subject: SIGNER_SYNC_DMZ_SUBJECT,
+      });
+      const { ok, addr } = await fetchStatus({
+        Authorization: `Bearer ${token}`,
+      });
+      if (ok) {
+        return { reachable: true, ethAddress: addr };
+      }
+    } catch {
+      /* continue */
+    }
+  }
+
+  try {
+    const { ok, addr } = await fetchStatus({});
+    if (ok) {
+      return { reachable: true, ethAddress: addr };
+    }
+  } catch {
+    /* unreachable */
+  }
+
+  return { reachable: false, ethAddress: undefined };
 }
 
 /**
@@ -114,13 +232,19 @@ async function getHttpDmzBearerForSubject(subject: string): Promise<string> {
   return token;
 }
 
+interface ForwardToSignerResult {
+  response: Response;
+  requestUrl: string;
+  authorizationHeader?: string;
+}
+
 async function forwardToSigner(
   signer: typeof signerConfig.$inferSelect | null | undefined,
   path: string,
   method: string,
   body: unknown | undefined,
   auth: AuthResult,
-): Promise<Response> {
+): Promise<ForwardToSignerResult> {
   const url = `${getSignerUrl(signer)}${path}`;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
@@ -135,15 +259,97 @@ async function forwardToSigner(
     headers.Authorization = `Bearer ${token}`;
   }
   try {
-    return await fetch(url, {
+    const response = await fetch(url, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: controller.signal,
     });
+    return {
+      response,
+      requestUrl: url,
+      authorizationHeader: headers.Authorization,
+    };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/** Apache may return HTML on 401; avoid throwing so callers surface real status. */
+async function readSignerUpstreamBody(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text.trim()) return {};
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return {
+      error: "Signer DMZ returned a non-JSON body (often Apache auth failure)",
+      upstreamStatus: response.status,
+      detail: text.slice(0, 800),
+    };
+  }
+}
+
+/**
+ * Decode the (unverified) claims of the DMZ JWT we just minted so we can log
+ * what Apache saw when it rejected the request. We never print the
+ * signature. `sub` is masked at the log layer to limit PII in server logs.
+ */
+function decodeUnverifiedJwtClaims(token: string | undefined): {
+  header?: Record<string, unknown>;
+  payload?: Record<string, unknown>;
+} {
+  if (!token) return {};
+  const parts = token.split(".");
+  if (parts.length < 2) return {};
+  const decodePart = (segment: string): Record<string, unknown> | undefined => {
+    try {
+      const b64 = segment.replace(/-/g, "+").replace(/_/g, "/");
+      const pad = b64.length % 4 === 0 ? "" : "=".repeat(4 - (b64.length % 4));
+      return JSON.parse(Buffer.from(b64 + pad, "base64").toString("utf8")) as Record<
+        string,
+        unknown
+      >;
+    } catch {
+      return undefined;
+    }
+  };
+  return { header: decodePart(parts[0]), payload: decodePart(parts[1]) };
+}
+
+/** Last four characters only, prefixed with … — enough for coarse log correlation without full identifiers. */
+function maskJwtSubjectForLog(sub: unknown): { masked?: string; length?: number } {
+  if (sub === undefined || sub === null) return {};
+  const s = String(sub);
+  if (s.length === 0) return {};
+  return {
+    length: s.length,
+    masked: s.length <= 4 ? "****" : `…${s.slice(-4)}`,
+  };
+}
+
+function formatDmzTokenForLog(authz: string | undefined) {
+  const token = authz?.startsWith("Bearer ") ? authz.slice(7) : undefined;
+  const { header, payload } = decodeUnverifiedJwtClaims(token);
+  const now = Math.floor(Date.now() / 1000);
+  const exp = typeof payload?.exp === "number" ? payload.exp : undefined;
+  const nbf = typeof payload?.nbf === "number" ? payload.nbf : undefined;
+  const subLog = maskJwtSubjectForLog(payload?.sub);
+  return {
+    expected_issuer: getIssuer(),
+    header_kid: header?.kid,
+    header_alg: header?.alg,
+    claim_iss: payload?.iss,
+    claim_aud: payload?.aud,
+    claim_sub_masked: subLog.masked,
+    claim_sub_length: subLog.length,
+    claim_scope: payload?.scope,
+    claim_exp: exp,
+    claim_nbf: nbf,
+    now,
+    exp_in_seconds: exp !== undefined ? exp - now : undefined,
+    nbf_delta_seconds: nbf !== undefined ? nbf - now : undefined,
+  };
 }
 
 function pickConflictingStringAliases(
@@ -208,18 +414,34 @@ export async function proxySignOrchestratorInfo(
   }
 
   try {
-    const response = await forwardToSigner(
+    const { response, requestUrl, authorizationHeader } = await forwardToSigner(
       signer,
       "/sign-orchestrator-info",
       "POST",
       requestBody,
       auth,
     );
-    const responseBody = await response.json();
+    const responseBody = await readSignerUpstreamBody(response);
 
     if (response.ok) {
       const who = auth.endUserId || auth.userId || "unknown";
       console.log(`[proxy] sign-orchestrator-info forwarded for ${who}`);
+    } else if (response.status === 401 || response.status === 403) {
+      const dmzContentType = response.headers.get("content-type") ?? null;
+      const wwwAuthenticate = response.headers.get("www-authenticate") ?? null;
+      console.error(
+        `[proxy] sign-orchestrator-info signer DMZ ${response.status}`,
+        {
+          upstream_url: requestUrl,
+          upstream_content_type: dmzContentType,
+          upstream_www_authenticate: wwwAuthenticate,
+          dmz_token: formatDmzTokenForLog(authorizationHeader),
+          body_preview:
+            typeof responseBody === "object" && responseBody !== null
+              ? JSON.stringify(responseBody).slice(0, 500)
+              : String(responseBody).slice(0, 500),
+        },
+      );
     }
 
     return { status: response.status, body: responseBody };
@@ -353,14 +575,14 @@ export async function proxyGenerateLivePayment(
 
   // Forward to go-livepeer
   try {
-    const response = await forwardToSigner(
+    const { response } = await forwardToSigner(
       signer,
       "/generate-live-payment",
       "POST",
       requestBody,
       auth,
     );
-    const responseBody = await response.json();
+    const responseBody = await readSignerUpstreamBody(response);
 
     if (response.ok && feeWei > 0n) {
       // Dedupe is per explicit RequestID only. Do NOT fall back to manifestId — the gateway
@@ -451,14 +673,14 @@ export async function proxySignByocJob(
   }
 
   try {
-    const response = await forwardToSigner(
+    const { response } = await forwardToSigner(
       signer,
       "/sign-byoc-job",
       "POST",
       requestBody,
       auth,
     );
-    const responseBody = await response.json();
+    const responseBody = await readSignerUpstreamBody(response);
 
     if (response.ok) {
       const who = auth.endUserId || auth.userId || "unknown";
@@ -484,14 +706,14 @@ export async function proxyDiscoverOrchestrators(
   }
 
   try {
-    const response = await forwardToSigner(
+    const { response } = await forwardToSigner(
       signer,
       "/discover-orchestrators",
       "GET",
       undefined,
       auth,
     );
-    const responseBody = await response.json();
+    const responseBody = await readSignerUpstreamBody(response);
 
     if (response.ok) {
       const who = auth.endUserId || auth.userId || "unknown";
@@ -513,20 +735,15 @@ export async function syncSignerStatus(): Promise<{
   ethAddress?: string;
   containerRunning?: boolean;
 }> {
-  // Check if the HTTP endpoint responds
+  // HTTP reachability: /healthz + /status (with server DMZ JWT, same as proxy traffic)
   let reachable = false;
   let ethAddress: string | undefined;
 
   try {
     const defaultSigner = await getDefaultSigner();
-    const response = await fetch(`${getSignerUrl(defaultSigner)}/status`, {
-      signal: AbortSignal.timeout(3000),
-    });
-    if (response.ok) {
-      const data = await response.json();
-      ethAddress = data.Address || data.address || undefined;
-      reachable = true;
-    }
+    const probe = await probeSignerHttpReachability(getSignerUrl(defaultSigner));
+    reachable = probe.reachable;
+    ethAddress = probe.ethAddress;
   } catch {}
 
   // Check Docker container state

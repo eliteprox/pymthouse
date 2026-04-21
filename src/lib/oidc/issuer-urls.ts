@@ -128,14 +128,17 @@ export function getPlatformPublicOidcIssuer(): string {
 }
 
 /**
- * JWKS URL for signer-dmz (`JWKS_URI`). The container's `jwks_to_pem.py` only
- * accepts **https** URLs, so we must not pass `http://host.docker.internal/...`.
- * Defaults to {@link getPlatformJwksUrlForDatabase}. Override with
- * `SIGNER_DMZ_JWKS_URL` (must be https).
+ * JWKS URL for the local signer-dmz container (`JWKS_URI`). Must resolve to the
+ * same keys as {@link getIssuer} (this app). Loopback hosts are rewritten to
+ * `host.docker.internal` so the container can reach the dev server. Override
+ * with `SIGNER_DMZ_JWKS_URL` (https or allowed http dev hosts in jwks_to_pem.py).
  */
 export function getJwksUrlForLocalSignerDmzContainer(): string {
-  if (process.env.SIGNER_DMZ_JWKS_URL?.trim()) {
-    return process.env.SIGNER_DMZ_JWKS_URL.trim();
+  const trimmed = process.env.SIGNER_DMZ_JWKS_URL?.trim();
+  if (trimmed) return trimmed;
+  const u = new URL(`${getIssuer()}/jwks`);
+  if (u.hostname === "localhost" || u.hostname === "127.0.0.1") {
+    u.hostname = "host.docker.internal";
   }
-  return getPlatformJwksUrlForDatabase();
+  return u.toString();
 }

@@ -1,5 +1,5 @@
 import { verifySessionJwtSignature } from "@turnkey/crypto";
-import { decodeJwt } from "jose";
+import { decode as base64urlDecode } from "jose/base64url";
 import { db } from "@/db/index";
 import { endUsers, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -11,6 +11,28 @@ export type TurnkeySessionClaims = {
   expirySeconds: number;
   sessionType: string;
 };
+
+/**
+ * Extract the middle segment of a compact JWS as a JSON object.
+ * Call only after {@link verifySessionJwtSignature} succeeds — Turnkey session JWTs
+ * are not verifiable with `jose.jwtVerify` (custom notarizer digest scheme).
+ */
+function parseCompactJwsPayloadObject(jwt: string): Record<string, unknown> {
+  const parts = jwt.split(".");
+  if (parts.length === 5) {
+    throw new Error("only compact JWS JWTs are supported");
+  }
+  if (parts.length !== 3 || !parts[1]) {
+    throw new Error("invalid JWT");
+  }
+  const bytes = base64urlDecode(parts[1]);
+  const text = new TextDecoder().decode(bytes);
+  const parsed: unknown = JSON.parse(text);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("invalid JWT claims set");
+  }
+  return parsed as Record<string, unknown>;
+}
 
 /**
  * True when public Turnkey Wallet Kit env is set (client can show embedded wallet UI).
@@ -36,16 +58,19 @@ export async function verifyTurnkeySessionJwt(
     const ok = await verifySessionJwtSignature(trimmed);
     if (!ok) return null;
 
-    const decoded = decodeJwt(trimmed) as Record<string, unknown>;
+    const decoded = parseCompactJwsPayloadObject(trimmed);
     const exp = decoded.exp;
-    const userId = decoded.user_id as string | undefined;
-    const organizationId = decoded.organization_id as string | undefined;
-    const sessionType = decoded.session_type as string | undefined;
+    const userId = decoded.user_id;
+    const organizationId = decoded.organization_id;
+    const sessionType = decoded.session_type;
 
     if (
       typeof exp !== "number" ||
+      typeof userId !== "string" ||
       !userId ||
+      typeof organizationId !== "string" ||
       !organizationId ||
+      typeof sessionType !== "string" ||
       !sessionType
     ) {
       return null;

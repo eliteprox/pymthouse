@@ -142,3 +142,7 @@ ENV SIGNER_PORT=8081
 ENV ETH_RPC_URL=https://arb1.arbitrum.io/rpc
 ENV SIGNER_ETH_ADDR=""
 ENV SIGNER_REMOTE_DISCOVERY=0
+
+# Apache listens on $PORT (Railway sets this, default 8080) and on $CLI_PORT (8082).
+# go-livepeer binds loopback :8081 / :4935 only — they must not be the public edge port.
+EXPOSE 8080 8082

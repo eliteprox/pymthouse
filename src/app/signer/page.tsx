@@ -16,9 +16,10 @@ import {
   countActiveStreamsByRecentPayment,
 } from "@/lib/active-streams";
 import {
-  getPlatformJwksUrlForDatabase,
-  getPlatformPublicOidcIssuer,
+  getIssuer,
+  getJwksUrlForLocalSignerDmzContainer,
 } from "@/lib/oidc/issuer-urls";
+import { resolveDmzHostPort } from "@/lib/signer-dmz-host-port";
 
 function formatWei(wei: string | null): string {
   if (!wei || wei === "0") return "0 WEI";
@@ -71,9 +72,10 @@ export default async function SignerPage() {
     error: "bg-red-500/20 text-red-400 border-red-500/30",
   };
 
-  const oidcIssuer = getPlatformPublicOidcIssuer();
+  const oidcIssuer = getIssuer();
   const oidcAudience = oidcIssuer;
-  const oidcJwksUrl = getPlatformJwksUrlForDatabase();
+  const oidcJwksUrl = getJwksUrlForLocalSignerDmzContainer();
+  const dmzHostPort = resolveDmzHostPort(signer.signerPort);
 
   return (
     <DashboardLayout>
@@ -106,15 +108,21 @@ export default async function SignerPage() {
             go-livepeer Remote Signer
           </h3>
           <p className="text-xs text-zinc-500 mt-0.5">
-            OIDC/JWKS rows show the public platform endpoints (
-            <code className="text-zinc-400">PLATFORM_JWKS_URL</code> / issuer).
-            Other fields reflect saved signer settings.
+            OIDC/JWKS match what the local signer-dmz container uses: same issuer
+            as DMZ tokens from this app; JWKS URL is rewritten for Docker (
+            <code className="text-zinc-400">host.docker.internal</code>).
           </p>
         </div>
         <div className="font-mono text-sm">
           <ConfigRow label="Network" value={signer.network} />
-          <ConfigRow label="HttpAddr" value={`0.0.0.0:${signer.signerPort}`} />
-          <ConfigRow label="CliAddr" value="0.0.0.0:4935" />
+          <ConfigRow
+            label="DMZ host port"
+            value={`127.0.0.1:${dmzHostPort} → Apache :8080 in container`}
+          />
+          <ConfigRow
+            label="livepeer (in container)"
+            value="HTTP 127.0.0.1:8081, CLI 127.0.0.1:4935 (not on host)"
+          />
           <ConfigRow label="EthUrl" value={signer.ethRpcUrl} />
           <ConfigRow
             label="EthAcctAddr"
@@ -148,7 +156,7 @@ export default async function SignerPage() {
         </div>
       </div>
 
-      {/* Live signer state from CLI port 4935 */}
+      {/* Live signer state: CLI via SIGNER_CLI_URL (DMZ → /__signer_cli) */}
       <div className="border border-zinc-800 rounded-xl p-6 bg-zinc-900/30 mb-8">
         <SignerLiveStats />
       </div>

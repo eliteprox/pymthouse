@@ -3,7 +3,12 @@ import { developerApps, oidcClients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { randomBytes } from "crypto";
-import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
+import {
+  computeBackendM2mAllowedScopes,
+} from "@/lib/oidc/backend-m2m-scopes";
+import { DEFAULT_OIDC_SCOPES, OIDC_SCOPES } from "@/lib/oidc/scopes";
+
+export { computeBackendM2mAllowedScopes };
 import { hashToken } from "@/lib/token-hash";
 
 export interface OidcClientConfig {
@@ -285,6 +290,60 @@ export async function rotateClientSecret(clientId: string): Promise<string | nul
   return secret;
 }
 
+function normalizeScopeListString(scopes: string): string {
+  return scopes
+    .split(/[,\s]+/)
+    .filter(Boolean)
+    .sort()
+    .join(" ");
+}
+
+/**
+ * Updates the backend M2M client's `allowedScopes` from the public client's
+ * configured scopes. Call after saving the public OIDC client.
+ *
+ * @returns true when the M2M row was updated (caller should reload OIDC provider cache).
+ */
+export async function syncBackendM2mAllowedScopesFromPublicApp(
+  appInternalId: string,
+): Promise<boolean> {
+  const appRows = await db
+    .select()
+    .from(developerApps)
+    .where(eq(developerApps.id, appInternalId))
+    .limit(1);
+  const app = appRows[0];
+  if (!app?.oidcClientId || !app.m2mOidcClientId) {
+    return false;
+  }
+
+  const publicRows = await db
+    .select()
+    .from(oidcClients)
+    .where(eq(oidcClients.id, app.oidcClientId))
+    .limit(1);
+  const m2mRows = await db
+    .select()
+    .from(oidcClients)
+    .where(eq(oidcClients.id, app.m2mOidcClientId))
+    .limit(1);
+  const pub = publicRows[0];
+  const m2m = m2mRows[0];
+  if (!pub || !m2m) {
+    return false;
+  }
+
+  const next = computeBackendM2mAllowedScopes(
+    pub.allowedScopes ?? DEFAULT_OIDC_SCOPES,
+  );
+  if (normalizeScopeListString(next) === normalizeScopeListString(m2m.allowedScopes)) {
+    return false;
+  }
+
+  await updateClientConfig(m2m.clientId, { allowedScopes: next });
+  return true;
+}
+
 /**
  * Ensures a confidential M2M OIDC row exists for interactive apps that need
  * Builder API / device approval without turning the public client confidential.
@@ -314,6 +373,13 @@ export async function ensureM2mBackendClient(params: {
     }
   }
 
+  const pubRows = await db
+    .select({ allowedScopes: oidcClients.allowedScopes })
+    .from(oidcClients)
+    .where(eq(oidcClients.id, app.oidcClientId))
+    .limit(1);
+  const publicScopes = pubRows[0]?.allowedScopes ?? DEFAULT_OIDC_SCOPES;
+
   const id = uuidv4();
   const clientId = generateM2mClientId();
   const display =
@@ -325,7 +391,7 @@ export async function ensureM2mBackendClient(params: {
     clientSecretHash: null,
     displayName: `${display} - backend helper`,
     redirectUris: JSON.stringify([]),
-    allowedScopes: "users:token users:write device:approve",
+    allowedScopes: computeBackendM2mAllowedScopes(publicScopes),
     grantTypes: "client_credentials",
     tokenEndpointAuthMethod: "client_secret_basic",
     deviceThirdPartyInitiateLogin: 0,

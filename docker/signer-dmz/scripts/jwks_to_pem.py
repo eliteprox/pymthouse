@@ -39,6 +39,40 @@ def _decode_jwk_param(jwk: dict, name: str) -> int:
         raise ValueError(f"invalid base64url in JWK field {name!r}: {err}") from err
 
 
+def _jwks_url_allowed(parsed: urllib.parse.ParseResult) -> bool:
+    if not parsed.netloc:
+        return False
+    host = (parsed.hostname or "").lower()
+    allow_http_dev = parsed.scheme == "http" and host in (
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        "host.docker.internal",
+    )
+    if parsed.scheme == "https":
+        return True
+    if allow_http_dev:
+        return True
+    return False
+
+
+class _RejectDisallowedJwksRedirects(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects to schemes/hosts that would bypass initial URL validation."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        merged = urllib.parse.urljoin(req.full_url, newurl)
+        parsed = urllib.parse.urlparse(merged)
+        if not _jwks_url_allowed(parsed):
+            raise urllib.error.HTTPError(
+                merged,
+                code,
+                f"jwks_to_pem: redirect to disallowed URL: {merged!r}",
+                headers,
+                fp,
+            )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def jwk_rsa_to_pem(jwk: dict) -> bytes:
     if jwk.get("kty") != "RSA":
         raise ValueError(f"Unsupported kty: {jwk.get('kty')}")
@@ -71,20 +105,41 @@ def main() -> int:
     )
     args = p.parse_args()
 
-    # Only allow https: JWKS is fetched over the public internet and signing-key trust
-    # depends on TLS. Reject http/file/ftp/etc. outright rather than relying on urlopen defaults.
     parsed = urllib.parse.urlparse(args.url)
-    if parsed.scheme != "https" or not parsed.netloc:
+    if not parsed.netloc:
+        print(f"jwks_to_pem: invalid JWKS URL (no host): {args.url!r}", file=sys.stderr)
+        return 1
+
+    if not _jwks_url_allowed(parsed):
         print(
-            f"jwks_to_pem: refusing to fetch JWKS from non-https URL: {args.url!r}",
+            f"jwks_to_pem: JWKS URL must be https, or http on localhost/127.0.0.1/host.docker.internal: {args.url!r}",
             file=sys.stderr,
         )
         return 1
 
-    ctx = ssl.create_default_context()
     req = urllib.request.Request(args.url, headers={"User-Agent": "pymthouse-signer-dmz/1.0"})
+    redirect_handler = _RejectDisallowedJwksRedirects()
     try:
-        with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+        if parsed.scheme == "https":
+            ctx = ssl.create_default_context()
+            opener = urllib.request.build_opener(
+                redirect_handler,
+                urllib.request.HTTPHandler(),
+                urllib.request.HTTPSHandler(context=ctx),
+            )
+        else:
+            opener = urllib.request.build_opener(
+                redirect_handler,
+                urllib.request.HTTPHandler(),
+            )
+        with opener.open(req, timeout=30) as resp:
+            final = urllib.parse.urlparse(resp.geturl())
+            if not _jwks_url_allowed(final):
+                print(
+                    f"jwks_to_pem: final URL after redirects is not allowed: {resp.geturl()!r}",
+                    file=sys.stderr,
+                )
+                return 1
             body = resp.read()
     except urllib.error.URLError as e:
         print(f"jwks_to_pem: fetch failed: {e}", file=sys.stderr)

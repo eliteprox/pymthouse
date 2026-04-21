@@ -4,7 +4,11 @@ import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
 import { developerApps, oidcClients } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { updateClientConfig } from "@/lib/oidc/clients";
+import {
+  syncBackendM2mAllowedScopesFromPublicApp,
+  updateClientConfig,
+} from "@/lib/oidc/clients";
+import { resetProvider } from "@/lib/oidc/provider";
 import { getProviderApp } from "@/lib/provider-apps";
 import { getPlatformJwksUrlForDatabase } from "@/lib/oidc/issuer-urls";
 
@@ -64,6 +68,10 @@ export async function POST(
         allowedScopes: app.pendingScopes,
         grantTypes: app.pendingGrantTypes.split(",").filter(Boolean),
       });
+      resetProvider();
+      if (await syncBackendM2mAllowedScopesFromPublicApp(app.id)) {
+        resetProvider();
+      }
     }
 
     await db.update(developerApps)

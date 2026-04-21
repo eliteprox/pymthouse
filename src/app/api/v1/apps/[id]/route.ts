@@ -4,7 +4,11 @@ import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
 import { developerApps, oidcClients, appAllowedDomains } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { ensureM2mBackendClient, updateClientConfig } from "@/lib/oidc/clients";
+import {
+  ensureM2mBackendClient,
+  syncBackendM2mAllowedScopesFromPublicApp,
+  updateClientConfig,
+} from "@/lib/oidc/clients";
 import { resetProvider } from "@/lib/oidc/provider";
 import { DEFAULT_OIDC_SCOPES, OIDC_SCOPES } from "@/lib/oidc/scopes";
 import {
@@ -190,6 +194,7 @@ export async function PUT(
 
       if (Object.keys(clientUpdates).length > 0) {
         await updateClientConfig(client.clientId, clientUpdates);
+        resetProvider();
       }
     }
   }
@@ -223,6 +228,10 @@ export async function PUT(
         };
       }
     }
+  }
+
+  if (await syncBackendM2mAllowedScopesFromPublicApp(app.id)) {
+    resetProvider();
   }
 
   return NextResponse.json({ success: true, m2mOidcClient: m2mAfter });

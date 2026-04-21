@@ -171,7 +171,7 @@ See [docs/vercel-deployment.md](docs/vercel-deployment.md) for full step-by-step
 
 ## Troubleshooting
 
-- `Signer is not running` / DMZ 401/403: ensure `signer-dmz` is up (`docker compose ps`) and the app’s `NEXTAUTH_URL` and OIDC issuer in `.env` match; the container must be able to reach `GET .../oidc/jwks` (see `JWKS_URI` in `docker-compose.yml`).
+- `Signer is not running` / DMZ **401** on `/api/signer/*`: Apache `iss` must match `getIssuer()` (your **`NEXTAUTH_URL`** + `/api/v1/oidc`). The compose stack passes **`NEXTAUTH_URL`** into the container so the entrypoint can set `OIDC_ISSUER` / `JWKS_URI`; keep it identical to the URL you use for the Next app (`localhost` vs `127.0.0.1` vs a LAN hostname must match). After changing `docker-compose.yml` or `entrypoint.sh`, rebuild: `docker compose up -d --build`.
 - App can’t open DB: verify `DATABASE_URL` and that `npm run db:prepare` succeeds.
 - OAuth buttons fail: set provider credentials in `.env` or use token login from `npm run bootstrap`.
 - Repeating `JWT_SESSION_ERROR` / `JWEDecryptionFailed`:

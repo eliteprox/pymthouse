@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { getScopeDefinition, OIDC_SCOPES } from "@/lib/oidc/scopes";
+import { computeBackendM2mAllowedScopes } from "@/lib/oidc/backend-m2m-scopes";
+import { DEFAULT_OIDC_SCOPES, getScopeDefinition, OIDC_SCOPES } from "@/lib/oidc/scopes";
 
 interface Props {
   appId: string | null;
@@ -277,6 +278,18 @@ export default function TestingStep({
   -d "client_id=${m2mClientIdForSnippet}" \\
   -d "client_secret=YOUR_CLIENT_SECRET" \\
   -d "scope=${scopesForM2mSnippet}"`
+    : "";
+
+  const backendHelperScopes = computeBackendM2mAllowedScopes(
+    allowedScopes ?? DEFAULT_OIDC_SCOPES,
+  );
+  const backendHelperCurlSnippet = backendHelper?.clientId
+    ? `curl -X POST ${typeof window !== "undefined" ? window.location.origin : ""}/api/v1/oidc/token \\
+  -H "Content-Type: application/x-www-form-urlencoded" \\
+  -d "grant_type=client_credentials" \\
+  -d "client_id=${backendHelper.clientId}" \\
+  -d "client_secret=YOUR_CLIENT_SECRET" \\
+  -d "scope=${backendHelperScopes}"`
     : "";
 
   return (
@@ -634,6 +647,36 @@ export default function TestingStep({
                   <p className="text-xs text-red-400 mt-2">{backendSecretFetchError}</p>
                 )}
               </div>
+              {backendHelperCurlSnippet ? (
+                <div className="pt-3 border-t border-cyan-500/15 space-y-2">
+                  <h4 className="text-xs font-semibold text-cyan-200/80">
+                    Test client credentials (bearer token)
+                  </h4>
+                  <p className="text-xs text-zinc-500">
+                    Run this where your server runs. Replace{" "}
+                    <code className="text-zinc-400">YOUR_CLIENT_SECRET</code> with the secret above (or
+                    one you have stored). The JSON response includes{" "}
+                    <code className="text-zinc-400">access_token</code> — use{" "}
+                    <code className="text-zinc-400">Authorization: Bearer …</code> on Builder routes.
+                    Scopes match the backend helper client (Builder / device approval), not the public
+                    app list.
+                  </p>
+                  <div className="relative">
+                    <pre className="p-3 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-300 font-mono overflow-x-auto whitespace-pre">
+                      {backendHelperCurlSnippet}
+                    </pre>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        copyToClipboard(backendHelperCurlSnippet, "curlBackend")
+                      }
+                      className="absolute top-2 right-2 px-2 py-1 bg-zinc-700 text-zinc-200 rounded text-xs hover:bg-zinc-600 transition-colors"
+                    >
+                      {copied === "curlBackend" ? "Copied!" : "Copy"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : (
             <p className="text-sm text-zinc-500 mt-4">

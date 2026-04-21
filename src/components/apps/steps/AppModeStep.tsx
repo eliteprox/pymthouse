@@ -157,10 +157,11 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
                 Provisions a confidential{" "}
                 <code className="font-mono text-zinc-400">m2m_</code> client that
                 authenticates with client credentials for server-to-server Builder
-                APIs (
-                <code className="font-mono text-zinc-400">users:token</code>,{" "}
-                <code className="font-mono text-zinc-400">users:write</code>). Your
-                public client stays unauthenticated for SDK / CLI device login.
+                APIs and inherits{" "}
+                <code className="font-mono text-zinc-400">sign:job</code> /{" "}
+                <code className="font-mono text-zinc-400">users:read</code> when those
+                scopes are enabled on your public client. Your public client stays
+                unauthenticated for SDK / CLI device login.
               </p>
             </div>
           </label>
@@ -169,11 +170,13 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
             <>
               {/* Companion scopes info chip */}
               <div className="rounded-lg border border-zinc-700/70 bg-zinc-800/30 px-3 py-2 text-xs text-zinc-400">
-                Companion confidential client scopes are fixed to{" "}
+                Companion client always includes{" "}
                 <code className="font-mono text-zinc-300">
                   users:token users:write device:approve
                 </code>
-                .
+                , plus <code className="font-mono text-zinc-300">sign:job</code> and/or{" "}
+                <code className="font-mono text-zinc-300">users:read</code> when your
+                public app has those scopes.
               </div>
 
               {/* ── Device Authorization Flow (child of helper) ── */}
