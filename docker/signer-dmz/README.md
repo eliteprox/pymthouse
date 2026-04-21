@@ -36,7 +36,7 @@ The image listens on **`$PORT`** (Apache HTTP + `/__signer_cli`, `/healthz`, pro
    You can use **one** public URL on **`PORT`** only: Apache already proxies **`/__signer_cli/`** on that same listener (see `apache/signer-dmz.conf.in`). Alternatively, expose **`CLI_PORT` (8082)** with a second hostname if you want the dedicated CLI vhost.
 
 3. **`/__signer_cli` and PymtHouse — not automatic**  
-   Apache serves **`https://<your-dmz-host>/__signer_cli`** on the **same** port as **`SIGNER_INTERNAL_URL`** (no extra path needed in `SIGNER_INTERNAL_URL`). The Next app **does not** infer that URL: **`getSignerCliUrl()`** uses **`SIGNER_CLI_URL`** if set, otherwise defaults to **`http://127.0.0.1:8082`** (local compose’s separate CLI port). For Railway single-port DMZ, set explicitly, for example:  
+   Apache serves **`https://<your-dmz-host>/__signer_cli`** on the **same** port as **`SIGNER_INTERNAL_URL`** (no extra path needed in `SIGNER_INTERNAL_URL`). The Next app **does not** infer that URL: **`getSignerCliUrl()`** uses **`SIGNER_CLI_URL`** if set, otherwise defaults to **`http://127.0.0.1:8080/__signer_cli`** (local compose’s single published port). For Railway single-port DMZ, set explicitly, for example:  
    `SIGNER_INTERNAL_URL=https://your-service.up.railway.app`  
    `SIGNER_CLI_URL=https://your-service.up.railway.app/__signer_cli`  
    (no trailing slash on `SIGNER_CLI_URL`.)

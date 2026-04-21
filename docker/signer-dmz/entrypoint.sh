@@ -3,7 +3,7 @@ set -eu
 
 export PORT="${PORT:-8080}"
 # Dedicated Apache listener that proxies only to livepeer CLI (admin scope).
-# In-container port; host maps it via compose (SIGNER_CLI_HOST_PORT).
+# In-container dedicated CLI vhost (optional second listener; local compose uses /__signer_cli on PORT only).
 export CLI_PORT="${CLI_PORT:-8082}"
 export SIGNER_PORT="${SIGNER_PORT:-8081}"
 # Align Apache iss/aud with DMZ JWTs from this app (getIssuer). Pass NEXTAUTH_URL
