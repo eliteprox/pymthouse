@@ -71,21 +71,39 @@ def main() -> int:
     )
     args = p.parse_args()
 
-    # Only allow https: JWKS is fetched over the public internet and signing-key trust
-    # depends on TLS. Reject http/file/ftp/etc. outright rather than relying on urlopen defaults.
     parsed = urllib.parse.urlparse(args.url)
-    if parsed.scheme != "https" or not parsed.netloc:
+    if not parsed.netloc:
+        print(f"jwks_to_pem: invalid JWKS URL (no host): {args.url!r}", file=sys.stderr)
+        return 1
+
+    host = (parsed.hostname or "").lower()
+    allow_http_dev = parsed.scheme == "http" and host in (
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        "host.docker.internal",
+    )
+    if parsed.scheme == "https":
+        pass
+    elif allow_http_dev:
+        # Local / Docker Desktop: DMZ must load the same JWKS the app serves; TLS is often absent.
+        pass
+    else:
         print(
-            f"jwks_to_pem: refusing to fetch JWKS from non-https URL: {args.url!r}",
+            f"jwks_to_pem: JWKS URL must be https, or http on localhost/127.0.0.1/host.docker.internal: {args.url!r}",
             file=sys.stderr,
         )
         return 1
 
-    ctx = ssl.create_default_context()
     req = urllib.request.Request(args.url, headers={"User-Agent": "pymthouse-signer-dmz/1.0"})
     try:
-        with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
-            body = resp.read()
+        if parsed.scheme == "https":
+            ctx = ssl.create_default_context()
+            with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+                body = resp.read()
+        else:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = resp.read()
     except urllib.error.URLError as e:
         print(f"jwks_to_pem: fetch failed: {e}", file=sys.stderr)
         return 1

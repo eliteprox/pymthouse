@@ -3,7 +3,7 @@ import { developerApps, oidcClients } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { randomBytes } from "crypto";
-import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
+import { DEFAULT_OIDC_SCOPES, OIDC_SCOPES } from "@/lib/oidc/scopes";
 import { hashToken } from "@/lib/token-hash";
 
 export interface OidcClientConfig {
@@ -285,6 +285,91 @@ export async function rotateClientSecret(clientId: string): Promise<string | nul
   return secret;
 }
 
+/** Always granted on the confidential backend helper (Builder + device approval). */
+const BACKEND_M2M_REQUIRED_SCOPES = [
+  "users:token",
+  "users:write",
+  "device:approve",
+] as const;
+
+/** Copied from the public app when present so M2M tokens can call matching APIs (e.g. signer). */
+const BACKEND_M2M_INHERIT_FROM_PUBLIC = ["sign:job", "users:read"] as const;
+
+/**
+ * Allowed scopes for the `m2m_` backend helper: fixed Builder/device scopes plus
+ * `sign:job` / `users:read` when the public OIDC client has those scopes enabled.
+ */
+export function computeBackendM2mAllowedScopes(publicAllowedScopes: string): string {
+  const publicSet = new Set(
+    publicAllowedScopes
+      .split(/[,\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+  const selected = new Set<string>([...BACKEND_M2M_REQUIRED_SCOPES]);
+  for (const scope of BACKEND_M2M_INHERIT_FROM_PUBLIC) {
+    if (publicSet.has(scope)) {
+      selected.add(scope);
+    }
+  }
+  const ordered = OIDC_SCOPES.map((d) => d.value).filter((v) => selected.has(v));
+  return ordered.join(" ");
+}
+
+function normalizeScopeListString(scopes: string): string {
+  return scopes
+    .split(/[,\s]+/)
+    .filter(Boolean)
+    .sort()
+    .join(" ");
+}
+
+/**
+ * Updates the backend M2M client's `allowedScopes` from the public client's
+ * configured scopes. Call after saving the public OIDC client.
+ *
+ * @returns true when the M2M row was updated (caller should reload OIDC provider cache).
+ */
+export async function syncBackendM2mAllowedScopesFromPublicApp(
+  appInternalId: string,
+): Promise<boolean> {
+  const appRows = await db
+    .select()
+    .from(developerApps)
+    .where(eq(developerApps.id, appInternalId))
+    .limit(1);
+  const app = appRows[0];
+  if (!app?.oidcClientId || !app.m2mOidcClientId) {
+    return false;
+  }
+
+  const publicRows = await db
+    .select()
+    .from(oidcClients)
+    .where(eq(oidcClients.id, app.oidcClientId))
+    .limit(1);
+  const m2mRows = await db
+    .select()
+    .from(oidcClients)
+    .where(eq(oidcClients.id, app.m2mOidcClientId))
+    .limit(1);
+  const pub = publicRows[0];
+  const m2m = m2mRows[0];
+  if (!pub || !m2m) {
+    return false;
+  }
+
+  const next = computeBackendM2mAllowedScopes(
+    pub.allowedScopes || DEFAULT_OIDC_SCOPES,
+  );
+  if (normalizeScopeListString(next) === normalizeScopeListString(m2m.allowedScopes)) {
+    return false;
+  }
+
+  await updateClientConfig(m2m.clientId, { allowedScopes: next });
+  return true;
+}
+
 /**
  * Ensures a confidential M2M OIDC row exists for interactive apps that need
  * Builder API / device approval without turning the public client confidential.
@@ -314,6 +399,13 @@ export async function ensureM2mBackendClient(params: {
     }
   }
 
+  const pubRows = await db
+    .select({ allowedScopes: oidcClients.allowedScopes })
+    .from(oidcClients)
+    .where(eq(oidcClients.id, app.oidcClientId))
+    .limit(1);
+  const publicScopes = pubRows[0]?.allowedScopes ?? DEFAULT_OIDC_SCOPES;
+
   const id = uuidv4();
   const clientId = generateM2mClientId();
   const display =
@@ -325,7 +417,7 @@ export async function ensureM2mBackendClient(params: {
     clientSecretHash: null,
     displayName: `${display} - backend helper`,
     redirectUris: JSON.stringify([]),
-    allowedScopes: "users:token users:write device:approve",
+    allowedScopes: computeBackendM2mAllowedScopes(publicScopes),
     grantTypes: "client_credentials",
     tokenEndpointAuthMethod: "client_secret_basic",
     deviceThirdPartyInitiateLogin: 0,

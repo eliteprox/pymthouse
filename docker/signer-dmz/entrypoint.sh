@@ -2,10 +2,36 @@
 set -eu
 
 export PORT="${PORT:-8080}"
+# Dedicated Apache listener that proxies only to livepeer CLI (admin scope).
+# In-container port; host maps it via compose (SIGNER_CLI_HOST_PORT).
+export CLI_PORT="${CLI_PORT:-8082}"
 export SIGNER_PORT="${SIGNER_PORT:-8081}"
-export OIDC_ISSUER="${OIDC_ISSUER:-https://pymthouse.com/api/v1/oidc}"
+# Align Apache iss/aud with DMZ JWTs from this app (getIssuer). Pass NEXTAUTH_URL
+# from the host .env (same as the Next app); when OIDC_ISSUER is unset, derive it.
+export NEXTAUTH_URL="${NEXTAUTH_URL:-http://localhost:3001}"
+if [ -z "${OIDC_ISSUER:-}" ]; then
+  _na_base="${NEXTAUTH_URL%/}"
+  export OIDC_ISSUER="${_na_base}/api/v1/oidc"
+fi
 export OIDC_AUDIENCE="${OIDC_AUDIENCE:-$OIDC_ISSUER}"
-export JWKS_URI="${JWKS_URI:-https://pymthouse.com/api/v1/oidc/jwks}"
+# JWKS must reach the app from inside the container (loopback → host.docker.internal).
+if [ -z "${JWKS_URI:-}" ]; then
+  export JWKS_URI="$(
+    OIDC_ISSUER="$OIDC_ISSUER" python3 -c "
+import os
+from urllib.parse import urlparse, urlunparse
+iss = os.environ['OIDC_ISSUER'].rstrip('/')
+u = urlparse(iss + '/jwks')
+h = (u.hostname or '').lower()
+if h in ('localhost', '127.0.0.1'):
+    netloc = 'host.docker.internal'
+    if u.port:
+        netloc += ':' + str(u.port)
+    u = u._replace(netloc=netloc)
+print(urlunparse(u))
+"
+  )"
+fi
 export JWT_PEM_PATH="${JWT_PEM_PATH:-/run/jwt/jwks.pem}"
 
 if [ -n "${SIGNER_UPSTREAM:-}" ]; then
@@ -102,9 +128,29 @@ fi
 
 export APACHE_LOG_DIR="${APACHE_LOG_DIR:-/var/log/apache2}"
 mkdir -p "$APACHE_LOG_DIR"
+# mod_authnz_jwt only explains a denial at `info` level. Default to info while
+# the DMZ integration stabilises; set APACHE_AUTH_JWT_LOG_LEVEL=warn in prod.
+export APACHE_AUTH_JWT_LOG_LEVEL="${APACHE_AUTH_JWT_LOG_LEVEL:-info}"
 
-envsubst '${PORT} ${SIGNER_HTTP_ADDR} ${SIGNER_CLI_HTTP_ADDR} ${OIDC_ISSUER} ${OIDC_AUDIENCE} ${JWT_PEM_PATH}' < /etc/apache2/templates/ports.conf.in >/etc/apache2/ports.conf
-envsubst '${PORT} ${SIGNER_HTTP_ADDR} ${SIGNER_CLI_HTTP_ADDR} ${OIDC_ISSUER} ${OIDC_AUDIENCE} ${JWT_PEM_PATH}' < /etc/apache2/templates/signer-dmz.conf.in >/etc/apache2/sites-available/signer-dmz.conf
+# Dump the resolved DMZ auth context so 401s can be diagnosed by comparing this
+# to the claims on a minted token. Emitted on stderr (visible via `docker logs`).
+{
+  _pem_kids="(missing)"
+  if [ -r "$JWT_PEM_PATH" ]; then
+    _pem_kids="$(grep -c 'BEGIN PUBLIC KEY' "$JWT_PEM_PATH" 2>/dev/null || echo 0)"
+  fi
+  printf 'signer-dmz: auth config:\n'
+  printf '  OIDC_ISSUER=%s\n' "$OIDC_ISSUER"
+  printf '  OIDC_AUDIENCE=%s\n' "$OIDC_AUDIENCE"
+  printf '  JWKS_URI=%s\n' "$JWKS_URI"
+  printf '  JWT_PEM_PATH=%s (public keys: %s)\n' "$JWT_PEM_PATH" "$_pem_kids"
+  printf '  SIGNER_HTTP_ADDR=%s\n' "$SIGNER_HTTP_ADDR"
+  printf '  SIGNER_CLI_HTTP_ADDR=%s\n' "$SIGNER_CLI_HTTP_ADDR"
+  printf '  APACHE_AUTH_JWT_LOG_LEVEL=%s\n' "$APACHE_AUTH_JWT_LOG_LEVEL"
+} >&2
+
+envsubst '${PORT} ${CLI_PORT} ${SIGNER_HTTP_ADDR} ${SIGNER_CLI_HTTP_ADDR} ${OIDC_ISSUER} ${OIDC_AUDIENCE} ${JWT_PEM_PATH} ${APACHE_AUTH_JWT_LOG_LEVEL}' < /etc/apache2/templates/ports.conf.in >/etc/apache2/ports.conf
+envsubst '${PORT} ${CLI_PORT} ${SIGNER_HTTP_ADDR} ${SIGNER_CLI_HTTP_ADDR} ${OIDC_ISSUER} ${OIDC_AUDIENCE} ${JWT_PEM_PATH} ${APACHE_AUTH_JWT_LOG_LEVEL}' < /etc/apache2/templates/signer-dmz.conf.in >/etc/apache2/sites-available/signer-dmz.conf
 
 # Do not use a2ensite/a2dissite as non-root: they touch /var/lib/apache2/site/enabled_by_admin/
 # (root-only). sites-enabled is chowned to APACHE_RUN_USER in the image — symlink directly.

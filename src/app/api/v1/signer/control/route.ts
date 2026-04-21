@@ -8,13 +8,17 @@ import { authenticateRequest, hasScope } from "@/lib/auth";
 import { syncSignerStatus } from "@/lib/signer-proxy";
 import { DOCKER_COMPOSE_LOCAL_SIGNER_SERVICE } from "@/lib/signer-local-compose";
 import {
-  getPlatformJwksUrlForDatabase,
-  getPlatformPublicOidcIssuer,
+  getIssuer,
+  getJwksUrlForLocalSignerDmzContainer,
+  getPublicOrigin,
 } from "@/lib/oidc/issuer-urls";
 import { exec } from "child_process";
 import { promisify } from "util";
 
 const execAsync = promisify(exec);
+
+/** `docker compose up --build` can take minutes on a cold build (go-livepeer + Apache image). */
+const COMPOSE_START_TIMEOUT_MS = 15 * 60 * 1000;
 
 /**
  * POST /api/v1/signer/control -- Control plane for the signer container
@@ -60,7 +64,10 @@ export async function POST(request: NextRequest) {
     const composeEnv = buildSignerComposeEnv(signer);
     const { stdout, stderr } = await execAsync(composeCmd, {
       cwd: process.cwd(),
-      timeout: 30000,
+      timeout:
+        action === "start" || action === "restart"
+          ? COMPOSE_START_TIMEOUT_MS
+          : 30000,
       env: composeEnv,
     });
 
@@ -110,13 +117,31 @@ function getComposeCommand(action: string): string {
   switch (action) {
     case "start":
     case "restart":
-      // --force-recreate ensures fresh container; --remove-orphans cleans stale containers
-      return `docker compose up -d --force-recreate --remove-orphans ${svc}`;
+      // --build: image is not on Docker Hub; build from docker/signer-dmz/Dockerfile (avoids pull errors).
+      // --force-recreate: fresh container; --remove-orphans: clean stale containers
+      return `docker compose up -d --build --force-recreate --remove-orphans ${svc}`;
     case "stop":
       return `docker compose stop ${svc}`;
     default:
       throw new Error(`Unknown action: ${action}`);
   }
+}
+
+/**
+ * Legacy bare-signer port (go-livepeer HTTP). With signer-dmz, Apache sits in
+ * front and the host-published port is 8080 by default. Older signer_config
+ * rows still carry 8081 from the schema default; coerce so compose publishes
+ * the DMZ listener port callers expect via SIGNER_INTERNAL_URL.
+ */
+const LEGACY_BARE_SIGNER_PORT = 8081;
+const DEFAULT_SIGNER_DMZ_HOST_PORT = 8080;
+const DEFAULT_SIGNER_CLI_HOST_PORT = 8082;
+
+function resolveDmzHostPort(signerPort: number | undefined): number {
+  if (!signerPort || signerPort === LEGACY_BARE_SIGNER_PORT) {
+    return DEFAULT_SIGNER_DMZ_HOST_PORT;
+  }
+  return signerPort;
 }
 
 function buildSignerComposeEnv(
@@ -133,16 +158,21 @@ function buildSignerComposeEnv(
     | undefined
 ): NodeJS.ProcessEnv {
   const rd = signer?.remoteDiscovery === 1;
-  const dmzHostPort = signer?.signerPort ?? 8080;
-  // signer-dmz jwks_to_pem.py only accepts https:// JWKS URLs (not http://host.docker.internal).
-  // Use the public platform issuer + JWKS so PEM matches tokens minted for that issuer.
-  const issuer = getPlatformPublicOidcIssuer();
+  const dmzHostPort = resolveDmzHostPort(signer?.signerPort);
+  const cliHostPort = Number(
+    process.env.SIGNER_CLI_HOST_PORT || DEFAULT_SIGNER_CLI_HOST_PORT,
+  );
+  // Apache iss/aud must match issueSignerDmzToken (getIssuer); JWKS must be the
+  // same key material (local oidc:seed), reachable from Docker via host.docker.internal.
+  const issuer = getIssuer();
   return {
     ...process.env,
+    NEXTAUTH_URL: process.env.NEXTAUTH_URL || getPublicOrigin(),
     SIGNER_NETWORK: "arbitrum-one-mainnet",
     ETH_RPC_URL: signer?.ethRpcUrl ?? "",
     SIGNER_ETH_ADDR: signer?.ethAcctAddr || "",
     SIGNER_DMZ_HOST_PORT: String(dmzHostPort),
+    SIGNER_CLI_HOST_PORT: String(cliHostPort),
     SIGNER_REMOTE_DISCOVERY: rd ? "1" : "0",
     ORCH_WEBHOOK_URL: rd && signer?.orchWebhookUrl ? signer.orchWebhookUrl : "",
     LIVE_AI_CAP_REPORT_INTERVAL:
@@ -151,7 +181,7 @@ function buildSignerComposeEnv(
         : "",
     OIDC_ISSUER: issuer,
     OIDC_AUDIENCE: issuer,
-    JWKS_URI: getPlatformJwksUrlForDatabase(),
+    JWKS_URI: getJwksUrlForLocalSignerDmzContainer(),
   };
 }
 

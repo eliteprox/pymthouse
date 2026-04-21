@@ -107,7 +107,9 @@ export default function SignerLiveStats() {
         <div>
           <h3 className="font-semibold text-zinc-200">Live Signer State</h3>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Read from CLI port 4935 · same data as livepeer_cli
+            From <code className="text-zinc-400">SIGNER_CLI_URL</code> (DMZ: Apache
+            proxies <code className="text-zinc-400">/__signer_cli</code> to livepeer
+            CLI). Same data as livepeer_cli.
           </p>
         </div>
         <div className="flex items-center gap-3">

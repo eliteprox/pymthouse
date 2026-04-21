@@ -94,11 +94,18 @@ export async function getPublicJWKS(): Promise<jose.JSONWebKeySet> {
     .select()
     .from(oidcSigningKeys)
     .orderBy(desc(oidcSigningKeys.createdAt))
-    .limit(5);
+    .limit(10);
+
+  const sorted = [...keys].sort((a, b) => {
+    if (a.active === 1 && b.active !== 1) return -1;
+    if (b.active === 1 && a.active !== 1) return 1;
+    return 0;
+  });
+  const chosen = sorted.slice(0, 5);
 
   const jwks: jose.JWK[] = [];
 
-  for (const key of keys) {
+  for (const key of chosen) {
     const publicKey = await jose.importSPKI(key.publicKeyPem, KEY_ALGORITHM);
     const jwk = await jose.exportJWK(publicKey);
     jwks.push({

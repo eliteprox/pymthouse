@@ -11,10 +11,12 @@ services:
     image: pymthouse/signer-dmz:local
     ports:
       - "127.0.0.1:${SIGNER_DMZ_HOST_PORT:-8080}:8080"
+      - "127.0.0.1:${SIGNER_CLI_HOST_PORT:-8082}:8082"
     volumes:
       - ./data:/data
     environment:
       - PORT=8080
+      - CLI_PORT=8082
       - SIGNER_PORT=8081
       - SIGNER_NETWORK=${SIGNER_NETWORK:-arbitrum-one-mainnet}
       - ETH_RPC_URL=${ETH_RPC_URL:-https://arb1.arbitrum.io/rpc}
@@ -22,9 +24,14 @@ services:
       - SIGNER_REMOTE_DISCOVERY=${SIGNER_REMOTE_DISCOVERY:-0}
       - ORCH_WEBHOOK_URL=${ORCH_WEBHOOK_URL:-}
       - LIVE_AI_CAP_REPORT_INTERVAL=${LIVE_AI_CAP_REPORT_INTERVAL:-}
-      - OIDC_ISSUER=${OIDC_ISSUER:-https://pymthouse.com/api/v1/oidc}
-      - OIDC_AUDIENCE=${OIDC_AUDIENCE:-https://pymthouse.com/api/v1/oidc}
-      - JWKS_URI=${JWKS_URI:-https://pymthouse.com/api/v1/oidc/jwks}
+      # Same NEXTAUTH_URL as the Next app so signer-dmz entrypoint sets AuthJWTIss
+      # to match getIssuer(). Leave OIDC_* / JWKS_URI unset to derive in entrypoint.
+      # If the Next app sets OIDC_ISSUER (e.g. http://127.0.0.1:3001/api/v1/oidc), set
+      # the same values here; localhost vs 127.0.0.1 mismatch → Apache 401 HTML on /sign-*.
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3001}
+      - OIDC_ISSUER=${OIDC_ISSUER:-}
+      - OIDC_AUDIENCE=${OIDC_AUDIENCE:-}
+      - JWKS_URI=${JWKS_URI:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:

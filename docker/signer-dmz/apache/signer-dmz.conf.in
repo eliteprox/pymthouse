@@ -1,14 +1,19 @@
-# Templated with envsubst: PORT, SIGNER_HTTP_ADDR, SIGNER_CLI_HTTP_ADDR, OIDC_ISSUER, OIDC_AUDIENCE, JWT_PEM_PATH
+# Templated with envsubst: PORT, CLI_PORT, SIGNER_HTTP_ADDR, SIGNER_CLI_HTTP_ADDR,
+#                           OIDC_ISSUER, OIDC_AUDIENCE, JWT_PEM_PATH
 
 ServerName localhost
 ServerTokens Prod
 ServerSignature Off
 
-ErrorLog ${APACHE_LOG_DIR}/error.log
-LogLevel warn
+# Log to container stdout/stderr so `docker logs` surfaces auth failures
+# (mod_authnz_jwt logs rejection reasons at `info` — raise level for debugging,
+# then flip back to `warn` once the DMZ is trusted). Configure via env var
+# APACHE_LOG_LEVEL (default: info for the JWT module, warn for the rest).
+ErrorLog /dev/stderr
+LogLevel warn auth_jwt:${APACHE_AUTH_JWT_LOG_LEVEL}
 
 LogFormat "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\"" signer_combined
-CustomLog ${APACHE_LOG_DIR}/access.log signer_combined
+CustomLog /dev/stdout signer_combined
 
 # Scope in logs: mod_authnz_jwt does not expose arbitrary JWT claims to LogFormat; use mod_lua or a sidecar. Never log the Authorization header.
 
@@ -51,8 +56,8 @@ CustomLog ${APACHE_LOG_DIR}/access.log signer_combined
 		AuthName "pymthouse-signer-cli"
 		AuthJWTSignatureAlgorithm RS256
 		AuthJWTSignaturePublicKeyFile ${JWT_PEM_PATH}
-		AuthJWTIss ${OIDC_ISSUER}
-		AuthJWTAud ${OIDC_AUDIENCE}
+		AuthJWTIss "${OIDC_ISSUER}"
+		AuthJWTAud "${OIDC_AUDIENCE}"
 		AuthJWTAttributeUsername sub
 		AuthJWTLeeway 10
 
@@ -68,8 +73,8 @@ CustomLog ${APACHE_LOG_DIR}/access.log signer_combined
 		AuthName "pymthouse-signer-http"
 		AuthJWTSignatureAlgorithm RS256
 		AuthJWTSignaturePublicKeyFile ${JWT_PEM_PATH}
-		AuthJWTIss ${OIDC_ISSUER}
-		AuthJWTAud ${OIDC_AUDIENCE}
+		AuthJWTIss "${OIDC_ISSUER}"
+		AuthJWTAud "${OIDC_AUDIENCE}"
 		AuthJWTAttributeUsername sub
 		AuthJWTLeeway 10
 
@@ -77,5 +82,38 @@ CustomLog ${APACHE_LOG_DIR}/access.log signer_combined
 		RequestHeader unset Authorization
 
 		Require jwt-claim scope=sign:job
+	</LocationMatch>
+</VirtualHost>
+
+# Dedicated admin CLI listener. Same upstream as /__signer_cli, but its own
+# port so ops can firewall/observe it separately. Requires scope=admin.
+<VirtualHost *:${CLI_PORT}>
+	ServerName localhost
+	ProxyPreserveHost On
+	ProxyRequests Off
+
+	ProxyPass /healthz !
+	Alias /healthz /var/www/static/healthz
+	<Location "/healthz">
+		AuthType None
+		Require all granted
+	</Location>
+
+	ProxyPass / ${SIGNER_CLI_HTTP_ADDR}/
+	ProxyPassReverse / ${SIGNER_CLI_HTTP_ADDR}/
+
+	<LocationMatch "^/(?!healthz(?:/|$))">
+		AuthType jwt-bearer
+		AuthName "pymthouse-signer-cli-port"
+		AuthJWTSignatureAlgorithm RS256
+		AuthJWTSignaturePublicKeyFile ${JWT_PEM_PATH}
+		AuthJWTIss "${OIDC_ISSUER}"
+		AuthJWTAud "${OIDC_AUDIENCE}"
+		AuthJWTAttributeUsername sub
+		AuthJWTLeeway 10
+
+		RequestHeader unset Authorization
+
+		Require jwt-claim scope=admin
 	</LocationMatch>
 </VirtualHost>

@@ -10,7 +10,8 @@ import { fetchSignerCliStatus } from "@/lib/signer-cli";
 /**
  * GET /api/v1/signer/cli-status
  *
- * Returns live state from go-livepeer's CLI port (4935), the same data
+ * Returns live state from go-livepeer’s CLI API (via SIGNER_CLI_URL / DMZ
+ * /__signer_cli when configured), the same data
  * that livepeer_cli reads. Admin-only.
  */
 export async function GET(request: NextRequest) {

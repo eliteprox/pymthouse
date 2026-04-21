@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { db } from "@/db/index";
 import { signerConfig } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import {
+  getSignerUrl,
+  probeSignerHttpReachability,
+} from "@/lib/signer-proxy";
 
 export async function GET() {
   try {
@@ -12,15 +16,10 @@ export async function GET() {
       .limit(1);
     const signer = signerRows[0];
 
-    const signerUrl =
-      process.env.SIGNER_INTERNAL_URL || "http://localhost:8935";
-
     let signerReachable = false;
     try {
-      const res = await fetch(`${signerUrl}/status`, {
-        signal: AbortSignal.timeout(5000),
-      });
-      signerReachable = res.ok;
+      const probe = await probeSignerHttpReachability(getSignerUrl(signer));
+      signerReachable = probe.reachable;
     } catch {}
 
     return NextResponse.json({

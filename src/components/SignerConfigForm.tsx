@@ -91,12 +91,13 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
           OIDC / JWKS (automatic)
         </h3>
         <p className="text-xs text-zinc-500 mb-4">
-          Public platform OIDC — not derived from{" "}
-          <code className="text-zinc-400">NEXTAUTH_URL</code> (so localhost dev
-          does not appear here). Issuer and audience match; JWKS is issuer +
-          <code className="text-zinc-400">/jwks</code>. Override with{" "}
-          <code className="text-zinc-400">PLATFORM_JWKS_URL</code> when
-          self-hosted.
+          Values passed into the local signer-dmz stack: issuer and audience are
+          <code className="text-zinc-400"> getIssuer()</code> (from{" "}
+          <code className="text-zinc-400">NEXTAUTH_URL</code> /{" "}
+          <code className="text-zinc-400">OIDC_ISSUER</code>). JWKS is that issuer
+          plus <code className="text-zinc-400">/jwks</code>, with loopback rewritten
+          for the container. Override JWKS with{" "}
+          <code className="text-zinc-400">SIGNER_DMZ_JWKS_URL</code>.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="sm:col-span-2">
@@ -176,8 +177,10 @@ export default function SignerConfigForm({ config }: SignerConfigFormProps) {
             className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-sm text-zinc-200 focus:outline-none focus:border-emerald-500/50"
           />
           <p className="text-xs text-zinc-600 mt-0.5">
-            Public signer port (Apache DMZ, default: 8080). Restart signer to
-            apply.
+            Host port mapped to Apache in signer-dmz (default 8080). Do not use 8081
+            here: that is livepeer’s in-container HTTP port, not published on the host.
+            Set <code className="text-zinc-500">SIGNER_INTERNAL_URL</code> in .env if
+            this row is wrong. Restart signer after changing.
           </p>
         </div>
         <div>

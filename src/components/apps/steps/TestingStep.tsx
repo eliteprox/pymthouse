@@ -634,6 +634,32 @@ export default function TestingStep({
                   <p className="text-xs text-red-400 mt-2">{backendSecretFetchError}</p>
                 )}
               </div>
+              {m2mCurlSnippet ? (
+                <div className="pt-3 border-t border-cyan-500/15 space-y-2">
+                  <h4 className="text-xs font-semibold text-cyan-200/80">
+                    Test client credentials (bearer token)
+                  </h4>
+                  <p className="text-xs text-zinc-500">
+                    Run this where your server runs. Replace{" "}
+                    <code className="text-zinc-400">YOUR_CLIENT_SECRET</code> with the secret above (or
+                    one you have stored). The JSON response includes{" "}
+                    <code className="text-zinc-400">access_token</code> — use{" "}
+                    <code className="text-zinc-400">Authorization: Bearer …</code> on Builder routes.
+                  </p>
+                  <div className="relative">
+                    <pre className="p-3 bg-zinc-950 border border-zinc-800 rounded-lg text-xs text-zinc-300 font-mono overflow-x-auto whitespace-pre">
+                      {m2mCurlSnippet}
+                    </pre>
+                    <button
+                      type="button"
+                      onClick={() => copyToClipboard(m2mCurlSnippet, "curlBackend")}
+                      className="absolute top-2 right-2 px-2 py-1 bg-zinc-700 text-zinc-200 rounded text-xs hover:bg-zinc-600 transition-colors"
+                    >
+                      {copied === "curlBackend" ? "Copied!" : "Copy"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : (
             <p className="text-sm text-zinc-500 mt-4">
