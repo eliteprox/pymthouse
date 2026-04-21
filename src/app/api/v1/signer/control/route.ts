@@ -192,8 +192,6 @@ function getComposeCommand(action: string): string {
   }
 }
 
-const DEFAULT_SIGNER_CLI_HOST_PORT = 8082;
-
 function buildSignerComposeEnv(
   signer:
     | {
@@ -209,9 +207,6 @@ function buildSignerComposeEnv(
 ): NodeJS.ProcessEnv {
   const rd = signer?.remoteDiscovery === 1;
   const dmzHostPort = resolveDmzHostPort(signer?.signerPort);
-  const cliHostPort = Number(
-    process.env.SIGNER_CLI_HOST_PORT || DEFAULT_SIGNER_CLI_HOST_PORT,
-  );
   // Apache iss/aud must match issueSignerDmzToken (getIssuer); JWKS must be the
   // same key material (local oidc:seed), reachable from Docker via host.docker.internal.
   const issuer = getIssuer();
@@ -222,7 +217,6 @@ function buildSignerComposeEnv(
     ETH_RPC_URL: signer?.ethRpcUrl ?? "",
     SIGNER_ETH_ADDR: signer?.ethAcctAddr || "",
     SIGNER_DMZ_HOST_PORT: String(dmzHostPort),
-    SIGNER_CLI_HOST_PORT: String(cliHostPort),
     SIGNER_REMOTE_DISCOVERY: rd ? "1" : "0",
     ORCH_WEBHOOK_URL: rd && signer?.orchWebhookUrl ? signer.orchWebhookUrl : "",
     LIVE_AI_CAP_REPORT_INTERVAL:

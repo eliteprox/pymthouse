@@ -6,18 +6,17 @@
  * This is the same port that livepeer_cli connects to.
  * Must only be called server-side; the port is bound to 127.0.0.1 on the host.
  *
- * When the signer sits behind the Apache DMZ, set SIGNER_CLI_URL to the public
- * base of its **dedicated admin listener** (e.g. http://localhost:8082). The
- * DMZ also exposes the CLI under /__signer_cli on the HTTP port as a fallback
- * for single-port deployments. The server mints a short-lived JWT with admin
- * scope for these requests.
+ * When the signer sits behind the Apache DMZ, set SIGNER_CLI_URL to the CLI base
+ * URL — typically the DMZ origin plus `/__signer_cli` (e.g. http://localhost:8080/__signer_cli).
+ * Alternatively, a dedicated admin listener on a second port is supported. The server
+ * mints a short-lived JWT with admin scope for these requests.
  */
 
 import { issueSignerDmzToken } from "@/lib/signer-dmz-token";
 
 export function getSignerCliUrl(): string {
   if (process.env.SIGNER_CLI_URL) return process.env.SIGNER_CLI_URL;
-  return "http://127.0.0.1:8082";
+  return "http://127.0.0.1:8080/__signer_cli";
 }
 
 let cliDmzTokenCache: { token: string; expMs: number } | null = null;
