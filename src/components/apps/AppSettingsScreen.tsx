@@ -516,7 +516,18 @@ function ReferenceEndpointsSection({
 
   const copy = useCallback(async (text: string, key: string) => {
     if (!text) return;
-    await navigator.clipboard.writeText(text);
+    if (typeof navigator === "undefined" || !navigator.clipboard) {
+      console.error("Clipboard API is unavailable.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (err) {
+      console.error("Failed to copy reference endpoint.", err);
+      return;
+    }
+
     setCopiedKey(key);
     if (copyResetTimeoutRef.current !== null) {
       clearTimeout(copyResetTimeoutRef.current);

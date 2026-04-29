@@ -11,6 +11,19 @@ interface Props {
   readOnly?: boolean;
 }
 
+async function parseDomainError(res: Response): Promise<string> {
+  const text = await res.text();
+  try {
+    const data = text ? JSON.parse(text) : {};
+    if (typeof data.error === "string" && data.error.trim()) {
+      return data.error.trim();
+    }
+  } catch {
+    /* keep fallback */
+  }
+  return text.trim() || res.statusText || `Domain request failed (${res.status})`;
+}
+
 export default function AuthorizationCodeRedirectBlock({
   appId,
   redirectUris,
@@ -24,6 +37,7 @@ export default function AuthorizationCodeRedirectBlock({
   const [adding, setAdding] = useState(false);
   const [redirectPersistError, setRedirectPersistError] = useState<string | null>(null);
   const [redirectSaving, setRedirectSaving] = useState(false);
+  const [domainError, setDomainError] = useState<string | null>(null);
 
   const persistRedirectUris = async (nextUris: string[]) => {
     if (readOnly) return false;
@@ -74,11 +88,15 @@ export default function AuthorizationCodeRedirectBlock({
     if (appId) {
       try {
         const origin = new URL(uri).origin;
-        if (origin !== "null" && !domains.some((d) => d.domain === origin)) {
+        const normalizedOrigin = origin.toLowerCase();
+        if (
+          origin !== "null" &&
+          !domains.some((d) => d.domain.toLowerCase() === normalizedOrigin)
+        ) {
           const res = await fetch(`/api/v1/apps/${appId}/domains`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ domain: origin }),
+            body: JSON.stringify({ domain: normalizedOrigin }),
           });
           if (res.ok) {
             const resData = await res.json();
@@ -105,17 +123,22 @@ export default function AuthorizationCodeRedirectBlock({
   const addDomain = async () => {
     if (readOnly || !appId || !newDomain.trim()) return;
     setAdding(true);
+    setDomainError(null);
     try {
       const res = await fetch(`/api/v1/apps/${appId}/domains`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ domain: newDomain.trim() }),
       });
-      if (res.ok) {
-        const resData = await res.json();
-        onDomainsChange([...domains, { id: resData.id, domain: resData.domain }]);
-        setNewDomain("");
+      if (!res.ok) {
+        setDomainError(await parseDomainError(res));
+        return;
       }
+      const resData = await res.json();
+      onDomainsChange([...domains, { id: resData.id, domain: resData.domain }]);
+      setNewDomain("");
+    } catch (err) {
+      setDomainError(err instanceof Error ? err.message : "Could not add domain.");
     } finally {
       setAdding(false);
     }
@@ -123,10 +146,19 @@ export default function AuthorizationCodeRedirectBlock({
 
   const removeDomain = async (domainId: string) => {
     if (readOnly || !appId) return;
-    await fetch(`/api/v1/apps/${appId}/domains?domainId=${domainId}`, {
-      method: "DELETE",
-    });
-    onDomainsChange(domains.filter((d) => d.id !== domainId));
+    setDomainError(null);
+    try {
+      const res = await fetch(`/api/v1/apps/${appId}/domains?domainId=${domainId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        setDomainError(await parseDomainError(res));
+        return;
+      }
+      onDomainsChange(domains.filter((d) => d.id !== domainId));
+    } catch (err) {
+      setDomainError(err instanceof Error ? err.message : "Could not remove domain.");
+    }
   };
 
   return (
@@ -213,6 +245,7 @@ export default function AuthorizationCodeRedirectBlock({
             {adding ? "Adding..." : "Add domain"}
           </button>
         </div>
+        {domainError && <p className="text-xs text-red-400">{domainError}</p>}
         {domains.length > 0 ? (
           <div className="space-y-2">
             {domains.map((d) => (

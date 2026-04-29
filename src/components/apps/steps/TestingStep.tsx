@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { computeBackendM2mAllowedScopes } from "@/lib/oidc/backend-m2m-scopes";
 import { DEFAULT_OIDC_SCOPES, getScopeDefinition, OIDC_SCOPES } from "@/lib/oidc/scopes";
 
@@ -37,6 +37,8 @@ export default function TestingStep({
   const [secretFetchError, setSecretFetchError] = useState<string | null>(null);
   const [backendSecretFetchError, setBackendSecretFetchError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const copyResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hasAuthCodeFlow = grantTypes.includes("authorization_code");
   const isM2MOnly = grantTypes.includes("client_credentials") && !hasAuthCodeFlow;
@@ -62,6 +64,15 @@ export default function TestingStep({
     }
     return text.trim() || res.statusText || `Failed to generate secret (${res.status})`;
   };
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimeoutRef.current !== null) {
+        clearTimeout(copyResetTimeoutRef.current);
+        copyResetTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const generateSecret = useCallback(async () => {
     if (readOnly || !appId) return;
@@ -113,9 +124,29 @@ export default function TestingStep({
 
   const copyToClipboard = useCallback(
     async (text: string, label: string) => {
-      await navigator.clipboard.writeText(text);
+      if (typeof navigator === "undefined" || !navigator.clipboard) {
+        setCopyError("Clipboard is unavailable in this browser.");
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (err) {
+        console.error("Failed to copy to clipboard.", err);
+        setCopied(null);
+        setCopyError("Could not copy to clipboard. Please copy the value manually.");
+        return;
+      }
+
+      setCopyError(null);
       setCopied(label);
-      setTimeout(() => setCopied(null), 2000);
+      if (copyResetTimeoutRef.current !== null) {
+        clearTimeout(copyResetTimeoutRef.current);
+      }
+      copyResetTimeoutRef.current = setTimeout(() => {
+        copyResetTimeoutRef.current = null;
+        setCopied(null);
+      }, 2000);
     },
     []
   );
@@ -185,6 +216,7 @@ export default function TestingStep({
             ? "Generate your client secret, then test your M2M token request."
             : "Generate and rotate secrets, try a live authorization request, and copy reference endpoints. Configure redirect URIs and allowed domains under Auth & Scopes → Authorization Code + PKCE."}
         </p>
+        {copyError && <p className="text-xs text-red-400 mt-2">{copyError}</p>}
       </div>
 
       {/* M2M Quick-start */}

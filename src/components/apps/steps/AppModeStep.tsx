@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import type { AppFormData } from "../AppWizard";
 import { OIDC_SCOPES } from "@/lib/oidc/scopes";
 import { validateInitiateLoginUri } from "@/lib/oidc/third-party-initiate-login";
 import AuthorizationCodeRedirectBlock from "./AuthorizationCodeRedirectBlock";
 
 const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
+const noopDomainsChange = (_domains: { id: string; domain: string }[]) => {};
 
 function isValidInitiateLoginUri(uri: string): boolean {
   const t = uri.trim();
@@ -35,8 +36,14 @@ export default function AppModeStep({
   readOnly = false,
   appId = null,
   domains = [],
-  onDomainsChange = () => {},
+  onDomainsChange,
 }: Props) {
+  const stableOnDomainsChange = useCallback(
+    (nextDomains: { id: string; domain: string }[]) => {
+      (onDomainsChange ?? noopDomainsChange)(nextDomains);
+    },
+    [onDomainsChange],
+  );
   const scopes = data.allowedScopes.split(/\s+/).filter(Boolean);
   const hasDeviceCode = data.grantTypes.includes(DEVICE_CODE_GRANT);
   const hasAuthCodeFlow = data.grantTypes.includes("authorization_code");
@@ -316,7 +323,7 @@ export default function AppModeStep({
                     redirectUris={data.redirectUris}
                     onRedirectUrisChange={(uris) => onChange({ redirectUris: uris })}
                     domains={domains}
-                    onDomainsChange={onDomainsChange}
+                    onDomainsChange={stableOnDomainsChange}
                     readOnly={readOnly}
                   />
                 </div>
