@@ -99,6 +99,39 @@ function sortAppsForViewer(apps: AppRow[], userId: string, isAdmin: boolean): Ap
   return [...owned, ...rest];
 }
 
+/** Owner display name for fixture / test-owned apps shown as "Owner: Test User" */
+function isTestUserOwner(app: AppRow): boolean {
+  return app.ownerName?.trim() === "Test User";
+}
+
+function sortAppUsageByMostUsed(appUsage: AppUsageSummary[]): AppUsageSummary[] {
+  return [...appUsage].sort((a, b) => {
+    const tierA = isTestUserOwner(a.app) ? 1 : 0;
+    const tierB = isTestUserOwner(b.app) ? 1 : 0;
+    if (tierA !== tierB) {
+      return tierA - tierB;
+    }
+
+    if (b.requestCount !== a.requestCount) {
+      return b.requestCount - a.requestCount;
+    }
+
+    const unitsA = BigInt(a.totalUnits);
+    const unitsB = BigInt(b.totalUnits);
+    if (unitsA !== unitsB) {
+      return unitsB > unitsA ? 1 : -1;
+    }
+
+    const feeA = BigInt(a.totalFeeWei);
+    const feeB = BigInt(b.totalFeeWei);
+    if (feeA !== feeB) {
+      return feeB > feeA ? 1 : -1;
+    }
+
+    return a.app.name.localeCompare(b.app.name);
+  });
+}
+
 export default async function BillingPage() {
   const session = await getServerSession(authOptions);
   const sessionUser = session?.user as Record<string, unknown> | undefined;
@@ -212,44 +245,46 @@ export default async function BillingPage() {
     appSummary.byUser.set(endUserId, userSummary);
   }
 
-  const appUsage: AppUsageSummary[] = orderedApps.map((app) => {
-    const summary = summaryByApp.get(app.id)!;
-    const byUser: UserUsageRow[] = [...summary.byUser.entries()]
-      .map(([endUserId, userSummary]) => {
-        const externalUserId =
-          endUserId === "unknown"
-            ? null
-            : externalUserIdByAppUser.get(`${app.id}:${endUserId}`) || null;
-        const identity = classifyUsageUser(endUserId, externalUserId);
-        return {
-          endUserId,
-          externalUserId,
-          userType: identity.userType,
-          userLabel: identity.userLabel,
-          identifier: identity.identifier,
-          requestCount: userSummary.requestCount,
-          totalFeeWei: userSummary.totalFeeWei.toString(),
-          totalUnits: userSummary.totalUnits.toString(),
-        };
-      })
-      .sort((a, b) => {
-        if (b.requestCount !== a.requestCount) {
-          return b.requestCount - a.requestCount;
-        }
-        const feeA = BigInt(a.totalFeeWei);
-        const feeB = BigInt(b.totalFeeWei);
-        if (feeA === feeB) return 0;
-        return feeB > feeA ? 1 : -1;
-      });
+  const appUsage: AppUsageSummary[] = sortAppUsageByMostUsed(
+    orderedApps.map((app) => {
+      const summary = summaryByApp.get(app.id)!;
+      const byUser: UserUsageRow[] = [...summary.byUser.entries()]
+        .map(([endUserId, userSummary]) => {
+          const externalUserId =
+            endUserId === "unknown"
+              ? null
+              : externalUserIdByAppUser.get(`${app.id}:${endUserId}`) || null;
+          const identity = classifyUsageUser(endUserId, externalUserId);
+          return {
+            endUserId,
+            externalUserId,
+            userType: identity.userType,
+            userLabel: identity.userLabel,
+            identifier: identity.identifier,
+            requestCount: userSummary.requestCount,
+            totalFeeWei: userSummary.totalFeeWei.toString(),
+            totalUnits: userSummary.totalUnits.toString(),
+          };
+        })
+        .sort((a, b) => {
+          if (b.requestCount !== a.requestCount) {
+            return b.requestCount - a.requestCount;
+          }
+          const feeA = BigInt(a.totalFeeWei);
+          const feeB = BigInt(b.totalFeeWei);
+          if (feeA === feeB) return 0;
+          return feeB > feeA ? 1 : -1;
+        });
 
-    return {
-      app,
-      requestCount: summary.requestCount,
-      totalFeeWei: summary.totalFeeWei.toString(),
-      totalUnits: summary.totalUnits.toString(),
-      byUser,
-    };
-  });
+      return {
+        app,
+        requestCount: summary.requestCount,
+        totalFeeWei: summary.totalFeeWei.toString(),
+        totalUnits: summary.totalUnits.toString(),
+        byUser,
+      };
+    }),
+  );
 
   const totalRequests = appUsage.reduce((sum, row) => sum + row.requestCount, 0);
   const totalFeeWei = appUsage.reduce(
@@ -272,44 +307,52 @@ export default async function BillingPage() {
 
   return (
     <DashboardLayout>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-zinc-100">Billing &amp; usage</h1>
-        <p className="text-sm text-zinc-500 mt-1">
-          {isAdmin
-            ? "Your applications are listed first, followed by all applications in the system."
-            : "Usage for all applications you own, with per-user billing breakdowns."}
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-xl sm:text-2xl font-bold text-zinc-100">Billing &amp; usage</h1>
+        <p className="text-xs sm:text-sm text-zinc-500 mt-1">
+          Applications are ordered by requests this billing cycle; apps owned by Test User appear
+          after all others, with per-user billing breakdowns.
         </p>
-        <p className="text-xs text-zinc-600 mt-2">
+        <p className="text-xs text-zinc-600 mt-2 break-words">
           Cycle: {formatPeriod(cycle.start)} — {formatPeriod(cycle.end)}
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-8">
-        <div className="border border-zinc-800 rounded-xl p-5 bg-zinc-900/30">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6 sm:mb-8">
+        <div className="border border-zinc-800 rounded-xl p-4 sm:p-5 bg-zinc-900/30 min-w-0">
           <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Applications</p>
-          <p className="text-xl font-bold text-zinc-100">{orderedApps.length}</p>
+          <p className="text-lg sm:text-xl font-bold text-zinc-100 tabular-nums">
+            {orderedApps.length}
+          </p>
           <p className="text-xs text-zinc-600 mt-1">{appsWithUsage} with usage this cycle</p>
         </div>
-        <div className="border border-zinc-800 rounded-xl p-5 bg-zinc-900/30">
+        <div className="border border-zinc-800 rounded-xl p-4 sm:p-5 bg-zinc-900/30 min-w-0">
           <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Requests</p>
-          <p className="text-xl font-bold text-zinc-100">{totalRequests}</p>
+          <p className="text-lg sm:text-xl font-bold text-zinc-100 tabular-nums">{totalRequests}</p>
           <p className="text-xs text-zinc-600 mt-1">runtime requests this cycle</p>
         </div>
-        <div className="border border-zinc-800 rounded-xl p-5 bg-zinc-900/30">
+        <div className="border border-zinc-800 rounded-xl p-4 sm:p-5 bg-zinc-900/30 min-w-0">
           <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Total Fees</p>
-          <p className="text-xl font-bold text-zinc-100">{formatWei(totalFeeWei.toString())}</p>
-          <p className="text-xs text-zinc-600 mt-1">estimated usage fees</p>
+          <p
+            className="font-mono text-lg sm:text-xl font-bold text-zinc-100 break-all leading-snug"
+            title={formatWei(totalFeeWei.toString())}
+          >
+            {formatWei(totalFeeWei.toString())}
+          </p>
+          <p className="text-xs text-zinc-600 mt-2">estimated usage fees</p>
         </div>
-        <div className="border border-zinc-800 rounded-xl p-5 bg-zinc-900/30">
+        <div className="border border-zinc-800 rounded-xl p-4 sm:p-5 bg-zinc-900/30 min-w-0">
           <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Viewer Role</p>
-          <p className="text-xl font-bold text-zinc-100 capitalize">{role || "developer"}</p>
+          <p className="text-lg sm:text-xl font-bold text-zinc-100 capitalize truncate">
+            {role || "developer"}
+          </p>
           <p className="text-xs text-zinc-600 mt-1">
             {isAdmin ? "all applications visible" : "owner applications only"}
           </p>
         </div>
       </div>
 
-      <div className="mb-8 rounded-xl border border-zinc-800 bg-zinc-900/30 p-5">
+      <div className="mb-6 sm:mb-8 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 sm:p-5">
         <h2 className="text-sm font-semibold text-zinc-200 mb-4">Usage over billing period</h2>
         <UsageLineChart data={chartData} valueLabel="Requests / day" />
       </div>
@@ -330,13 +373,13 @@ export default async function BillingPage() {
               key={entry.app.id}
               className="rounded-xl border border-zinc-800 bg-zinc-900/30 overflow-hidden"
             >
-              <div className="px-5 py-4 border-b border-zinc-800">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h2 className="font-semibold text-zinc-100">{entry.app.name}</h2>
-                    <p className="text-xs text-zinc-500 mt-1 font-mono">{entry.app.id}</p>
+              <div className="px-4 py-4 sm:px-5 border-b border-zinc-800">
+                <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-3">
+                  <div className="min-w-0">
+                    <h2 className="font-semibold text-zinc-100 break-words">{entry.app.name}</h2>
+                    <p className="text-xs text-zinc-500 mt-1 font-mono break-all">{entry.app.id}</p>
                     {isAdmin && (
-                      <p className="text-xs text-zinc-500 mt-1">
+                      <p className="text-xs text-zinc-500 mt-1 break-words">
                         Owner:{" "}
                         <span className="text-zinc-300">
                           {entry.app.ownerName || entry.app.ownerEmail || entry.app.ownerId}
@@ -345,18 +388,22 @@ export default async function BillingPage() {
                       </p>
                     )}
                   </div>
-                  <div className="grid grid-cols-3 gap-3 text-right">
-                    <div>
+                  <div className="grid grid-cols-3 gap-2 sm:gap-3 text-right shrink-0 w-full min-w-0 sm:w-auto sm:max-w-full">
+                    <div className="min-w-0">
                       <p className="text-[11px] uppercase tracking-wider text-zinc-500">Requests</p>
-                      <p className="text-sm font-semibold text-zinc-200">{entry.requestCount}</p>
+                      <p className="text-sm font-semibold text-zinc-200 tabular-nums">
+                        {entry.requestCount}
+                      </p>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-[11px] uppercase tracking-wider text-zinc-500">Units</p>
-                      <p className="text-sm font-semibold text-zinc-200">{entry.totalUnits}</p>
+                      <p className="text-sm font-semibold text-zinc-200 font-mono break-all">
+                        {entry.totalUnits}
+                      </p>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-[11px] uppercase tracking-wider text-zinc-500">Fees</p>
-                      <p className="text-sm font-semibold text-zinc-200">
+                      <p className="text-sm font-semibold text-zinc-200 font-mono break-all">
                         {formatWei(entry.totalFeeWei)}
                       </p>
                     </div>
@@ -365,15 +412,15 @@ export default async function BillingPage() {
               </div>
 
               {entry.byUser.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
+                <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                  <table className="w-full text-sm min-w-[32rem]">
                     <thead>
                       <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
-                        <th className="text-left px-5 py-3 font-medium">Identity</th>
-                        <th className="text-left px-5 py-3 font-medium">Identifier</th>
-                        <th className="text-right px-5 py-3 font-medium">Requests</th>
-                        <th className="text-right px-5 py-3 font-medium">Units</th>
-                        <th className="text-right px-5 py-3 font-medium">Total Fees</th>
+                        <th className="text-left px-4 sm:px-5 py-3 font-medium">Identity</th>
+                        <th className="text-left px-4 sm:px-5 py-3 font-medium">Identifier</th>
+                        <th className="text-right px-4 sm:px-5 py-3 font-medium">Requests</th>
+                        <th className="text-right px-4 sm:px-5 py-3 font-medium">Units</th>
+                        <th className="text-right px-4 sm:px-5 py-3 font-medium">Total Fees</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -382,8 +429,8 @@ export default async function BillingPage() {
                           key={`${entry.app.id}:${userUsage.endUserId}`}
                           className="border-b border-zinc-800/50 hover:bg-zinc-800/20"
                         >
-                          <td className="px-5 py-3">
-                            <div className="flex items-center gap-2">
+                          <td className="px-4 sm:px-5 py-3">
+                            <div className="flex flex-wrap items-center gap-2">
                               <code className="text-xs text-zinc-300">
                                 {userUsage.userLabel}
                               </code>
@@ -404,7 +451,7 @@ export default async function BillingPage() {
                               </span>
                             </div>
                           </td>
-                          <td className="px-5 py-3">
+                          <td className="px-4 sm:px-5 py-3">
                             <code className="text-xs text-zinc-500" title={userUsage.identifier}>
                               {userUsage.identifier === "unknown"
                                 ? "unknown"
@@ -413,13 +460,13 @@ export default async function BillingPage() {
                                   : userUsage.identifier}
                             </code>
                           </td>
-                          <td className="px-5 py-3 text-right text-zinc-300">
+                          <td className="px-4 sm:px-5 py-3 text-right text-zinc-300 tabular-nums">
                             {userUsage.requestCount}
                           </td>
-                          <td className="px-5 py-3 text-right text-zinc-300">
+                          <td className="px-4 sm:px-5 py-3 text-right text-zinc-300 font-mono text-xs break-all">
                             {userUsage.totalUnits}
                           </td>
-                          <td className="px-5 py-3 text-right text-zinc-300">
+                          <td className="px-4 sm:px-5 py-3 text-right text-zinc-300 font-mono text-xs break-all">
                             {formatWei(userUsage.totalFeeWei)}
                           </td>
                         </tr>

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDocsBaseUrl } from "@/lib/docs-base-url";
+import { docsOidcUrl } from "@/lib/docs-base-url";
 import { getIssuer } from "@/lib/oidc/issuer-urls";
 import { PROVIDER_ENDPOINT_PATHS } from "@/lib/oidc/routes";
 
@@ -56,7 +56,7 @@ export async function GET(): Promise<NextResponse> {
       "name",
     ],
     code_challenge_methods_supported: ["S256"],
-    service_documentation: getDocsBaseUrl(),
+    service_documentation: docsOidcUrl(),
   };
 
   return NextResponse.json(discovery, {

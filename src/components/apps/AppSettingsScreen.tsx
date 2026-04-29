@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppInfoStep from "./steps/AppInfoStep";
 import AppModeStep from "./steps/AppModeStep";
@@ -338,7 +338,14 @@ export default function AppSettingsScreen({
 
       {/* Auth & Scopes */}
       <section className="py-6">
-        <AppModeStep data={formData} onChange={updateFormData} readOnly={!canEdit} />
+        <AppModeStep
+          data={formData}
+          onChange={updateFormData}
+          readOnly={!canEdit}
+          appId={appId}
+          domains={domains}
+          onDomainsChange={setDomains}
+        />
       </section>
 
       {/* Post-logout Redirects */}
@@ -407,10 +414,7 @@ export default function AppSettingsScreen({
           clientId={appState.clientId}
           grantTypes={formData.grantTypes}
           redirectUris={formData.redirectUris}
-          onRedirectUrisChange={(uris) => updateFormData({ redirectUris: uris })}
           allowedScopes={formData.allowedScopes}
-          domains={domains}
-          onDomainsChange={setDomains}
           hasSecret={appState.hasSecret}
           backendHelper={appState.backendHelper}
           onSecretGenerated={() => {
@@ -499,12 +503,28 @@ function ReferenceEndpointsSection({
   );
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const copyResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimeoutRef.current !== null) {
+        clearTimeout(copyResetTimeoutRef.current);
+        copyResetTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const copy = useCallback(async (text: string, key: string) => {
     if (!text) return;
     await navigator.clipboard.writeText(text);
     setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
+    if (copyResetTimeoutRef.current !== null) {
+      clearTimeout(copyResetTimeoutRef.current);
+    }
+    copyResetTimeoutRef.current = setTimeout(() => {
+      copyResetTimeoutRef.current = null;
+      setCopiedKey(null);
+    }, 2000);
   }, []);
 
   return (
