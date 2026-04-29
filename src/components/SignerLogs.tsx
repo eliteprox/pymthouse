@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export default function SignerLogs() {
   const [lines, setLines] = useState<string[]>([]);
@@ -9,7 +9,7 @@ export default function SignerLogs() {
   const [tail, setTail] = useState(50);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  async function fetchLogs() {
+  const fetchLogs = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/signer/logs?tail=${tail}`);
       if (res.ok) {
@@ -21,17 +21,17 @@ export default function SignerLogs() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [tail]);
 
   useEffect(() => {
     fetchLogs();
-  }, [tail]);
+  }, [fetchLogs]);
 
   useEffect(() => {
     if (!autoRefresh) return;
     const interval = setInterval(fetchLogs, 5000);
     return () => clearInterval(interval);
-  }, [autoRefresh, tail]);
+  }, [autoRefresh, fetchLogs]);
 
   useEffect(() => {
     if (scrollRef.current) {

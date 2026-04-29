@@ -296,6 +296,8 @@ export function LoginForm() {
           {isWhiteLabel && branding ? (
             <>
               {logoUrl && (
+                // Tenant logo URLs are dynamic, so next/image remote host config cannot enumerate them.
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={logoUrl}
                   alt={branding.displayName}

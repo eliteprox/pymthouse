@@ -84,11 +84,17 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
   const { data: session, status } = useSession();
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
-
-  useEffect(() => {
-    setMobileNavOpen(false);
-  }, [pathname]);
+  const [mobileNavState, setMobileNavState] = useState({
+    open: false,
+    pathname,
+  });
+  const mobileNavOpen = mobileNavState.pathname === pathname && mobileNavState.open;
+  const setMobileNavOpen = (open: boolean) => {
+    setMobileNavState({
+      open,
+      pathname,
+    });
+  };
 
   const userRole = (session?.user as Record<string, unknown> | undefined)?.role as string | undefined;
 
