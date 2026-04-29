@@ -86,25 +86,36 @@ export default function AuthorizationCodeRedirectBlock({
     }
 
     if (appId) {
+      let normalizedOrigin: string;
       try {
         const origin = new URL(uri).origin;
-        const normalizedOrigin = origin.toLowerCase();
-        if (
-          origin !== "null" &&
-          !domains.some((d) => d.domain.toLowerCase() === normalizedOrigin)
-        ) {
-          const res = await fetch(`/api/v1/apps/${appId}/domains`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ domain: normalizedOrigin }),
-          });
-          if (res.ok) {
-            const resData = await res.json();
-            onDomainsChange([...domains, { id: resData.id, domain: resData.domain }]);
-          }
-        }
+        if (origin === "null") return;
+        normalizedOrigin = origin.toLowerCase();
       } catch {
         /* invalid URL or wildcard — skip auto-whitelist */
+        return;
+      }
+
+      if (domains.some((d) => d.domain.toLowerCase() === normalizedOrigin)) return;
+
+      setDomainError(null);
+      try {
+        const res = await fetch(`/api/v1/apps/${appId}/domains`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ domain: normalizedOrigin }),
+        });
+        if (!res.ok) {
+          setDomainError(await parseDomainError(res));
+          return;
+        }
+        const resData = await res.json();
+        onDomainsChange([...domains, { id: resData.id, domain: resData.domain }]);
+      } catch (err) {
+        console.error("Failed to auto-whitelist redirect URI domain.", err);
+        setDomainError(
+          err instanceof Error ? err.message : "Could not auto-whitelist redirect URI domain.",
+        );
       }
     }
   };
@@ -148,9 +159,12 @@ export default function AuthorizationCodeRedirectBlock({
     if (readOnly || !appId) return;
     setDomainError(null);
     try {
-      const res = await fetch(`/api/v1/apps/${appId}/domains?domainId=${domainId}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(
+        `/api/v1/apps/${appId}/domains?domainId=${encodeURIComponent(domainId)}`,
+        {
+          method: "DELETE",
+        },
+      );
       if (!res.ok) {
         setDomainError(await parseDomainError(res));
         return;

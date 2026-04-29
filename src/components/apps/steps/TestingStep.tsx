@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeBackendM2mAllowedScopes } from "@/lib/oidc/backend-m2m-scopes";
 import { DEFAULT_OIDC_SCOPES, getScopeDefinition, OIDC_SCOPES } from "@/lib/oidc/scopes";
 
@@ -16,6 +16,10 @@ interface Props {
   onSecretGenerated: () => void;
   onBackendSecretGenerated?: () => void;
   readOnly?: boolean;
+}
+
+function getDefaultRedirectUri(redirectUris: string[]) {
+  return redirectUris.find((uri) => /^https?:\/\//i.test(uri)) ?? redirectUris[0] ?? "";
 }
 
 export default function TestingStep({
@@ -38,6 +42,9 @@ export default function TestingStep({
   const [backendSecretFetchError, setBackendSecretFetchError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
+  const [selectedRedirectUri, setSelectedRedirectUri] = useState(() =>
+    getDefaultRedirectUri(redirectUris),
+  );
   const copyResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hasAuthCodeFlow = grantTypes.includes("authorization_code");
@@ -73,6 +80,13 @@ export default function TestingStep({
       }
     };
   }, []);
+
+  useEffect(() => {
+    setSelectedRedirectUri((current) => {
+      if (current && redirectUris.includes(current)) return current;
+      return getDefaultRedirectUri(redirectUris);
+    });
+  }, [redirectUris]);
 
   const generateSecret = useCallback(async () => {
     if (readOnly || !appId) return;
@@ -151,7 +165,7 @@ export default function TestingStep({
     []
   );
 
-  const selectedRedirectUri = redirectUris[0] || "";
+  const redirectUriOptions = useMemo(() => redirectUris, [redirectUris]);
 
   // Strip scopes that have been removed from the catalog so stale DB values
   // never leak into displayed snippets or test URLs.
@@ -270,9 +284,34 @@ export default function TestingStep({
                 <label className="block text-sm font-medium text-zinc-300 mb-1.5">
                   Test Authorization Code Flow
                 </label>
+                {redirectUriOptions.length > 1 && (
+                  <div className="mb-3">
+                    <label
+                      htmlFor="testing-redirect-uri"
+                      className="block text-xs font-medium text-zinc-400 mb-1"
+                    >
+                      Redirect URI
+                    </label>
+                    <select
+                      id="testing-redirect-uri"
+                      value={selectedRedirectUri}
+                      onChange={(e) => setSelectedRedirectUri(e.target.value)}
+                      className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                    >
+                      {redirectUriOptions.map((uri) => (
+                        <option key={uri} value={uri}>
+                          {uri}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <button
                   type="button"
-                  onClick={() => window.open(testUrl, "_blank")}
+                  onClick={() => {
+                    const newWin = window.open(testUrl, "_blank", "noopener,noreferrer");
+                    if (newWin) newWin.opener = null;
+                  }}
                   className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-500 transition-colors"
                 >
                   Open Test Flow
