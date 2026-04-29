@@ -63,6 +63,10 @@ export default function AuthorizationCodeRedirectBlock({
         return false;
       }
       return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      setRedirectPersistError(`Failed to save redirect URIs: ${message}`);
+      return false;
     } finally {
       setRedirectSaving(false);
     }
