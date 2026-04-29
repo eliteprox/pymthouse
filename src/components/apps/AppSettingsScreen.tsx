@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import AppInfoStep from "./steps/AppInfoStep";
 import AppModeStep from "./steps/AppModeStep";
@@ -430,13 +430,12 @@ export default function AppSettingsScreen({
       </section>
 
       {/* Reference endpoints */}
-      <section className="py-6 space-y-4">
-        <h2 className="text-lg font-semibold text-zinc-100">Reference endpoints</h2>
-        <EndpointField label="Client ID" value={appState.clientId || ""} />
-        <EndpointField label="OIDC discovery" value={discoveryUrl} />
-        <EndpointField label="Authorize" value={authorizeUrl} />
-        <EndpointField label="Token" value={tokenUrl} />
-      </section>
+      <ReferenceEndpointsSection
+        clientId={appState.clientId || ""}
+        discoveryUrl={discoveryUrl}
+        authorizeUrl={authorizeUrl}
+        tokenUrl={tokenUrl}
+      />
 
       {/* Danger zone */}
       {canSubmitForReview && appState.status === "draft" && (
@@ -477,13 +476,68 @@ export default function AppSettingsScreen({
   );
 }
 
-function EndpointField({ label, value }: { label: string; value: string }) {
+function ReferenceEndpointsSection({
+  clientId,
+  discoveryUrl,
+  authorizeUrl,
+  tokenUrl,
+}: {
+  clientId: string;
+  discoveryUrl: string;
+  authorizeUrl: string;
+  tokenUrl: string;
+}) {
+  const rows = useMemo(
+    () =>
+      [
+        { key: "client", label: "Client ID", value: clientId, accent: true as const },
+        { key: "discovery", label: "OIDC discovery", value: discoveryUrl, accent: false as const },
+        { key: "authorize", label: "Authorize", value: authorizeUrl, accent: false as const },
+        { key: "token", label: "Token", value: tokenUrl, accent: false as const },
+      ] as const,
+    [authorizeUrl, clientId, discoveryUrl, tokenUrl],
+  );
+
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const copy = useCallback(async (text: string, key: string) => {
+    if (!text) return;
+    await navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2000);
+  }, []);
+
   return (
-    <div>
-      <label className="block text-xs font-medium text-zinc-500 mb-1.5">{label}</label>
-      <code className="block rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs text-zinc-300 break-all">
-        {value || "—"}
-      </code>
-    </div>
+    <section className="py-6 space-y-3">
+      <h2 className="text-lg font-semibold text-zinc-100">Reference endpoints</h2>
+      <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 divide-y divide-zinc-800/90">
+        {rows.map((row) => (
+          <div
+            key={row.key}
+            className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3"
+          >
+            <span className="text-sm text-zinc-400 shrink-0 sm:w-36">{row.label}</span>
+            <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+              <code
+                className={`min-w-0 flex-1 text-xs font-mono leading-snug break-all ${
+                  row.accent ? "text-emerald-400" : "text-zinc-300"
+                }`}
+              >
+                {row.value || "—"}
+              </code>
+              {row.value ? (
+                <button
+                  type="button"
+                  onClick={() => void copy(row.value, row.key)}
+                  className="shrink-0 rounded-md border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-200 hover:bg-zinc-700 transition-colors"
+                >
+                  {copiedKey === row.key ? "Copied!" : "Copy"}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

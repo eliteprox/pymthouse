@@ -7,9 +7,7 @@ import { MarketingFooter } from "@/components/MarketingFooter";
 import { db } from "@/db/index";
 import { developerApps, oidcClients } from "@/db/schema";
 import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
-
-const DEFAULT_DOCS_URL =
-  "https://docs.pymthouse.com";
+import { getDocsBaseUrl } from "@/lib/docs-base-url";
 
 // ─── App showcase helpers ────────────────────────────────────────────────────
 
@@ -210,7 +208,7 @@ export default async function HomePage() {
   const session = await getServerSession(authOptions);
   if (session) redirect("/dashboard");
 
-  const docsUrl = process.env.NEXT_PUBLIC_DOCS_URL?.trim() || DEFAULT_DOCS_URL;
+  const docsUrl = getDocsBaseUrl();
 
   // Fetch published apps for the showcase
   const rows = await db

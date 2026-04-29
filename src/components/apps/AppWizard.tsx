@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { DEFAULT_OIDC_SCOPES } from "@/lib/oidc/scopes";
+import { docsDeviceFlowUrl, docsInteractiveLoginUrl } from "@/lib/docs-base-url";
+import { DEFAULT_OIDC_SCOPES, OIDC_SCOPES } from "@/lib/oidc/scopes";
 
 const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
+
+const USERS_TOKEN_SCOPE = OIDC_SCOPES.find((s) => s.value === "users:token")!;
 
 export interface AppFormData {
   name: string;
@@ -33,6 +36,12 @@ export interface AppState {
   pendingRevisionSubmittedAt?: string | null;
 }
 
+const DEFAULT_GRANT_TYPES_WITH_DEVICE = [
+  "authorization_code",
+  "refresh_token",
+  DEVICE_CODE_GRANT,
+] as const;
+
 export const defaultAppFormData: AppFormData = {
   name: "",
   description: "",
@@ -40,9 +49,9 @@ export const defaultAppFormData: AppFormData = {
   websiteUrl: "",
   tokenEndpointAuthMethod: "none",
   redirectUris: [],
-  allowedScopes: DEFAULT_OIDC_SCOPES,
-  grantTypes: ["authorization_code", "refresh_token"],
-  backendDeviceHelper: false,
+  allowedScopes: `${DEFAULT_OIDC_SCOPES} users:token`.trim(),
+  grantTypes: [...DEFAULT_GRANT_TYPES_WITH_DEVICE],
+  backendDeviceHelper: true,
   initiateLoginUri: "",
   deviceThirdPartyInitiateLogin: false,
 };
@@ -56,11 +65,27 @@ interface Props {
 const fieldClass =
   "w-full px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-md text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/50 disabled:opacity-50";
 
+function parseScopes(allowedScopes: string): string[] {
+  return allowedScopes.split(/\s+/).filter(Boolean);
+}
+
+function joinScopes(scopes: string[]): string {
+  return scopes.join(" ");
+}
+
 export default function AppWizard({ initialData }: Props) {
   const router = useRouter();
   const [formData, setFormData] = useState<AppFormData>({
     ...defaultAppFormData,
     ...initialData,
+    grantTypes:
+      initialData?.grantTypes !== undefined
+        ? [...initialData.grantTypes]
+        : [...defaultAppFormData.grantTypes],
+    redirectUris:
+      initialData?.redirectUris !== undefined
+        ? [...initialData.redirectUris]
+        : [...defaultAppFormData.redirectUris],
   });
   const [callbackUrl, setCallbackUrl] = useState(initialData?.redirectUris?.[0] ?? "");
   const [saving, setSaving] = useState(false);
@@ -68,24 +93,60 @@ export default function AppWizard({ initialData }: Props) {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const hasDeviceCode = formData.grantTypes.includes(DEVICE_CODE_GRANT);
+  const scopesList = useMemo(() => parseScopes(formData.allowedScopes), [formData.allowedScopes]);
+  const hasIssueUserTokens = scopesList.includes("users:token");
 
   const set = useCallback(<K extends keyof AppFormData>(key: K, value: AppFormData[K]) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
   }, []);
 
+  const toggleConfidential = (checked: boolean) => {
+    if (!checked) {
+      setFormData((prev) => {
+        const scopes = parseScopes(prev.allowedScopes).filter((s) => s !== "users:token");
+        return {
+          ...prev,
+          backendDeviceHelper: false,
+          grantTypes: prev.grantTypes.filter((g) => g !== DEVICE_CODE_GRANT),
+          allowedScopes: joinScopes(scopes),
+          initiateLoginUri: "",
+          deviceThirdPartyInitiateLogin: false,
+        };
+      });
+      return;
+    }
+    setFormData((prev) => {
+      const scopes = parseScopes(prev.allowedScopes);
+      const nextScopes = scopes.includes("users:token") ? scopes : [...scopes, "users:token"];
+      return {
+        ...prev,
+        backendDeviceHelper: true,
+        allowedScopes: joinScopes(nextScopes),
+      };
+    });
+  };
+
   const toggleDeviceCode = () => {
+    if (!formData.backendDeviceHelper) return;
     if (hasDeviceCode) {
       set("grantTypes", formData.grantTypes.filter((v) => v !== DEVICE_CODE_GRANT));
       return;
     }
     setFormData((prev) => ({
       ...prev,
-      backendDeviceHelper: true,
       grantTypes: prev.grantTypes.includes(DEVICE_CODE_GRANT)
         ? prev.grantTypes
         : [...prev.grantTypes, DEVICE_CODE_GRANT],
     }));
-    setShowAdvanced(true);
+  };
+
+  const toggleIssueUserTokens = () => {
+    if (!formData.backendDeviceHelper) return;
+    const scopes = parseScopes(formData.allowedScopes);
+    const next = hasIssueUserTokens
+      ? scopes.filter((s) => s !== "users:token")
+      : [...scopes, "users:token"];
+    set("allowedScopes", joinScopes(next));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -128,10 +189,7 @@ export default function AppWizard({ initialData }: Props) {
     }
   };
 
-  const canSubmit =
-    !saving &&
-    formData.name.trim().length > 0 &&
-    formData.websiteUrl.trim().length > 0;
+  const canSubmit = !saving && formData.name.trim().length > 0;
 
   return (
     <div className="max-w-[540px]">
@@ -161,20 +219,139 @@ export default function AppWizard({ initialData }: Props) {
           <p className="text-xs text-zinc-500 mt-1.5">Something users will recognize and trust.</p>
         </div>
 
-        {/* Homepage URL */}
+        {/* Homepage URL (optional) */}
         <div>
           <label className="block text-sm font-medium text-zinc-200 mb-1.5">
-            Homepage URL <span className="text-red-400">*</span>
+            Homepage URL <span className="text-zinc-500 font-normal">(optional)</span>
           </label>
           <input
             type="url"
             value={formData.websiteUrl}
             onChange={(e) => set("websiteUrl", e.target.value)}
-            required
             placeholder="https://"
             className={fieldClass}
           />
-          <p className="text-xs text-zinc-500 mt-1.5">The full URL to your application homepage.</p>
+          <p className="text-xs text-zinc-500 mt-1.5">
+            Shown on consent and in marketplace listings when set.
+          </p>
+        </div>
+
+        {/* OAuth capabilities */}
+        <div className="rounded-xl border border-zinc-700/80 bg-zinc-800/20 p-4 space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-zinc-100">OAuth capabilities</h2>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              Device flow depends on a confidential (M2M) companion client in this product.
+            </p>
+          </div>
+
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={Boolean(formData.backendDeviceHelper)}
+              onChange={(e) => toggleConfidential(e.target.checked)}
+              className="w-4 h-4 mt-0.5 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 shrink-0"
+            />
+            <div>
+              <p className="text-sm font-medium text-zinc-200">
+                Confidential client{" "}
+                <span className="text-[10px] font-normal text-zinc-500 uppercase tracking-wide">
+                  (client credentials)
+                </span>
+              </p>
+              <p className="text-xs text-zinc-500 mt-1">
+                Provisions a confidential{" "}
+                <code className="font-mono text-zinc-400">m2m_</code> client for
+                server-to-server Builder APIs. Your public client stays unauthenticated for SDK
+                / CLI device login.
+              </p>
+            </div>
+          </label>
+
+          <div>
+            <label
+              className={`flex items-start gap-3 ${
+                formData.backendDeviceHelper ? "cursor-pointer" : "cursor-not-allowed opacity-60"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={hasDeviceCode}
+                onChange={toggleDeviceCode}
+                disabled={!formData.backendDeviceHelper}
+                className="w-4 h-4 mt-0.5 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 shrink-0 disabled:opacity-50"
+              />
+              <div>
+                <p className="text-sm font-medium text-zinc-200">Enable Device Flow</p>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  Allow CLI tools, SDKs, and headless clients to authorize via a user code.{" "}
+                  <a
+                    href={docsDeviceFlowUrl()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-500 hover:underline"
+                  >
+                    Device Flow documentation
+                  </a>
+                </p>
+              </div>
+            </label>
+            {!formData.backendDeviceHelper && (
+              <p className="text-xs text-zinc-600 mt-1.5 ml-[26px]">
+                Turn on Confidential client first.
+              </p>
+            )}
+          </div>
+
+          {formData.backendDeviceHelper && (
+            <label className="flex items-start gap-3 cursor-pointer rounded-lg border border-zinc-700/70 bg-zinc-800/30 p-3">
+              <input
+                type="checkbox"
+                checked={hasIssueUserTokens}
+                onChange={toggleIssueUserTokens}
+                className="w-4 h-4 mt-0.5 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40 shrink-0"
+              />
+              <div>
+                <p className="text-sm font-medium text-zinc-200">{USERS_TOKEN_SCOPE.label}</p>
+                <p className="text-xs text-zinc-500 mt-0.5">{USERS_TOKEN_SCOPE.description}</p>
+              </div>
+            </label>
+          )}
+
+          <div className="rounded-lg border border-zinc-700/50 bg-zinc-900/40 px-3 py-2.5 text-xs text-zinc-400 leading-relaxed">
+            <strong className="text-zinc-300">Custom login for device approval:</strong> after you
+            register, open{" "}
+            <strong className="text-zinc-400">App settings → Auth &amp; scopes → Device login</strong>{" "}
+            and set <strong className="text-zinc-400">Initiate login URI</strong> so users complete
+            sign-in on your site instead of the default PymtHouse device page.
+          </div>
+        </div>
+
+        {/* Authorization callback URL */}
+        <div>
+          <label className="block text-sm font-medium text-zinc-200 mb-1.5">
+            Authorization callback URL
+          </label>
+          <input
+            type="url"
+            value={callbackUrl}
+            onChange={(e) => setCallbackUrl(e.target.value)}
+            placeholder="https://"
+            className={fieldClass}
+          />
+          <p className="text-xs text-zinc-500 mt-1.5">
+            Required for the browser authorization code flow. Optional if you only use device or
+            server flows for now; you can add this later in app settings. Read our{" "}
+            <a
+              href={docsInteractiveLoginUrl()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-emerald-500 hover:underline"
+            >
+              OAuth documentation
+            </a>{" "}
+            for more information.
+          </p>
         </div>
 
         {/* Description */}
@@ -194,52 +371,7 @@ export default function AppWizard({ initialData }: Props) {
           </p>
         </div>
 
-        {/* Authorization callback URL */}
-        <div>
-          <label className="block text-sm font-medium text-zinc-200 mb-1.5">
-            Authorization callback URL
-          </label>
-          <input
-            type="url"
-            value={callbackUrl}
-            onChange={(e) => setCallbackUrl(e.target.value)}
-            placeholder="https://"
-            className={fieldClass}
-          />
-          <p className="text-xs text-zinc-500 mt-1.5">
-            Required for the browser authorization code flow. Optional if you only use
-            device or server flows for now; you can add this later in app settings. Read our{" "}
-            <a href="/docs/oauth" className="text-emerald-500 hover:underline">
-              OAuth documentation
-            </a>{" "}
-            for more information.
-          </p>
-        </div>
-
-        {/* Enable Device Flow */}
-        <div className="pt-1">
-          <label className="flex items-center gap-2.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={hasDeviceCode}
-              onChange={toggleDeviceCode}
-              className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40"
-            />
-            <span className="text-sm font-medium text-zinc-200">Enable Device Flow</span>
-          </label>
-          <p className="text-xs text-zinc-500 mt-1.5 ml-[26px]">
-            Allow this OAuth App to authorize users via the Device Flow. Enabling this also
-            provisions a confidential client.
-            <br />
-            Read the{" "}
-            <a href="/docs/device-flow" className="text-emerald-500 hover:underline">
-              Device Flow documentation
-            </a>{" "}
-            for more information.
-          </p>
-        </div>
-
-        {/* Advanced settings */}
+        {/* Advanced: developer name only */}
         <div className="border-t border-zinc-800 pt-4">
           <button
             type="button"
@@ -259,7 +391,6 @@ export default function AppWizard({ initialData }: Props) {
 
           {showAdvanced && (
             <div className="mt-4 space-y-5 pl-[22px]">
-              {/* Developer / org name */}
               <div>
                 <label className="block text-sm font-medium text-zinc-200 mb-1.5">
                   Developer / organization name
@@ -271,41 +402,6 @@ export default function AppWizard({ initialData }: Props) {
                   placeholder="Acme Inc."
                   className={fieldClass}
                 />
-              </div>
-
-              {/* Confidential client (M2M) */}
-              <div>
-                <label className="flex items-center gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(formData.backendDeviceHelper)}
-                    onChange={(e) => {
-                      const checked = e.target.checked;
-                      if (!checked) {
-                        setFormData((prev) => ({
-                          ...prev,
-                          backendDeviceHelper: false,
-                          grantTypes: prev.grantTypes.filter((g) => g !== DEVICE_CODE_GRANT),
-                        }));
-                      } else {
-                        set("backendDeviceHelper", true);
-                      }
-                    }}
-                    className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 focus:ring-emerald-500/40"
-                  />
-                  <span className="text-sm font-medium text-zinc-200">
-                    Confidential client{" "}
-                    <span className="text-[10px] font-normal text-zinc-500 uppercase tracking-wide">
-                      (client credentials)
-                    </span>
-                  </span>
-                </label>
-                <p className="text-xs text-zinc-500 mt-1.5 ml-[26px]">
-                  Provisions a companion{" "}
-                  <code className="font-mono text-zinc-400">m2m_</code> client for
-                  server-to-server Builder APIs. Your public client remains
-                  unauthenticated for SDK / CLI device login.
-                </p>
               </div>
             </div>
           )}
