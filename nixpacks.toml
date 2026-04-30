@@ -2,11 +2,12 @@
 # Downloads and runs the livepeer binary
 
 [phases.setup]
-nixPkgs = ["wget", "gnutar"]
+nixPkgs = ["wget", "gnutar", "coreutils"]
 
 [phases.install]
 cmds = [
-  "wget -q https://github.com/livepeer/go-livepeer/releases/download/v0.8.10/livepeer-linux-amd64.tar.gz",
+  "wget -q -O livepeer-linux-amd64.tar.gz https://github.com/eliteprox/pymthouse/releases/download/go-livepeer-b969c06/livepeer-linux-amd64.tar.gz",
+  "echo '7c2e058799154bf490d4a513bc6c6243dfc61cdc5f615e6855f8c1bc97aabe0b  livepeer-linux-amd64.tar.gz' | sha256sum -c -",
   "tar -xzf livepeer-linux-amd64.tar.gz",
   "mv livepeer-linux-amd64/livepeer ./livepeer",
   "chmod +x livepeer",

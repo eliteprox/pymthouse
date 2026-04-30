@@ -118,13 +118,18 @@ FROM gateway AS signer-dmz
 
 USER root
 
-# Verify the release asset against a known-good sha256 before extraction.
-# If upstream rotates/repacks the asset, the build fails closed rather than silently pulling new bytes.
-ARG LIVEPEER_VERSION=0.8.10
-ARG LIVEPEER_SHA256=febc11b0a8951b44539f978b24e2ea85adf650b1eafe7c213f3eac7cec1043d5
+# Verify tarball sha256 before extraction. Same archive layout as upstream
+# livepeer-linux-amd64.tar.gz (folder livepeer-linux-amd64/livepeer).
+#
+# Pinned to go-livepeer@b969c06 (feat/remote-signer-byoc); vendored on pymthouse
+# until livepeer/go-livepeer publishes a release with these bits. Forks can replace
+# LIVEPEER_TARBALL_URL / LIVEPEER_SHA256 or attach the same tarball to their own release.
+ARG LIVEPEER_VERSION=0.8.11-dev+b969c06
+ARG LIVEPEER_SHA256=7c2e058799154bf490d4a513bc6c6243dfc61cdc5f615e6855f8c1bc97aabe0b
+ARG LIVEPEER_TARBALL_URL=https://github.com/eliteprox/pymthouse/releases/download/go-livepeer-b969c06/livepeer-linux-amd64.tar.gz
 
 RUN apt-get update && apt-get install -y --no-install-recommends wget && \
-    wget -q "https://github.com/livepeer/go-livepeer/releases/download/v${LIVEPEER_VERSION}/livepeer-linux-amd64.tar.gz" && \
+    wget -q -O livepeer-linux-amd64.tar.gz "${LIVEPEER_TARBALL_URL}" && \
     echo "${LIVEPEER_SHA256}  livepeer-linux-amd64.tar.gz" | sha256sum -c - && \
     tar -xzf livepeer-linux-amd64.tar.gz && \
     mv livepeer-linux-amd64/livepeer /usr/local/bin/livepeer && \

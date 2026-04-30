@@ -121,7 +121,7 @@ app = "pymthouse-signer"
 
 [build]
   [build.args]
-    LIVEPEER_VERSION = "0.8.10"
+    LIVEPEER_VERSION = "0.8.11-dev+b969c06"
 
 [env]
   SIGNER_NETWORK = "arbitrum-one-mainnet"
@@ -152,7 +152,8 @@ FROM debian:bookworm-slim
 RUN apt-get update && \
     apt-get install -y wget ca-certificates && \
     rm -rf /var/lib/apt/lists/* && \
-    wget -q https://github.com/livepeer/go-livepeer/releases/download/v0.8.10/livepeer-linux-amd64.tar.gz && \
+    wget -q -O livepeer-linux-amd64.tar.gz https://github.com/eliteprox/pymthouse/releases/download/go-livepeer-b969c06/livepeer-linux-amd64.tar.gz && \
+    echo "7c2e058799154bf490d4a513bc6c6243dfc61cdc5f615e6855f8c1bc97aabe0b  livepeer-linux-amd64.tar.gz" | sha256sum -c - && \
     tar -xzf livepeer-linux-amd64.tar.gz && \
     mv livepeer-linux-amd64/livepeer /usr/local/bin/livepeer && \
     chmod +x /usr/local/bin/livepeer && \
@@ -347,21 +348,18 @@ Look for:
 
 ## Updating the Binary
 
-To update to a new version:
+To update to a new go-livepeer build:
 
-1. **Update the download URL** in:
-   - `docker/signer-dmz/Dockerfile.signer` (line with wget)
-   - `docker/signer-dmz/Dockerfile` (livepeer download in the `signer-dmz` image stage, if you use it)
-   - `nixpacks.toml` (install phase)
-   
-2. **Change version number:**
-   ```
-   v0.8.10 → v0.8.11
-   ```
+1. **Prefer upstream releases** when available: set `LIVEPEER_TARBALL_URL` to
+   `https://github.com/livepeer/go-livepeer/releases/download/vX.Y.Z/livepeer-linux-amd64.tar.gz`
+   and `LIVEPEER_SHA256` / `LIVEPEER_VERSION` in `docker/signer-dmz/Dockerfile` (signer-dmz stage).
+2. **Pre-release / fork builds:** attach the same `livepeer-linux-amd64.tar.gz` (release layout)
+   to a GitHub release you control (as in
+   [go-livepeer-b969c06](https://github.com/eliteprox/pymthouse/releases/tag/go-livepeer-b969c06)),
+   then point `LIVEPEER_TARBALL_URL` at it and update `LIVEPEER_SHA256`.
+3. **Mirror the same URL + checksum** in `docker/signer-dmz/Dockerfile.signer` and `nixpacks.toml` if you use those paths.
 
-3. **Redeploy** on your platform
-
-4. **Test** the new version
+4. **Redeploy** and **test** the signer.
 
 ## Next Steps
 

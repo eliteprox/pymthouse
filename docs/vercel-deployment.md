@@ -90,6 +90,7 @@ Create a `fly.toml` file (separate from this Next.js app):
 app = "pymthouse-signer"
 
 [build]
+  # Pin matches docker/signer-dmz (go-livepeer@b969c06) until Docker Hub publishes that revision.
   image = "livepeer/go-livepeer:0.8.10"
 
 [env]
