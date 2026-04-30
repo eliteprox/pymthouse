@@ -6,7 +6,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import UsageLineChart from "@/components/UsageLineChart";
 import { authOptions } from "@/lib/next-auth-options";
 import { db } from "@/db/index";
-import { appUsers, developerApps, usageRecords, users } from "@/db/schema";
+import { appUsers, developerApps, usageBillingEvents, usageRecords, users } from "@/db/schema";
 import { calendarMonthBoundsUtc, dateKeysInclusiveUtc } from "@/lib/billing-utils";
 
 type AppRow = {
@@ -28,12 +28,23 @@ type UserUsageRow = {
   totalUnits: string;
 };
 
+type PipelineModelSummary = {
+  pipeline: string;
+  modelId: string;
+  requestCount: number;
+  networkFeeUsdMicros: bigint;
+  endUserBillableUsdMicros: bigint;
+};
+
 type AppUsageSummary = {
   app: AppRow;
   requestCount: number;
   totalFeeWei: string;
   totalUnits: string;
+  networkFeeUsdMicros: string;
+  endUserBillableUsdMicros: string;
   byUser: UserUsageRow[];
+  byPipelineModel: PipelineModelSummary[];
 };
 
 function formatWei(wei: string): string {
@@ -195,6 +206,19 @@ export default async function BillingPage() {
           .where(inArray(appUsers.clientId, appIds))
       : [];
 
+  // Fetch billing events to get USD denominations
+  const usageRecordIds = usageRows.map((r) => r.id).filter(Boolean);
+  const billingEventRows =
+    usageRecordIds.length > 0
+      ? await db
+          .select()
+          .from(usageBillingEvents)
+          .where(inArray(usageBillingEvents.usageRecordId, usageRecordIds))
+      : [];
+
+  // Map usageRecordId → billing event
+  const eventByUsageRecord = new Map(billingEventRows.map((e) => [e.usageRecordId, e]));
+
   const externalUserIdByAppUser = new Map(
     appUserRows.map((row) => [`${row.clientId}:${row.id}`, row.externalUserId]),
   );
@@ -205,14 +229,10 @@ export default async function BillingPage() {
       requestCount: number;
       totalFeeWei: bigint;
       totalUnits: bigint;
-      byUser: Map<
-        string,
-        {
-          requestCount: number;
-          totalFeeWei: bigint;
-          totalUnits: bigint;
-        }
-      >;
+      networkFeeUsdMicros: bigint;
+      endUserBillableUsdMicros: bigint;
+      byUser: Map<string, { requestCount: number; totalFeeWei: bigint; totalUnits: bigint }>;
+      byPipelineModel: Map<string, { pipeline: string; modelId: string; requestCount: number; networkFeeUsdMicros: bigint; endUserBillableUsdMicros: bigint }>;
     }
   >();
 
@@ -221,7 +241,10 @@ export default async function BillingPage() {
       requestCount: 0,
       totalFeeWei: 0n,
       totalUnits: 0n,
+      networkFeeUsdMicros: 0n,
+      endUserBillableUsdMicros: 0n,
       byUser: new Map(),
+      byPipelineModel: new Map(),
     });
   }
 
@@ -232,6 +255,25 @@ export default async function BillingPage() {
     appSummary.requestCount += 1;
     appSummary.totalFeeWei += BigInt(row.fee || "0");
     appSummary.totalUnits += BigInt(row.units || "0");
+
+    const billingEvent = eventByUsageRecord.get(row.id);
+    if (billingEvent) {
+      appSummary.networkFeeUsdMicros += BigInt(billingEvent.networkFeeUsdMicros);
+      appSummary.endUserBillableUsdMicros += BigInt(billingEvent.endUserBillableUsdMicros);
+
+      const pmKey = `${billingEvent.pipeline}|${billingEvent.modelId}`;
+      const existing = appSummary.byPipelineModel.get(pmKey) || {
+        pipeline: billingEvent.pipeline,
+        modelId: billingEvent.modelId,
+        requestCount: 0,
+        networkFeeUsdMicros: 0n,
+        endUserBillableUsdMicros: 0n,
+      };
+      existing.requestCount += 1;
+      existing.networkFeeUsdMicros += BigInt(billingEvent.networkFeeUsdMicros);
+      existing.endUserBillableUsdMicros += BigInt(billingEvent.endUserBillableUsdMicros);
+      appSummary.byPipelineModel.set(pmKey, existing);
+    }
 
     const endUserId = row.userId || "unknown";
     const userSummary = appSummary.byUser.get(endUserId) || {
@@ -281,7 +323,10 @@ export default async function BillingPage() {
         requestCount: summary.requestCount,
         totalFeeWei: summary.totalFeeWei.toString(),
         totalUnits: summary.totalUnits.toString(),
+        networkFeeUsdMicros: summary.networkFeeUsdMicros.toString(),
+        endUserBillableUsdMicros: summary.endUserBillableUsdMicros.toString(),
         byUser,
+        byPipelineModel: [...summary.byPipelineModel.values()],
       };
     }),
   );
@@ -388,7 +433,7 @@ export default async function BillingPage() {
                       </p>
                     )}
                   </div>
-                  <div className="grid grid-cols-3 gap-2 sm:gap-3 text-right shrink-0 w-full min-w-0 sm:w-auto sm:max-w-full">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 text-right shrink-0 w-full min-w-0 sm:w-auto sm:max-w-full">
                     <div className="min-w-0">
                       <p className="text-[11px] uppercase tracking-wider text-zinc-500">Requests</p>
                       <p className="text-sm font-semibold text-zinc-200 tabular-nums">
@@ -396,18 +441,41 @@ export default async function BillingPage() {
                       </p>
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[11px] uppercase tracking-wider text-zinc-500">Units</p>
-                      <p className="text-sm font-semibold text-zinc-200 font-mono break-all">
-                        {entry.totalUnits}
-                      </p>
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-[11px] uppercase tracking-wider text-zinc-500">Fees</p>
+                      <p className="text-[11px] uppercase tracking-wider text-zinc-500">Network fee (ETH)</p>
                       <p className="text-sm font-semibold text-zinc-200 font-mono break-all">
                         {formatWei(entry.totalFeeWei)}
                       </p>
                     </div>
+                    <div className="min-w-0">
+                      <p className="text-[11px] uppercase tracking-wider text-zinc-500">Network fee (USD)</p>
+                      <p className="text-sm font-semibold text-emerald-400 font-mono break-all">
+                        {entry.networkFeeUsdMicros !== "0"
+                          ? `$${(parseInt(entry.networkFeeUsdMicros, 10) / 1_000_000).toFixed(4)}`
+                          : "—"}
+                      </p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[11px] uppercase tracking-wider text-zinc-500">Billable (USD)</p>
+                      <p className="text-sm font-semibold text-zinc-200 font-mono break-all">
+                        {entry.endUserBillableUsdMicros !== "0"
+                          ? `$${(parseInt(entry.endUserBillableUsdMicros, 10) / 1_000_000).toFixed(4)}`
+                          : "—"}
+                      </p>
+                    </div>
                   </div>
+                  {entry.byPipelineModel.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {entry.byPipelineModel.map((pm) => (
+                        <span
+                          key={`${pm.pipeline}|${pm.modelId}`}
+                          className="text-xs bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded"
+                          title={`${pm.requestCount} requests · $${(Number(pm.networkFeeUsdMicros) / 1_000_000).toFixed(6)} USD`}
+                        >
+                          {pm.pipeline} / {pm.modelId.length > 20 ? `${pm.modelId.slice(0, 18)}…` : pm.modelId}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 

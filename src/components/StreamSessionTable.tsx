@@ -14,6 +14,12 @@ interface StreamSessionRow {
   /** Successful signer billing events (same dedupe as usage rows). */
   signerPaymentCount: number;
   totalFeeWei: string;
+  /** Transaction-time USD micros for the session total, if available from billing events. */
+  totalNetworkFeeUsdMicros?: string | null;
+  /** Validated pipeline id, when available from billing events. */
+  validatedPipeline?: string | null;
+  /** Validated model id, when available from billing events. */
+  validatedModelId?: string | null;
   status: string;
   startedAt: string;
   lastPaymentAt: string | null;
@@ -82,11 +88,13 @@ export default function StreamSessionTable({
         <thead>
           <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
             <th className="text-left py-3 px-4 font-medium">Manifest ID</th>
+            <th className="text-left py-3 px-4 font-medium">Pipeline / Model</th>
             <th className="text-left py-3 px-4 font-medium">Orchestrator</th>
             <th className="text-right py-3 px-4 font-medium">Price / unit</th>
             <th className="text-right py-3 px-4 font-medium">Px / unit</th>
             <th className="text-right py-3 px-4 font-medium">Payments</th>
-            <th className="text-right py-3 px-4 font-medium">Fee</th>
+            <th className="text-right py-3 px-4 font-medium">Fee (wei)</th>
+            <th className="text-right py-3 px-4 font-medium">Fee (USD)</th>
             <th className="text-center py-3 px-4 font-medium">Status</th>
             <th className="text-right py-3 px-4 font-medium">Started</th>
             <th className="text-right py-3 px-4 font-medium">Last Payment</th>
@@ -102,6 +110,20 @@ export default function StreamSessionTable({
                 {s.manifestId.length > 16
                   ? `${s.manifestId.slice(0, 8)}...${s.manifestId.slice(-4)}`
                   : s.manifestId}
+              </td>
+              <td className="py-3 px-4 text-xs">
+                {s.validatedPipeline ? (
+                  <div>
+                    <span className="text-zinc-200">{s.validatedPipeline}</span>
+                    {s.validatedModelId && (
+                      <div className="text-zinc-500 truncate max-w-[120px]" title={s.validatedModelId}>
+                        {s.validatedModelId}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-zinc-600">—</span>
+                )}
               </td>
               <td className="py-3 px-4 font-mono text-zinc-400 text-xs">
                 {truncateAddress(s.orchestratorAddress)}
@@ -119,6 +141,13 @@ export default function StreamSessionTable({
               </td>
               <td className="py-3 px-4 text-right text-zinc-300 font-mono text-xs">
                 {weiHumanWithUnit(s.totalFeeWei)}
+              </td>
+              <td className="py-3 px-4 text-right text-zinc-300 font-mono text-xs">
+                {s.totalNetworkFeeUsdMicros ? (
+                  <span>${(parseInt(s.totalNetworkFeeUsdMicros, 10) / 1_000_000).toFixed(6)}</span>
+                ) : (
+                  <span className="text-zinc-600">—</span>
+                )}
               </td>
               <td className="py-3 px-4 text-center">
                 <span

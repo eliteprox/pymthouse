@@ -13,6 +13,18 @@ function isNonNegativeIntegerString(s: string): boolean {
   return /^\d+$/.test(s);
 }
 
+function parseOptionalNonNegativeBps(
+  raw: unknown,
+  fieldName: string,
+): { ok: true; value: number | null } | { ok: false; error: string } {
+  if (raw === undefined || raw === null) return { ok: true, value: null };
+  const n = typeof raw === "number" ? raw : Number(String(raw).trim());
+  if (!Number.isInteger(n) || n < 0) {
+    return { ok: false, error: `${fieldName} must be a non-negative integer (basis points)` };
+  }
+  return { ok: true, value: n };
+}
+
 /** Present empty → null; present non-empty must match non-negative integer digits. */
 function parseOptionalNonNegativeIntString(
   raw: unknown,
@@ -130,6 +142,7 @@ function parseCapabilities(input: unknown): {
     slaTargetScore: number | null;
     slaTargetP95Ms: number | null;
     maxPricePerUnit: string | null;
+    upchargePercentBps: number | null;
   }>;
   error?: string;
 } {
@@ -173,6 +186,15 @@ function parseCapabilities(input: unknown): {
       throw new Error(`capabilities[${index}].slaTargetP95Ms must be numeric`);
     }
 
+    const rawUpcharge = value.upchargePercentBps;
+    const parsedUpchargeBps =
+      rawUpcharge === null || rawUpcharge === undefined
+        ? null
+        : parseInt(String(rawUpcharge), 10);
+    if (parsedUpchargeBps !== null && (!Number.isInteger(parsedUpchargeBps) || parsedUpchargeBps < 0)) {
+      throw new Error(`capabilities[${index}].upchargePercentBps must be a non-negative integer`);
+    }
+
     return {
       pipeline,
       modelId,
@@ -182,6 +204,7 @@ function parseCapabilities(input: unknown): {
         value.maxPricePerUnit === null || value.maxPricePerUnit === undefined
           ? null
           : String(value.maxPricePerUnit),
+      upchargePercentBps: parsedUpchargeBps,
     };
   });
 
@@ -225,6 +248,7 @@ export async function GET(
         })),
     })),
   });
+
 }
 
 export async function POST(
@@ -272,6 +296,22 @@ export async function POST(
     return NextResponse.json({ error: billing.error }, { status: 400 });
   }
 
+  // Parse new USD/upcharge fields
+  const generalUpcharge = parseOptionalNonNegativeBps(body.generalUpchargePercentBps, "generalUpchargePercentBps");
+  if (!generalUpcharge.ok) return NextResponse.json({ error: generalUpcharge.error }, { status: 400 });
+  const payPerUseUpcharge = parseOptionalNonNegativeBps(body.payPerUseUpchargePercentBps, "payPerUseUpchargePercentBps");
+  if (!payPerUseUpcharge.ok) return NextResponse.json({ error: payPerUseUpcharge.error }, { status: 400 });
+
+  const rawIncludedUsd = body.includedUsdMicros;
+  let includedUsdMicros: string | null = null;
+  if (rawIncludedUsd !== undefined && rawIncludedUsd !== null) {
+    const s = String(rawIncludedUsd).trim();
+    if (s !== "" && !isNonNegativeIntegerString(s)) {
+      return NextResponse.json({ error: "includedUsdMicros must be a non-negative integer string" }, { status: 400 });
+    }
+    includedUsdMicros = s || null;
+  }
+
   const planId = uuidv4();
   const now = new Date().toISOString();
   const appId = auth.app.id;
@@ -288,6 +328,10 @@ export async function POST(
         billing.includedUnits !== null ? BigInt(billing.includedUnits) : null,
       overageRateWei:
         billing.overageRateWei !== null ? BigInt(billing.overageRateWei) : null,
+      includedUsdMicros,
+      generalUpchargePercentBps: generalUpcharge.value,
+      payPerUseUpchargePercentBps: payPerUseUpcharge.value,
+      billingCycle: typeof body.billingCycle === "string" ? body.billingCycle : "monthly",
       createdAt: now,
       updatedAt: now,
     });
@@ -302,6 +346,7 @@ export async function POST(
         slaTargetScore: capability.slaTargetScore ?? null,
         slaTargetP95Ms: capability.slaTargetP95Ms ?? null,
         maxPricePerUnit: capability.maxPricePerUnit,
+        upchargePercentBps: capability.upchargePercentBps,
         createdAt: now,
       });
     }
@@ -378,6 +423,26 @@ export async function PUT(
       return { tag: "validation" as const, error: billing.error };
     }
 
+    // Parse new USD/upcharge fields for PUT
+    const generalUpchargePut = parseOptionalNonNegativeBps(body.generalUpchargePercentBps, "generalUpchargePercentBps");
+    if (!generalUpchargePut.ok) return { tag: "validation" as const, error: generalUpchargePut.error };
+    const payPerUseUpchargePut = parseOptionalNonNegativeBps(body.payPerUseUpchargePercentBps, "payPerUseUpchargePercentBps");
+    if (!payPerUseUpchargePut.ok) return { tag: "validation" as const, error: payPerUseUpchargePut.error };
+
+    const rawIncludedUsdPut = body.includedUsdMicros;
+    let includedUsdMicrosPut: string | null | undefined = undefined; // undefined = don't change
+    if (rawIncludedUsdPut !== undefined) {
+      if (rawIncludedUsdPut === null) {
+        includedUsdMicrosPut = null;
+      } else {
+        const s = String(rawIncludedUsdPut).trim();
+        if (s !== "" && !isNonNegativeIntegerString(s)) {
+          return { tag: "validation" as const, error: "includedUsdMicros must be a non-negative integer string" };
+        }
+        includedUsdMicrosPut = s || null;
+      }
+    }
+
     const updated = await tx
       .update(plans)
       .set({
@@ -390,6 +455,10 @@ export async function PUT(
           billing.includedUnits !== null ? BigInt(billing.includedUnits) : null,
         overageRateWei:
           billing.overageRateWei !== null ? BigInt(billing.overageRateWei) : null,
+        ...(generalUpchargePut.value !== null ? { generalUpchargePercentBps: generalUpchargePut.value } : {}),
+        ...(payPerUseUpchargePut.value !== null ? { payPerUseUpchargePercentBps: payPerUseUpchargePut.value } : {}),
+        ...(includedUsdMicrosPut !== undefined ? { includedUsdMicros: includedUsdMicrosPut } : {}),
+        ...(body.billingCycle !== undefined ? { billingCycle: String(body.billingCycle) } : {}),
         updatedAt: now,
       })
       .where(and(eq(plans.id, planId), eq(plans.clientId, appId)))
@@ -418,6 +487,7 @@ export async function PUT(
           slaTargetScore: capability.slaTargetScore ?? null,
           slaTargetP95Ms: capability.slaTargetP95Ms ?? null,
           maxPricePerUnit: capability.maxPricePerUnit,
+          upchargePercentBps: capability.upchargePercentBps,
           createdAt: now,
         });
       }

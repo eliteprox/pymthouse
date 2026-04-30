@@ -2,12 +2,15 @@ import { db } from "@/db/index";
 import {
   developerApps,
   oidcClients,
+  planCapabilityBundles,
+  plans,
   signerConfig,
   streamSessions,
   transactions,
+  usageBillingEvents,
   usageRecords,
 } from "@/db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import {
   decodeOrchestratorInfo,
@@ -20,6 +23,16 @@ import { issueSignerDmzToken } from "./signer-dmz-token";
 import { getSenderInfo } from "./signer-cli";
 import { DOCKER_COMPOSE_LOCAL_SIGNER_SERVICE } from "./signer-local-compose";
 import { getIssuer } from "./oidc/issuer-urls";
+import { getEthUsdOracle } from "./prices/eth-usd-oracle";
+import { fetchDashboardPricing } from "./naap-catalog";
+import {
+  resolveRequestPipelineModelConstraint,
+  resolveGatewayAttribution,
+  validateSignedTicketPriceForPipelineModel,
+  resolveUpcharge,
+  computeUsdMicrosFromWei,
+  weiToEthString,
+} from "./billing-runtime";
 
 export interface ProxyResult {
   status: number;
@@ -573,6 +586,50 @@ export async function proxyGenerateLivePayment(
     }
   }
 
+  // --- Attribution and price validation (before forwarding) ---
+  const constraint = resolveRequestPipelineModelConstraint(requestBody);
+  const attribution = resolveGatewayAttribution(requestBody);
+
+  // Fail closed when there is no pipeline/model constraint.
+  // Return 400 before hitting the signer so the gateway can retry with proper metadata.
+  if (!constraint) {
+    return {
+      status: 400,
+      body: {
+        error:
+          "Missing pipeline/model constraint. Include pipeline and modelId fields in the payment request for billable usage attribution.",
+      },
+    };
+  }
+
+  // Load NaaP pricing (cached; does not fail the request on fetch error).
+  let pricingRows: Awaited<ReturnType<typeof fetchDashboardPricing>> = [];
+  try {
+    pricingRows = await fetchDashboardPricing();
+  } catch (err) {
+    console.warn("[proxy] NaaP pricing fetch failed; cannot validate pipeline/model price:", err);
+  }
+
+  // Validate the signed ticket price against the advertised NaaP price.
+  const priceValidation = validateSignedTicketPriceForPipelineModel({
+    pipeline: constraint.pipeline,
+    modelId: constraint.modelId,
+    orchAddress: orchestratorAddress,
+    signedPriceWeiPerUnit: pricePerUnit,
+    signedPixelsPerUnit: pixelsPerUnit,
+    pricingRows,
+  });
+
+  if (priceValidation.status !== "matched") {
+    return {
+      status: 409,
+      body: {
+        error: `Pipeline/model price validation failed: ${priceValidation.reason}`,
+        validationStatus: priceValidation.status,
+      },
+    };
+  }
+
   // Forward to go-livepeer
   try {
     const { response } = await forwardToSigner(
@@ -610,6 +667,56 @@ export async function proxyGenerateLivePayment(
       }
 
       if (!existingUsage) {
+        // Fetch ETH/USD oracle at signing time
+        const ethUsd = await getEthUsdOracle();
+
+        // Compute USD values from wei
+        const networkFeeUsdMicros = computeUsdMicrosFromWei(feeWei, ethUsd.priceUsd);
+        const ownerChargeWei = feeWei + platformCutWei;
+        const ownerPlatformFeeUsdMicros = computeUsdMicrosFromWei(platformCutWei, ethUsd.priceUsd);
+        const ownerChargeUsdMicros = computeUsdMicrosFromWei(ownerChargeWei, ethUsd.priceUsd);
+
+        // Resolve plan upcharge for the validated pipeline/model
+        let upchargeResult: { bps: number; source: "pipeline_model" | "general" | "pay_per_use" | "subscription_included" | "unpriced" } = { bps: 0, source: "unpriced" as const };
+        if (providerAppId) {
+          try {
+            const planRows = await db
+              .select()
+              .from(plans)
+              .where(and(eq(plans.clientId, providerAppId), eq(plans.status, "active")))
+              .orderBy(desc(plans.updatedAt))
+              .limit(1);
+            const bundleRows = planRows[0]
+              ? await db
+                  .select()
+                  .from(planCapabilityBundles)
+                  .where(
+                    and(
+                      eq(planCapabilityBundles.planId, planRows[0].id),
+                      eq(planCapabilityBundles.clientId, providerAppId),
+                    ),
+                  )
+              : [];
+            upchargeResult = resolveUpcharge({
+              plan: planRows[0] ?? null,
+              bundles: bundleRows,
+              pipeline: constraint.pipeline,
+              modelId: constraint.modelId,
+            });
+          } catch (err) {
+            console.warn("[proxy] Plan upcharge lookup failed:", err);
+          }
+        }
+
+        // Compute end-user billable: networkFee * (1 + upchargeBps/10000) in micros
+        const endUserBillableUsdMicros =
+          upchargeResult.bps > 0
+            ? networkFeeUsdMicros + (networkFeeUsdMicros * BigInt(upchargeResult.bps)) / 10000n
+            : networkFeeUsdMicros;
+
+        const transactionId = uuidv4();
+        const usageRecordId = uuidv4();
+
         await db.transaction(async (tx) => {
           if (streamSessionId) {
             await tx
@@ -625,7 +732,7 @@ export async function proxyGenerateLivePayment(
           }
 
           await tx.insert(transactions).values({
-            id: uuidv4(),
+            id: transactionId,
             endUserId: auth.endUserId || null,
             appId: providerAppId ?? auth.appId ?? null,
             clientId: providerAppId,
@@ -635,17 +742,72 @@ export async function proxyGenerateLivePayment(
             platformCutPercent: signer.defaultCutPercent,
             platformCutWei: platformCutWei.toString(),
             status: "confirmed",
+            // Validated pipeline/model attribution
+            pipeline: constraint.pipeline,
+            modelId: constraint.modelId,
+            attributionSource: attribution.attributionSource,
+            gatewayRequestId: attribution.gatewayRequestId,
+            paymentMetadataVersion: attribution.paymentMetadataVersion,
+            pipelineModelConstraintHash: priceValidation.pipelineModelConstraintHash,
+            advertisedPriceWeiPerUnit: priceValidation.matchedRow.priceWeiPerUnit,
+            advertisedPixelsPerUnit: priceValidation.matchedRow.pixelsPerUnit,
+            signedPriceWeiPerUnit: pricePerUnit.toString(),
+            signedPixelsPerUnit: pixelsPerUnit.toString(),
+            priceValidationStatus: "matched",
+            // ETH/USD oracle snapshot
+            ethUsdPrice: ethUsd.priceUsd.toString(),
+            ethUsdSource: ethUsd.source,
+            ethUsdObservedAt: ethUsd.observedAt,
+            networkFeeUsdMicros: networkFeeUsdMicros.toString(),
+            ownerPlatformFeeWei: platformCutWei.toString(),
+            ownerPlatformFeeUsdMicros: ownerPlatformFeeUsdMicros.toString(),
+            ownerChargeWei: ownerChargeWei.toString(),
+            ownerChargeUsdMicros: ownerChargeUsdMicros.toString(),
           });
 
           if (providerAppId) {
             await tx.insert(usageRecords).values({
-              id: uuidv4(),
+              id: usageRecordId,
               requestId,
               userId: auth.userId || auth.endUserId || null,
               clientId: providerAppId,
-              modelId: typeof requestBody.modelId === "string" ? requestBody.modelId : null,
+              modelId: constraint.modelId,
               units: pixels.toString(),
               fee: feeWei.toString(),
+              createdAt: new Date().toISOString(),
+            });
+
+            // Record the billable usage event — only for validated signed tickets
+            await tx.insert(usageBillingEvents).values({
+              id: uuidv4(),
+              usageRecordId,
+              transactionId,
+              streamSessionId,
+              clientId: providerAppId,
+              userId: auth.userId || auth.endUserId || null,
+              pipeline: constraint.pipeline,
+              modelId: constraint.modelId,
+              attributionSource: attribution.attributionSource,
+              gatewayRequestId: attribution.gatewayRequestId,
+              paymentMetadataVersion: attribution.paymentMetadataVersion,
+              pipelineModelConstraintHash: priceValidation.pipelineModelConstraintHash,
+              orchAddress: priceValidation.matchedRow.orchAddress,
+              advertisedPriceWeiPerUnit: priceValidation.matchedRow.priceWeiPerUnit,
+              advertisedPixelsPerUnit: priceValidation.matchedRow.pixelsPerUnit,
+              signedPriceWeiPerUnit: pricePerUnit.toString(),
+              signedPixelsPerUnit: pixelsPerUnit.toString(),
+              networkFeeWei: feeWei.toString(),
+              networkFeeUsdMicros: networkFeeUsdMicros.toString(),
+              platformFeeWei: platformCutWei.toString(),
+              platformFeeUsdMicros: ownerPlatformFeeUsdMicros.toString(),
+              ownerChargeWei: ownerChargeWei.toString(),
+              ownerChargeUsdMicros: ownerChargeUsdMicros.toString(),
+              upchargePercentBps: upchargeResult.bps,
+              pricingRuleSource: upchargeResult.source,
+              endUserBillableUsdMicros: endUserBillableUsdMicros.toString(),
+              ethUsdPrice: ethUsd.priceUsd.toString(),
+              ethUsdSource: ethUsd.source,
+              ethUsdObservedAt: ethUsd.observedAt,
               createdAt: new Date().toISOString(),
             });
           }
