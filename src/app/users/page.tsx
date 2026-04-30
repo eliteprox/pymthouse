@@ -34,7 +34,7 @@ export default async function UsersPage() {
         .where(eq(streamSessions.endUserId, user.id));
 
       const userTxns = await db
-        .select()
+        .select({ id: transactions.id })
         .from(transactions)
         .where(eq(transactions.endUserId, user.id));
 

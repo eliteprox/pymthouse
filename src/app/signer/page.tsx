@@ -58,7 +58,7 @@ export default async function SignerPage() {
   const [activeStreamCount, allSessions, allTxns] = await Promise.all([
     countActiveStreamsByRecentPayment(),
     db.select().from(streamSessions),
-    db.select().from(transactions),
+    db.select({ id: transactions.id }).from(transactions),
   ]);
 
   let totalFeeWei = 0n;
