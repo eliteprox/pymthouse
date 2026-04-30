@@ -185,6 +185,8 @@ export default async function ConsentPage({
       <div className="max-w-2xl w-full border border-zinc-800 bg-zinc-900/60 rounded-2xl p-6 sm:p-8 shadow-2xl shadow-black/30">
         <div className="flex items-start gap-4 mb-6">
           {logoUrl ? (
+            // Tenant logo URLs are dynamic, so next/image remote host config cannot enumerate them.
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={logoUrl}
               alt={client.displayName}

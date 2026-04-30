@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { getIssuer, getPublicOrigin } from "@/lib/oidc/issuer-urls";
+import { docsOidcUrl } from "@/lib/docs-base-url";
+import { getIssuer } from "@/lib/oidc/issuer-urls";
 import { PROVIDER_ENDPOINT_PATHS } from "@/lib/oidc/routes";
 
 export async function GET(): Promise<NextResponse> {
   const issuer = getIssuer();
-  const publicOrigin = getPublicOrigin();
 
   const discovery = {
     issuer,
@@ -56,7 +56,7 @@ export async function GET(): Promise<NextResponse> {
       "name",
     ],
     code_challenge_methods_supported: ["S256"],
-    service_documentation: `${publicOrigin}/docs/oidc`,
+    service_documentation: docsOidcUrl(),
   };
 
   return NextResponse.json(discovery, {

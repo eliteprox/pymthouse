@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import DashboardLayout from "@/components/DashboardLayout";
 
@@ -48,7 +48,7 @@ export default function AppPlansPage() {
     slaTargetP95Ms: "",
   });
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
     Promise.all([
       fetch(`/api/v1/apps/${id}`).then((response) => response.json()),
@@ -60,11 +60,11 @@ export default function AppPlansPage() {
         setPlans(payload.plans || []);
       })
       .finally(() => setLoading(false));
-  };
+  }, [id]);
 
   useEffect(() => {
     load();
-  }, [id]);
+  }, [load]);
 
   const isNonNegativeIntegerString = (s: string) => /^\d+$/.test(s.trim());
 

@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import type { AppFormData } from "../AppWizard";
 import { OIDC_SCOPES } from "@/lib/oidc/scopes";
 import { validateInitiateLoginUri } from "@/lib/oidc/third-party-initiate-login";
+import AuthorizationCodeRedirectBlock from "./AuthorizationCodeRedirectBlock";
 
 const DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
+const noopDomainsChange = (_domains: { id: string; domain: string }[]) => {};
 
 function isValidInitiateLoginUri(uri: string): boolean {
   const t = uri.trim();
@@ -22,11 +24,29 @@ interface Props {
   data: AppFormData;
   onChange: (updates: Partial<AppFormData>) => void;
   readOnly?: boolean;
+  /** Present on the app settings page so redirect URIs persist immediately. */
+  appId?: string | null;
+  domains?: { id: string; domain: string }[];
+  onDomainsChange?: (domains: { id: string; domain: string }[]) => void;
 }
 
-export default function AppModeStep({ data, onChange, readOnly = false }: Props) {
+export default function AppModeStep({
+  data,
+  onChange,
+  readOnly = false,
+  appId = null,
+  domains = [],
+  onDomainsChange,
+}: Props) {
+  const stableOnDomainsChange = useCallback(
+    (nextDomains: { id: string; domain: string }[]) => {
+      (onDomainsChange ?? noopDomainsChange)(nextDomains);
+    },
+    [onDomainsChange],
+  );
   const scopes = data.allowedScopes.split(/\s+/).filter(Boolean);
   const hasDeviceCode = data.grantTypes.includes(DEVICE_CODE_GRANT);
+  const hasAuthCodeFlow = data.grantTypes.includes("authorization_code");
   const requiresIssueUserTokens =
     hasDeviceCode && data.deviceThirdPartyInitiateLogin && isValidInitiateLoginUri(data.initiateLoginUri);
   const hasIssueUserTokens = scopes.includes("users:token");
@@ -271,27 +291,44 @@ export default function AppModeStep({ data, onChange, readOnly = false }: Props)
             </p>
           </div>
           <div className="space-y-2">
-            <label className="flex items-center gap-3 p-3 rounded-lg border border-zinc-800 bg-zinc-800/20 opacity-70 cursor-not-allowed">
-              <input
-                type="checkbox"
-                checked
-                readOnly
-                disabled
-                className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500"
-              />
-              <div>
-                <p className="text-sm font-medium text-zinc-200">
-                  Authorization Code + PKCE
-                  <span className="ml-1.5 text-[10px] font-normal text-zinc-500 uppercase tracking-wide">
-                    (required)
-                  </span>
-                </p>
-                <p className="text-xs text-zinc-500">
-                  Browser redirect flow — the foundation of interactive sign-in.
-                  Always required.
-                </p>
-              </div>
-            </label>
+            <div className="rounded-lg border border-zinc-800 bg-zinc-800/20 overflow-hidden">
+              <label className="flex items-center gap-3 p-3 opacity-70 cursor-not-allowed">
+                <input
+                  type="checkbox"
+                  checked
+                  readOnly
+                  disabled
+                  className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-emerald-500 shrink-0"
+                />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-zinc-200">
+                    Authorization Code + PKCE
+                    <span className="ml-1.5 text-[10px] font-normal text-zinc-500 uppercase tracking-wide">
+                      (required)
+                    </span>
+                  </p>
+                  <p className="text-xs text-zinc-500">
+                    Browser redirect flow — the foundation of interactive sign-in. Always required for
+                    this app type.
+                  </p>
+                </div>
+              </label>
+              {hasAuthCodeFlow && (
+                <div className="border-t border-zinc-700/60 bg-zinc-900/25 px-3 py-4 space-y-1">
+                  <p className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-3">
+                    Redirect &amp; browser security
+                  </p>
+                  <AuthorizationCodeRedirectBlock
+                    appId={appId}
+                    redirectUris={data.redirectUris}
+                    onRedirectUrisChange={(uris) => onChange({ redirectUris: uris })}
+                    domains={domains}
+                    onDomainsChange={stableOnDomainsChange}
+                    readOnly={readOnly}
+                  />
+                </div>
+              )}
+            </div>
             <label
               className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
                 data.grantTypes.includes("refresh_token")

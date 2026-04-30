@@ -30,6 +30,8 @@ export function BrandedLayout({ branding, children }: BrandedLayoutProps) {
             {isWhiteLabel ? (
               <>
                 {branding.logoUrl && (
+                  // Tenant logo URLs are dynamic, so next/image remote host config cannot enumerate them.
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={branding.logoUrl}
                     alt={branding.displayName}
@@ -121,6 +123,8 @@ export function BrandedHeader({
   return (
     <div className="flex items-start gap-4 mb-6">
       {isWhiteLabel && branding.logoUrl ? (
+        // Tenant logo URLs are dynamic, so next/image remote host config cannot enumerate them.
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={branding.logoUrl}
           alt={branding.displayName}

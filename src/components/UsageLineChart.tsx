@@ -21,11 +21,11 @@ export default function UsageLineChart({
   className = "",
 }: UsageLineChartProps) {
   const width = 640;
-  const height = 220;
+  const height = 176;
   const padL = 48;
   const padR = 16;
-  const padT = 16;
-  const padB = 36;
+  const padT = 14;
+  const padB = 30;
   const innerW = width - padL - padR;
   const innerH = height - padT - padB;
 
@@ -56,10 +56,11 @@ export default function UsageLineChart({
     .filter((_, i) => i % tickStep === 0 || i === n - 1);
 
   return (
-    <div className={`w-full overflow-x-auto ${className}`}>
+    <div className={`w-full min-w-0 ${className}`}>
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        className="min-h-[220px] w-full max-w-full text-zinc-400"
+        className="block h-auto w-full max-w-full text-zinc-400"
+        preserveAspectRatio="xMidYMid meet"
         role="img"
         aria-label={`${valueLabel} over time`}
       >

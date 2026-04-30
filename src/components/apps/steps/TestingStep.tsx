@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { computeBackendM2mAllowedScopes } from "@/lib/oidc/backend-m2m-scopes";
 import { DEFAULT_OIDC_SCOPES, getScopeDefinition, OIDC_SCOPES } from "@/lib/oidc/scopes";
 
@@ -9,10 +9,7 @@ interface Props {
   clientId: string | null;
   grantTypes: string[];
   redirectUris: string[];
-  onRedirectUrisChange: (uris: string[]) => void;
   allowedScopes: string;
-  domains: { id: string; domain: string }[];
-  onDomainsChange: (domains: { id: string; domain: string }[]) => void;
   hasSecret: boolean;
   /** Confidential M2M sibling (Builder + device approval token exchange); null until provisioned. */
   backendHelper: { clientId: string; hasSecret: boolean } | null;
@@ -21,24 +18,22 @@ interface Props {
   readOnly?: boolean;
 }
 
+function getDefaultRedirectUri(redirectUris: string[]) {
+  return redirectUris.find((uri) => /^https?:\/\//i.test(uri)) ?? redirectUris[0] ?? "";
+}
+
 export default function TestingStep({
   appId,
   clientId,
   grantTypes,
   redirectUris,
-  onRedirectUrisChange,
   allowedScopes,
-  domains,
-  onDomainsChange,
   hasSecret,
   backendHelper,
   onSecretGenerated,
   onBackendSecretGenerated,
   readOnly = false,
 }: Props) {
-  const [newUri, setNewUri] = useState("");
-  const [newDomain, setNewDomain] = useState("");
-  const [adding, setAdding] = useState(false);
   const [secret, setSecret] = useState<string | null>(null);
   const [backendSecret, setBackendSecret] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -46,116 +41,14 @@ export default function TestingStep({
   const [secretFetchError, setSecretFetchError] = useState<string | null>(null);
   const [backendSecretFetchError, setBackendSecretFetchError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
-  const [redirectPersistError, setRedirectPersistError] = useState<string | null>(null);
-  const [redirectSaving, setRedirectSaving] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const [selectedRedirectUri, setSelectedRedirectUri] = useState(() =>
+    getDefaultRedirectUri(redirectUris),
+  );
+  const copyResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hasAuthCodeFlow = grantTypes.includes("authorization_code");
   const isM2MOnly = grantTypes.includes("client_credentials") && !hasAuthCodeFlow;
-
-  const persistRedirectUris = async (nextUris: string[]) => {
-    if (readOnly) return false;
-    if (!appId) return true;
-    setRedirectSaving(true);
-    setRedirectPersistError(null);
-    try {
-      const res = await fetch(`/api/v1/apps/${appId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ redirectUris: nextUris }),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        let message = `Failed to save redirect URIs (${res.status})`;
-        try {
-          const data = text ? JSON.parse(text) : {};
-          if (data.error) message = data.error;
-        } catch {
-          /* keep generic */
-        }
-        setRedirectPersistError(message);
-        return false;
-      }
-      return true;
-    } finally {
-      setRedirectSaving(false);
-    }
-  };
-
-  const addRedirectUri = async () => {
-    if (readOnly) return;
-    const uri = newUri.trim();
-    if (!uri || redirectUris.includes(uri)) return;
-    const previous = redirectUris;
-    const next = [...redirectUris, uri];
-    onRedirectUrisChange(next);
-    setNewUri("");
-
-    if (appId) {
-      const ok = await persistRedirectUris(next);
-      if (!ok) {
-        onRedirectUrisChange(previous);
-        return;
-      }
-    }
-
-    // Auto-add the domain to the whitelist if not already present
-    if (appId) {
-      try {
-        const origin = new URL(uri).origin;
-        if (origin !== "null" && !domains.some((d) => d.domain === origin)) {
-          const res = await fetch(`/api/v1/apps/${appId}/domains`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ domain: origin }),
-          });
-          if (res.ok) {
-            const resData = await res.json();
-            onDomainsChange([...domains, { id: resData.id, domain: resData.domain }]);
-          }
-        }
-      } catch {
-        // Invalid URL or wildcard URI — skip auto-whitelisting
-      }
-    }
-  };
-
-  const removeRedirectUri = async (uri: string) => {
-    if (readOnly) return;
-    const previous = redirectUris;
-    const next = redirectUris.filter((u) => u !== uri);
-    onRedirectUrisChange(next);
-    if (appId) {
-      const ok = await persistRedirectUris(next);
-      if (!ok) onRedirectUrisChange(previous);
-    }
-  };
-
-  const addDomain = async () => {
-    if (readOnly || !appId || !newDomain.trim()) return;
-    setAdding(true);
-    try {
-      const res = await fetch(`/api/v1/apps/${appId}/domains`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ domain: newDomain.trim() }),
-      });
-      if (res.ok) {
-        const resData = await res.json();
-        onDomainsChange([...domains, { id: resData.id, domain: resData.domain }]);
-        setNewDomain("");
-      }
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  const removeDomain = async (domainId: string) => {
-    if (readOnly || !appId) return;
-    await fetch(`/api/v1/apps/${appId}/domains?domainId=${domainId}`, {
-      method: "DELETE",
-    });
-    onDomainsChange(domains.filter((d) => d.id !== domainId));
-  };
 
   const discoveryUrl =
     typeof window !== "undefined"
@@ -178,6 +71,22 @@ export default function TestingStep({
     }
     return text.trim() || res.statusText || `Failed to generate secret (${res.status})`;
   };
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimeoutRef.current !== null) {
+        clearTimeout(copyResetTimeoutRef.current);
+        copyResetTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    setSelectedRedirectUri((current) => {
+      if (current && redirectUris.includes(current)) return current;
+      return getDefaultRedirectUri(redirectUris);
+    });
+  }, [redirectUris]);
 
   const generateSecret = useCallback(async () => {
     if (readOnly || !appId) return;
@@ -229,14 +138,34 @@ export default function TestingStep({
 
   const copyToClipboard = useCallback(
     async (text: string, label: string) => {
-      await navigator.clipboard.writeText(text);
+      if (typeof navigator === "undefined" || !navigator.clipboard) {
+        setCopyError("Clipboard is unavailable in this browser.");
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (err) {
+        console.error("Failed to copy to clipboard.", err);
+        setCopied(null);
+        setCopyError("Could not copy to clipboard. Please copy the value manually.");
+        return;
+      }
+
+      setCopyError(null);
       setCopied(label);
-      setTimeout(() => setCopied(null), 2000);
+      if (copyResetTimeoutRef.current !== null) {
+        clearTimeout(copyResetTimeoutRef.current);
+      }
+      copyResetTimeoutRef.current = setTimeout(() => {
+        copyResetTimeoutRef.current = null;
+        setCopied(null);
+      }, 2000);
     },
     []
   );
 
-  const selectedRedirectUri = redirectUris[0] || "";
+  const redirectUriOptions = useMemo(() => redirectUris, [redirectUris]);
 
   // Strip scopes that have been removed from the catalog so stale DB values
   // never leak into displayed snippets or test URLs.
@@ -299,8 +228,9 @@ export default function TestingStep({
         <p className="text-sm text-zinc-500">
           {isM2MOnly
             ? "Generate your client secret, then test your M2M token request."
-            : "Your app is available for development as soon as it is created—no separate approval step. Configure redirect URIs and allowed domains, then test your OIDC integration."}
+            : "Generate and rotate secrets, try a live authorization request, and copy reference endpoints. Configure redirect URIs and allowed domains under Auth & Scopes → Authorization Code + PKCE."}
         </p>
+        {copyError && <p className="text-xs text-red-400 mt-2">{copyError}</p>}
       </div>
 
       {/* M2M Quick-start */}
@@ -336,142 +266,59 @@ export default function TestingStep({
         </div>
       )}
 
-      {/* Authorization Code Flow Section */}
+      {/* Interactive flow: quick test */}
       {hasAuthCodeFlow && (
-        <div className="space-y-6 p-5 rounded-xl border border-zinc-800 bg-zinc-900/30">
+        <div className="space-y-4 p-5 rounded-xl border border-zinc-800 bg-zinc-900/30">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500" />
-            <h3 className="text-sm font-semibold text-zinc-200">Authorization Code Flow</h3>
+            <h3 className="text-sm font-semibold text-zinc-200">Try the authorization code flow</h3>
           </div>
-
-          {/* Redirect URIs */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-zinc-300">
-              Redirect URIs
-            </label>
-            <p className="text-xs text-zinc-500">
-              URIs where PymtHouse can redirect after authorization. Wildcards (*) are supported.
-              {appId
-                ? " Each add or remove is saved immediately so you can test the authorization flow."
-                : " Save the app on earlier steps first, then add URIs here."}
-            </p>
-            {redirectPersistError && (
-              <p className="text-xs text-red-400">{redirectPersistError}</p>
-            )}
-            <div className="flex gap-2 mb-2">
-              <input
-                type="text"
-                value={newUri}
-                onChange={(e) => setNewUri(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addRedirectUri())}
-                placeholder="https://myapp.com/callback"
-                disabled={readOnly}
-                className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
-              />
-              <button
-                onClick={() => void addRedirectUri()}
-                disabled={readOnly || !newUri.trim() || redirectSaving}
-                className="px-3 py-2 bg-zinc-700 text-zinc-200 rounded-lg text-sm hover:bg-zinc-600 disabled:opacity-40 transition-colors"
-              >
-                {redirectSaving ? "Saving..." : "Add"}
-              </button>
-            </div>
-            {redirectUris.length > 0 && (
-              <div className="space-y-1">
-                {redirectUris.map((uri) => (
-                  <div
-                    key={uri}
-                    className="flex items-center justify-between px-3 py-1.5 bg-zinc-800/50 rounded-lg"
-                  >
-                    <code className="text-xs text-zinc-300 truncate">{uri}</code>
-                    <button
-                      type="button"
-                      onClick={() => void removeRedirectUri(uri)}
-                      disabled={readOnly || redirectSaving}
-                      className="text-zinc-500 hover:text-red-400 ml-2 shrink-0 disabled:opacity-40"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Domain Whitelisting */}
-          <div className="space-y-4">
-            <div>
-              <h4 className="text-sm font-medium text-zinc-300">Domain Whitelisting</h4>
-              <p className="text-xs text-zinc-500 mt-1">
-                Allowed origins for CORS and request validation. Redirect URIs above should match these domains.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newDomain}
-                onChange={(e) => setNewDomain(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addDomain())}
-                placeholder="example.com"
-                disabled={readOnly}
-                className="flex-1 px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
-              />
-              <button
-                onClick={addDomain}
-                disabled={readOnly || adding || !newDomain.trim() || !appId}
-                className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-500 disabled:opacity-40 transition-colors"
-              >
-                {adding ? "Adding..." : "Add Domain"}
-              </button>
-            </div>
-            {domains.length > 0 ? (
-              <div className="space-y-2">
-                {domains.map((d) => (
-                  <div
-                    key={d.id}
-                    className="flex items-center justify-between px-4 py-3 bg-zinc-800/50 rounded-lg border border-zinc-800"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                      <code className="text-sm text-zinc-200">{d.domain}</code>
-                    </div>
-                    <button
-                      onClick={() => removeDomain(d.id)}
-                      disabled={readOnly}
-                      className="text-zinc-500 hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-4 text-zinc-500 text-sm">
-                No domains added yet. Add your application&apos;s domains above.
-              </div>
-            )}
-          </div>
-
-          {/* Test Auth Code Flow */}
+          <p className="text-xs text-zinc-500">
+            Uses the redirect URIs from{" "}
+            <strong className="text-zinc-400">Auth &amp; Scopes</strong>. Add at least one redirect
+            URI there before opening the test.
+          </p>
           <div className="border-t border-zinc-800 pt-4">
-            {testUrl && (
+            {testUrl ? (
               <>
                 <label className="block text-sm font-medium text-zinc-300 mb-1.5">
                   Test Authorization Code Flow
                 </label>
+                {redirectUriOptions.length > 1 && (
+                  <div className="mb-3">
+                    <label
+                      htmlFor="testing-redirect-uri"
+                      className="block text-xs font-medium text-zinc-400 mb-1"
+                    >
+                      Redirect URI
+                    </label>
+                    <select
+                      id="testing-redirect-uri"
+                      value={selectedRedirectUri}
+                      onChange={(e) => setSelectedRedirectUri(e.target.value)}
+                      className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700 rounded-lg text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                    >
+                      {redirectUriOptions.map((uri) => (
+                        <option key={uri} value={uri}>
+                          {uri}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <button
-                  onClick={() => window.open(testUrl, "_blank")}
+                  type="button"
+                  onClick={() => {
+                    const newWin = window.open(testUrl, "_blank", "noopener,noreferrer");
+                    if (newWin) newWin.opener = null;
+                  }}
                   className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-500 transition-colors"
                 >
                   Open Test Flow
                 </button>
                 <p className="text-xs text-zinc-500 mt-1.5">
-                  Opens a new tab with a test authorization request. Make sure you have
-                  a redirect URI configured that can receive the callback.
+                  Opens a new tab with a test authorization request. Make sure you have a redirect URI
+                  configured that can receive the callback.
                 </p>
                 <p className="text-xs text-zinc-500 mt-1">
                   Requested scopes:{" "}
@@ -482,6 +329,11 @@ export default function TestingStep({
                   <code className="text-zinc-400">{selectedRedirectUri}</code>
                 </p>
               </>
+            ) : (
+              <p className="text-sm text-zinc-500">
+                Add a redirect URI in <strong className="text-zinc-400">Auth &amp; Scopes</strong> to
+                enable the test button.
+              </p>
             )}
           </div>
         </div>
