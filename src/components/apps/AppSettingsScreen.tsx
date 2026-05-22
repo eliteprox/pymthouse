@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import AppInfoStep from "./steps/AppInfoStep";
 import AppModeStep from "./steps/AppModeStep";
 import TestingStep from "./steps/TestingStep";
+import PlansTab from "./PlansTab";
 import {
   defaultAppFormData,
   type AppFormData,
@@ -28,6 +29,8 @@ interface Props {
   onReviewSubmitted?: () => void;
   /** Called after reverting from submitted to draft (header badge, etc.). */
   onRevertedToDraft?: () => void;
+  /** Initial tab to display (e.g. "plans" from URL query param). */
+  initialTab?: string;
 }
 
 function mergeFormData(
@@ -51,6 +54,26 @@ function mergeFormData(
   };
 }
 
+const INTEGRATION_TABS = [
+  { id: "profile", label: "App profile" },
+  { id: "auth", label: "Auth & scopes" },
+  { id: "credentials", label: "Credentials & URLs" },
+  { id: "plans", label: "Billing Plans" },
+] as const;
+
+type IntegrationSection = (typeof INTEGRATION_TABS)[number]["id"];
+
+function resolveInitialTab(tab: string | undefined): IntegrationSection {
+  if (tab === "network-discovery") {
+    return "plans";
+  }
+  const validTabs = INTEGRATION_TABS.map((t) => t.id);
+  if (tab && validTabs.includes(tab as IntegrationSection)) {
+    return tab as IntegrationSection;
+  }
+  return "profile";
+}
+
 export default function AppSettingsScreen({
   appId,
   initialData,
@@ -63,8 +86,11 @@ export default function AppSettingsScreen({
   canSubmitForReview = false,
   onReviewSubmitted,
   onRevertedToDraft,
+  initialTab,
 }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [formData, setFormData] = useState<AppFormData>(() =>
     mergeFormData(initialData, initialInitiateLoginUri ?? null, initialDeviceThirdPartyInitiateLogin),
   );
@@ -82,6 +108,61 @@ export default function AppSettingsScreen({
   const [submittingForReview, setSubmittingForReview] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [reverting, setReverting] = useState(false);
+  const [integrationSection, setIntegrationSection] =
+    useState<IntegrationSection>(() => resolveInitialTab(initialTab));
+  const tabRefs = useRef<Partial<Record<IntegrationSection, HTMLButtonElement | null>>>({});
+
+  const selectIntegrationSection = useCallback(
+    (section: IntegrationSection, updateUrl = true) => {
+      setIntegrationSection(section);
+
+      if (updateUrl) {
+        const nextParams = new URLSearchParams(searchParams.toString());
+        if (section === "profile") {
+          nextParams.delete("tab");
+        } else {
+          nextParams.set("tab", section);
+        }
+        const query = nextParams.toString();
+        const nextUrl = query ? `${pathname}?${query}` : pathname;
+        router.replace(nextUrl, { scroll: false });
+      }
+
+      requestAnimationFrame(() => tabRefs.current[section]?.focus());
+    },
+    [pathname, router, searchParams],
+  );
+
+  useEffect(() => {
+    const resolvedTab = resolveInitialTab(initialTab);
+    setIntegrationSection((currentTab) =>
+      currentTab === resolvedTab ? currentTab : resolvedTab,
+    );
+  }, [initialTab]);
+
+  const handleIntegrationTabKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLButtonElement>, id: IntegrationSection) => {
+      const currentIndex = INTEGRATION_TABS.findIndex((tab) => tab.id === id);
+      if (currentIndex === -1) return;
+
+      let nextIndex: number | null = null;
+      if (event.key === "ArrowLeft") {
+        nextIndex =
+          (currentIndex - 1 + INTEGRATION_TABS.length) % INTEGRATION_TABS.length;
+      } else if (event.key === "ArrowRight") {
+        nextIndex = (currentIndex + 1) % INTEGRATION_TABS.length;
+      } else if (event.key === "Home") {
+        nextIndex = 0;
+      } else if (event.key === "End") {
+        nextIndex = INTEGRATION_TABS.length - 1;
+      }
+
+      if (nextIndex === null) return;
+      event.preventDefault();
+      selectIntegrationSection(INTEGRATION_TABS[nextIndex].id);
+    },
+    [selectIntegrationSection],
+  );
 
   const updateFormData = useCallback(
     (updates: Partial<AppFormData>) => {
@@ -267,7 +348,7 @@ export default function AppSettingsScreen({
       : "";
 
   return (
-    <div className="max-w-[600px] divide-y divide-zinc-800">
+    <div className="max-w-3xl">
       {/* Status banners */}
       <div className="space-y-3 pb-6">
         {!canEdit && (
@@ -331,137 +412,203 @@ export default function AppSettingsScreen({
         )}
       </div>
 
-      {/* App Info */}
-      <section className="py-6">
-        <AppInfoStep data={formData} onChange={updateFormData} readOnly={!canEdit} />
-      </section>
-
-      {/* Auth & Scopes */}
-      <section className="py-6">
-        <AppModeStep
-          data={formData}
-          onChange={updateFormData}
-          readOnly={!canEdit}
-          appId={appId}
-          domains={domains}
-          onDomainsChange={setDomains}
-        />
-      </section>
-
-      {/* Post-logout Redirects */}
-      <section className="py-6 space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold text-zinc-100">Post-logout Redirects</h2>
-          <p className="text-sm text-zinc-500 mt-1">
-            URIs to redirect users to after sign-out. Saved with{" "}
-            <strong className="text-zinc-400">Save changes</strong> below.
-          </p>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-zinc-300 mb-1.5">
-            Post-logout redirect URIs
-          </label>
-          <div className="flex gap-2 mb-2">
-            <input
-              type="text"
-              value={newPostLogoutUri}
-              onChange={(e) => setNewPostLogoutUri(e.target.value)}
-              onKeyDown={(e) =>
-                e.key === "Enter" && (e.preventDefault(), addPostLogoutUri())
-              }
-              placeholder="https://example.com/logout-complete"
-              disabled={!canEdit}
-              className="flex-1 px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-md text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
-            />
+      <nav
+        className="flex flex-wrap gap-1 border-b border-zinc-800 pb-3 mb-6"
+        role="tablist"
+        aria-label="Integration settings sections"
+      >
+        {INTEGRATION_TABS.map(({ id, label }) => {
+          const selected = integrationSection === id;
+          return (
             <button
+              key={id}
+              id={`tab-${id}`}
+              ref={(node) => {
+                tabRefs.current[id] = node;
+              }}
               type="button"
-              onClick={addPostLogoutUri}
-              disabled={!canEdit}
-              className="px-4 py-1.5 rounded-md bg-zinc-700 text-zinc-200 text-sm hover:bg-zinc-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              role="tab"
+              aria-selected={selected}
+              aria-controls={`panel-${id}`}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => selectIntegrationSection(id)}
+              onKeyDown={(event) => handleIntegrationTabKeyDown(event, id)}
+              className={`px-3 py-2 text-sm font-medium rounded-t-md border-b-2 -mb-px transition-colors ${
+                selected
+                  ? "border-emerald-500 text-emerald-400 bg-zinc-900/50"
+                  : "border-transparent text-zinc-500 hover:text-zinc-300"
+              }`}
             >
-              Add
+              {label}
             </button>
-          </div>
-          <div className="space-y-1.5">
-            {postLogoutRedirectUris.map((uri) => (
-              <div
-                key={uri}
-                className="flex items-center justify-between rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2"
-              >
-                <code className="text-xs text-zinc-300">{uri}</code>
+          );
+        })}
+      </nav>
+
+      {integrationSection === "profile" && (
+        <div
+          id="panel-profile"
+          role="tabpanel"
+          aria-labelledby="tab-profile"
+          className="space-y-10 pb-6"
+        >
+          <section className="space-y-4">
+            <AppInfoStep data={formData} onChange={updateFormData} readOnly={!canEdit} />
+          </section>
+
+          <section className="space-y-4">
+            <div>
+              <h2 className="text-lg font-semibold text-zinc-100">Post-logout Redirects</h2>
+              <p className="text-sm text-zinc-500 mt-1">
+                URIs to redirect users to after sign-out. Saved with{" "}
+                <strong className="text-zinc-400">Save changes</strong> below.
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-1.5">
+                Post-logout redirect URIs
+              </label>
+              <div className="flex gap-2 mb-2">
+                <input
+                  type="text"
+                  value={newPostLogoutUri}
+                  onChange={(e) => setNewPostLogoutUri(e.target.value)}
+                  onKeyDown={(e) =>
+                    e.key === "Enter" && (e.preventDefault(), addPostLogoutUri())
+                  }
+                  placeholder="https://example.com/logout-complete"
+                  disabled={!canEdit}
+                  className="flex-1 px-3 py-1.5 bg-zinc-900 border border-zinc-700 rounded-md text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
                 <button
                   type="button"
-                  onClick={() =>
-                    setPostLogoutRedirectUris((items) =>
-                      items.filter((item) => item !== uri),
-                    )
-                  }
+                  onClick={addPostLogoutUri}
                   disabled={!canEdit}
-                  className="text-xs text-zinc-500 hover:text-red-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="px-4 py-1.5 rounded-md bg-zinc-700 text-zinc-200 text-sm hover:bg-zinc-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  Remove
+                  Add
                 </button>
               </div>
-            ))}
-          </div>
+              <div className="space-y-1.5">
+                {postLogoutRedirectUris.map((uri) => (
+                  <div
+                    key={uri}
+                    className="flex items-center justify-between rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2"
+                  >
+                    <code className="text-xs text-zinc-300">{uri}</code>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPostLogoutRedirectUris((items) =>
+                          items.filter((item) => item !== uri),
+                        )
+                      }
+                      disabled={!canEdit}
+                      className="text-xs text-zinc-500 hover:text-red-400 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          {canSubmitForReview && appState.status === "draft" && (
+            <section className="space-y-3 pt-2 border-t border-zinc-800">
+              <h2 className="text-sm font-semibold text-zinc-100">Delete draft app</h2>
+              <p className="text-sm text-zinc-400">
+                Permanently remove this app, its OIDC client, and related data. This
+                cannot be undone.
+              </p>
+              <button
+                type="button"
+                onClick={() => void deleteDraftApp()}
+                disabled={deleting}
+                className="px-4 py-2 text-sm font-medium rounded-md border border-red-500/40 text-red-300 hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {deleting ? "Deleting…" : "Delete app"}
+              </button>
+            </section>
+          )}
         </div>
-      </section>
+      )}
 
-      {/* Credentials & URIs */}
-      <section className="py-6">
-        <TestingStep
-          appId={appId}
-          clientId={appState.clientId}
-          grantTypes={formData.grantTypes}
-          redirectUris={formData.redirectUris}
-          allowedScopes={formData.allowedScopes}
-          hasSecret={appState.hasSecret}
-          backendHelper={appState.backendHelper}
-          onSecretGenerated={() => {
-            setAppState((s) => ({ ...s, hasSecret: true }));
-            updateFormData({ tokenEndpointAuthMethod: "client_secret_post" });
-          }}
-          onBackendSecretGenerated={() => {
-            setAppState((s) => ({
-              ...s,
-              backendHelper: s.backendHelper
-                ? { ...s.backendHelper, hasSecret: true }
-                : s.backendHelper,
-            }));
-          }}
-          readOnly={!canEdit}
-        />
-      </section>
-
-      {/* Reference endpoints */}
-      <ReferenceEndpointsSection
-        clientId={appState.clientId || ""}
-        discoveryUrl={discoveryUrl}
-        authorizeUrl={authorizeUrl}
-        tokenUrl={tokenUrl}
-      />
-
-      {/* Danger zone */}
-      {canSubmitForReview && appState.status === "draft" && (
-        <section className="py-6 space-y-3">
-          <h2 className="text-sm font-semibold text-zinc-100">Delete draft app</h2>
-          <p className="text-sm text-zinc-400">
-            Permanently remove this app, its OIDC client, and related data. This
-            cannot be undone.
-          </p>
-          <button
-            type="button"
-            onClick={() => void deleteDraftApp()}
-            disabled={deleting}
-            className="px-4 py-2 text-sm font-medium rounded-md border border-red-500/40 text-red-300 hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            {deleting ? "Deleting…" : "Delete app"}
-          </button>
+      {integrationSection === "auth" && (
+        <section
+          id="panel-auth"
+          role="tabpanel"
+          aria-labelledby="tab-auth"
+          className="pb-6"
+        >
+          <AppModeStep
+            data={formData}
+            onChange={updateFormData}
+            readOnly={!canEdit}
+          />
         </section>
       )}
 
-      {/* Save */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-6">
+      {integrationSection === "credentials" && (
+        <div
+          id="panel-credentials"
+          role="tabpanel"
+          aria-labelledby="tab-credentials"
+          className="space-y-10 pb-6"
+        >
+          <section>
+            <TestingStep
+              appId={appId}
+              clientId={appState.clientId}
+              grantTypes={formData.grantTypes}
+              redirectUris={formData.redirectUris}
+              allowedScopes={formData.allowedScopes}
+              hasSecret={appState.hasSecret}
+              backendHelper={appState.backendHelper}
+              backendDeviceHelper={formData.backendDeviceHelper}
+              initiateLoginUri={formData.initiateLoginUri}
+              deviceThirdPartyInitiateLogin={formData.deviceThirdPartyInitiateLogin}
+              domains={domains}
+              onChange={updateFormData}
+              onDomainsChange={setDomains}
+              onSecretGenerated={() => {
+                setAppState((s) => ({ ...s, hasSecret: true }));
+                updateFormData({ tokenEndpointAuthMethod: "client_secret_post" });
+              }}
+              onBackendSecretGenerated={() => {
+                setAppState((s) => ({
+                  ...s,
+                  backendHelper: s.backendHelper
+                    ? { ...s.backendHelper, hasSecret: true }
+                    : s.backendHelper,
+                }));
+              }}
+              readOnly={!canEdit}
+            />
+          </section>
+
+          <ReferenceEndpointsSection
+            clientId={appState.clientId || ""}
+            discoveryUrl={discoveryUrl}
+            authorizeUrl={authorizeUrl}
+            tokenUrl={tokenUrl}
+          />
+        </div>
+      )}
+
+      {integrationSection === "plans" && (
+        <div
+          id="panel-plans"
+          role="tabpanel"
+          aria-labelledby="tab-plans"
+        >
+          <PlansTab appId={appId} canEdit={canEdit} />
+        </div>
+      )}
+
+      {/* Save - only shown for non-plans tabs */}
+      {integrationSection !== "plans" && (
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-6 border-t border-zinc-800">
         <p className="text-xs text-zinc-500 max-w-sm">
           Redirect URIs and domains update immediately. Use{" "}
           <strong className="text-zinc-400">Save changes</strong> for metadata,
@@ -476,6 +623,7 @@ export default function AppSettingsScreen({
           {saving ? "Saving…" : "Save changes"}
         </button>
       </div>
+      )}
     </div>
   );
 }
@@ -539,7 +687,7 @@ function ReferenceEndpointsSection({
   }, []);
 
   return (
-    <section className="py-6 space-y-3">
+    <section className="space-y-3">
       <h2 className="text-lg font-semibold text-zinc-100">Reference endpoints</h2>
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 divide-y divide-zinc-800/90">
         {rows.map((row) => (

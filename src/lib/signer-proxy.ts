@@ -1,5 +1,6 @@
 import { db } from "@/db/index";
 import {
+  appBillingOracleConfig,
   appUsers,
   developerApps,
   endUsers,
@@ -26,6 +27,7 @@ import { getSenderInfo } from "./signer-cli";
 import { DOCKER_COMPOSE_LOCAL_SIGNER_SERVICE } from "./signer-local-compose";
 import { getIssuer } from "./oidc/issuer-urls";
 import { getEthUsdOracle } from "./prices/eth-usd-oracle";
+import { enforceCachedManifestPolicy } from "./app-manifest-cache";
 import {
   resolvePaymentPipelineModelConstraint,
   resolveGatewayAttribution,
@@ -77,6 +79,36 @@ export async function getSignerRoutingContext(authAppId?: string | null) {
   return { signer, providerAppId };
 }
 
+interface BillingOracleSelection {
+  billingDisplayCurrency: string;
+  billingOracleProviderKey: string;
+}
+
+async function resolveBillingOracleSelection(
+  providerAppId: string | null,
+): Promise<BillingOracleSelection> {
+  if (!providerAppId) {
+    return {
+      billingDisplayCurrency: "USD",
+      billingOracleProviderKey: "global_eth_usd",
+    };
+  }
+  const rows = await db
+    .select({
+      billingDisplayCurrency: appBillingOracleConfig.billingDisplayCurrency,
+      billingOracleProviderKey: appBillingOracleConfig.billingOracleProviderKey,
+    })
+    .from(appBillingOracleConfig)
+    .where(eq(appBillingOracleConfig.clientId, providerAppId))
+    .limit(1)
+    .catch(() => []);
+  const row = rows[0];
+  return {
+    billingDisplayCurrency: row?.billingDisplayCurrency ?? "USD",
+    billingOracleProviderKey: row?.billingOracleProviderKey ?? "global_eth_usd",
+  };
+}
+
 async function resolveUsageUserIdentifier(
   auth: AuthResult,
   providerAppId: string | null,
@@ -108,8 +140,8 @@ async function resolveUsageUserIdentifier(
  * Base URL for the signer **HTTP** API (what `forwardToSigner` calls).
  *
  * With **signer-dmz**, this must be the **Apache** front (e.g. `http://localhost:8080`),
- * not go-livepeer’s in-container :8081. Use `SIGNER_INTERNAL_URL` or `signer_url`
- * when the DB `signer_port` still says 8081 from an old bare-signer row.
+ * not go-livepeer’s in-container :8081. Prefer `SIGNER_INTERNAL_URL` so local
+ * host/port overrides can repair stale DB rows without a migration.
  *
  * Always returned without a trailing slash so callers can safely concatenate
  * a leading-slash path (`${base}${path}`). A stored `http://host:8080/` would
@@ -138,8 +170,8 @@ export function getSignerUrl(signer?: typeof signerConfig.$inferSelect | null): 
   const rawPort = signer?.signerPort ?? 8080;
   const port = rawPort === LEGACY_BARE_SIGNER_PORT ? 8080 : rawPort;
   const base =
-    signer?.signerUrl
-    || process.env.SIGNER_INTERNAL_URL
+    process.env.SIGNER_INTERNAL_URL
+    || signer?.signerUrl
     || `http://127.0.0.1:${port}`;
   return base.replace(/\/+$/, "");
 }
@@ -183,6 +215,23 @@ export async function probeSignerHttpReachability(
     return { ok: response.ok, addr };
   };
 
+  const fetchSigningProbe = async (): Promise<boolean> => {
+    const token = await issueSignerDmzToken({
+      gate: "http",
+      subject: SIGNER_SYNC_DMZ_SUBJECT,
+    });
+    const response = await fetch(`${signerUrl}/sign-orchestrator-info`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return response.ok;
+  };
+
   try {
     const health = await fetch(`${signerUrl}/healthz`, {
       signal: AbortSignal.timeout(timeoutMs),
@@ -208,6 +257,13 @@ export async function probeSignerHttpReachability(
         const { ok, addr } = await fetchStatus({});
         if (ok) {
           return { reachable: true, ethAddress: addr };
+        }
+      } catch {
+        /* continue */
+      }
+      try {
+        if (await fetchSigningProbe()) {
+          return { reachable: true, ethAddress: undefined };
         }
       } catch {
         /* continue */
@@ -239,6 +295,14 @@ export async function probeSignerHttpReachability(
     const { ok, addr } = await fetchStatus({});
     if (ok) {
       return { reachable: true, ethAddress: addr };
+    }
+  } catch {
+    /* unreachable */
+  }
+
+  try {
+    if (await fetchSigningProbe()) {
+      return { reachable: true, ethAddress: undefined };
     }
   } catch {
     /* unreachable */
@@ -519,6 +583,11 @@ export async function proxyGenerateLivePayment(
     return { status: 503, body: { error: "Signer is not running" } };
   }
 
+  const manifestCheck = await enforceCachedManifestPolicy(requestBody, auth);
+  if (!manifestCheck.ok) {
+    return { status: manifestCheck.status, body: manifestCheck.body };
+  }
+
   const manifestPick = pickConflictingStringAliases(
     requestBody,
     "manifestId",
@@ -604,6 +673,7 @@ export async function proxyGenerateLivePayment(
     signer.defaultCutPercent
   );
   const usageUserId = await resolveUsageUserIdentifier(auth, providerAppId);
+  const billingOracleSelection = await resolveBillingOracleSelection(providerAppId);
   const nowIso = new Date().toISOString();
   let streamSessionId: string | null = null;
 
@@ -712,7 +782,10 @@ export async function proxyGenerateLivePayment(
 
       if (!existingUsage) {
         // Fetch ETH/USD oracle at signing time
-        const ethUsd = await getEthUsdOracle();
+        const ethUsd = await getEthUsdOracle({
+          appId: providerAppId,
+          providerKey: billingOracleSelection.billingOracleProviderKey,
+        });
 
         // Compute USD values from wei
         const networkFeeUsdMicros = computeUsdMicrosFromWei(feeWei, ethUsd.priceUsd);
@@ -723,7 +796,7 @@ export async function proxyGenerateLivePayment(
         // Resolve plan upcharge when we have a pipeline/model constraint.
         let upchargeResult: {
           bps: number;
-          source: "pipeline_model" | "general" | "pay_per_use" | "subscription_included" | "unpriced";
+          source: "pipeline_model" | "subscription_included" | "unpriced";
         } = { bps: 0, source: "unpriced" as const };
         if (providerAppId && constraint) {
           try {
@@ -882,6 +955,15 @@ export async function proxySignByocJob(
   const { signer } = await getSignerRoutingContext(auth.appId);
   if (!signer || signer.status !== "running") {
     return { status: 503, body: { error: "Signer is not running" } };
+  }
+
+  const bodyRecord =
+    requestBody !== null && typeof requestBody === "object" && !Array.isArray(requestBody)
+      ? (requestBody as Record<string, unknown>)
+      : {};
+  const manifestCheck = await enforceCachedManifestPolicy(bodyRecord, auth);
+  if (!manifestCheck.ok) {
+    return { status: manifestCheck.status, body: manifestCheck.body };
   }
 
   try {
