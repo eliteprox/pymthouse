@@ -31,6 +31,26 @@ on:
         description: Apply stack env from GitHub secrets before deploy
         type: boolean
         default: false
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref (branch) to deploy
+        type: string
+        required: false
+      apply_env:
+        description: Apply stack env from GitHub secrets before deploy
+        type: boolean
+        required: false
+        default: false
+    secrets:
+      RAILWAY_API_TOKEN:
+        required: false
+      OPENMETER_URL:
+        required: false
+      OPENMETER_API_KEY:
+        required: false
+      WEBHOOK_SECRET:
+        required: false
 
 concurrency:
   group: deploy-railway-preview
@@ -60,6 +80,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
 
       - name: Install Railway CLI
         run: npm install -g @railway/cli@latest
