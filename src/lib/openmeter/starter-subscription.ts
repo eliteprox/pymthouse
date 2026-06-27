@@ -3,12 +3,12 @@ import type { OpenMeter, PlanReferenceInput } from "@openmeter/sdk";
 import { db } from "@/db/index";
 import { plans } from "@/db/schema";
 import { getOrCreateStarterPlan } from "@/lib/starter-default-plan";
+import { applyFreeBillingProfileToCustomer } from "./billing-profiles";
 import { getHostedAdminClient, isHostedAdminClientAvailable } from "./admin-client";
 import { ensureOpenMeterCustomerForAppUser } from "./customers";
 import {
   isOpenMeterConflictError,
   isOpenMeterPlanNotFoundError,
-  isOpenMeterStripeBillingError,
 } from "./plan-errors";
 import {
   buildOpenMeterPlanKey,
@@ -115,6 +115,7 @@ function subscriptionViewFromCreateResult(
 async function createStarterSubscriptionWithRecovery(input: {
   client: OpenMeter;
   customerId: string;
+  clientId: string;
   starter: typeof plans.$inferSelect;
   planKey: string;
 }): Promise<{
@@ -168,13 +169,6 @@ async function createStarterSubscriptionWithRecovery(input: {
         created: true,
       };
     }
-    if (isOpenMeterStripeBillingError(err)) {
-      console.warn(
-        "[openmeter] Starter subscription skipped: Stripe billing is not ready for this customer",
-        err,
-      );
-      return { subscription: null, starter: activeStarter, created: false };
-    }
     if (isOpenMeterConflictError(err)) {
       const existing = await findOpenMeterSubscriptionByPlanKey(
         input.client,
@@ -182,10 +176,49 @@ async function createStarterSubscriptionWithRecovery(input: {
         input.planKey,
         { openmeterPlanId: activeStarter.openmeterPlanId },
       );
-      if (!existing) {
-        throw err;
+      if (existing) {
+        return { subscription: existing, starter: activeStarter, created: false };
       }
-      return { subscription: existing, starter: activeStarter, created: false };
+
+      await applyFreeBillingProfileToCustomer({
+        client: input.client,
+        customerId: input.customerId,
+      });
+      try {
+        const createdSub = await createStarterOpenMeterSubscription({
+          client: input.client,
+          customerId: input.customerId,
+          starter: activeStarter,
+          planKey: input.planKey,
+        });
+        if (createdSub?.id) {
+          return {
+            subscription: subscriptionViewFromCreateResult(
+              createdSub,
+              input.planKey,
+              activeStarter.openmeterPlanId,
+            ),
+            starter: activeStarter,
+            created: true,
+          };
+        }
+      } catch (retryErr) {
+        const existingAfterRetry = await findOpenMeterSubscriptionByPlanKey(
+          input.client,
+          input.customerId,
+          input.planKey,
+          { openmeterPlanId: activeStarter.openmeterPlanId },
+        );
+        if (existingAfterRetry) {
+          return {
+            subscription: existingAfterRetry,
+            starter: activeStarter,
+            created: false,
+          };
+        }
+        throw retryErr;
+      }
+      throw err;
     }
     throw err;
   }
@@ -220,8 +253,12 @@ export async function ensureStarterSubscriptionForAppUser(input: {
     clientId: input.clientId,
     externalUserId: input.externalUserId,
   });
-  // Starter is free — do not attach the tenant Stripe billing profile here.
-  // Paid checkout applies billing profiles in subscriptions-billing.ts.
+  // Starter trial subscriptions always use the sandbox billing profile so Konnect
+  // does not require Stripe customer data, even when the app has Stripe Connect.
+  await applyFreeBillingProfileToCustomer({
+    client,
+    customerId: customer.id,
+  });
 
   const planKey = buildOpenMeterPlanKey(input.clientId, starter.id);
 
@@ -239,6 +276,7 @@ export async function ensureStarterSubscriptionForAppUser(input: {
     const provisioned = await createStarterSubscriptionWithRecovery({
       client,
       customerId: customer.id,
+      clientId: input.clientId,
       starter: activeStarter,
       planKey,
     });
@@ -248,11 +286,9 @@ export async function ensureStarterSubscriptionForAppUser(input: {
   }
 
   if (!omSubscription) {
-    return {
-      openmeterSubscriptionId: null,
-      planId: activeStarter.id,
-      created: false,
-    };
+    throw new Error(
+      `Failed to provision OpenMeter Starter subscription for client ${input.clientId}`,
+    );
   }
 
   return {
